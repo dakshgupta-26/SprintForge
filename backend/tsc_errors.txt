@@ -1,0 +1,11 @@
+﻿src/controllers/taskController.ts(128,75): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Type 'string | string[]' is not assignable to type 'ObjectIdQueryTypeCasting'.
+      Type 'string[]' is not assignable to type 'ObjectIdQueryTypeCasting'.
+        Type 'string[]' is missing the following properties from type 'ObjectId': _bsontype, id, toHexString, toJSON, and 5 more.
+src/controllers/taskController.ts(129,70): error TS18047: 'comment' is possibly 'null'.
+src/controllers/taskController.ts(130,29): error TS18047: 'comment' is possibly 'null'.
+src/models/User.ts(43,62): error TS2349: This expression is not callable.
+  Type 'SaveOptions' has no call signatures.
+src/models/User.ts(45,3): error TS2349: This expression is not callable.
+  Type 'SaveOptions' has no call signatures.

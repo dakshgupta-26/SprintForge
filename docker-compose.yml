@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: sprintforge-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: sprintforge
+    networks:
+      - sprintforge-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sprintforge-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      MONGODB_URI: mongodb://mongodb:27017/sprintforge
+      JWT_SECRET: sprintforge_docker_jwt_secret_change_me
+      JWT_EXPIRES_IN: 7d
+      CLIENT_URL: http://localhost:3000
+      NODE_ENV: production
+    depends_on:
+      - mongodb
+    networks:
+      - sprintforge-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sprintforge-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:5000
+    depends_on:
+      - backend
+    networks:
+      - sprintforge-net
+
+volumes:
+  mongo_data:
+
+networks:
+  sprintforge-net:
+    driver: bridge
