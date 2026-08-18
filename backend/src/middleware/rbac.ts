@@ -51,16 +51,20 @@ export const requirePermission = (permission: Permission) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = await resolveProjectId(req);
-      if (!projectId) return next(); // no project context
+      if (!projectId) return next(); // no project context — let controller handle it
+
+      // Validate projectId is a valid ObjectId before querying
+      if (!mongoose.Types.ObjectId.isValid(projectId)) return next();
 
       const project = await Project.findById(projectId).lean();
       if (!project) return res.status(404).json({ message: 'Project not found' });
 
-      // Project owner always has full access
+      // ── Owner always has full access ──────────────────────────────────────────
       if (String(project.owner) === String(req.user._id)) {
         return next();
       }
 
+      // ── Find the member entry ─────────────────────────────────────────────────
       const member = (project.members as any[]).find(
         (m) => String(m.user) === String(req.user._id)
       );
@@ -69,14 +73,27 @@ export const requirePermission = (permission: Permission) => {
         return res.status(403).json({ message: 'You are not a member of this project' });
       }
 
-      // Check the new granular permissions array
-      const allowed: Permission[] = member.permissions || [];
-      
-      // Fallbacks in case older member objects haven't been migrated
-      if (allowed.length === 0 && member.role) {
-        if (member.role === 'admin') allowed.push('view', 'create', 'edit', 'delete', 'manage');
-        if (member.role === 'member') allowed.push('view', 'create', 'edit');
-        if (member.role === 'viewer') allowed.push('view');
+      // ── Resolve effective permissions ─────────────────────────────────────────
+      // Normalize role to lowercase to handle 'Admin', 'ADMIN', 'admin', etc.
+      const role = (member.role || '').toLowerCase();
+
+      // If role is admin, always grant full access regardless of stored permissions
+      if (role === 'admin') {
+        return next();
+      }
+
+      // Build allowed list: prefer stored permissions, fall back to role defaults
+      let allowed: Permission[] = [];
+
+      if (member.permissions && member.permissions.length > 0) {
+        allowed = member.permissions as Permission[];
+      } else {
+        // Role-based fallback for members whose permissions weren't stored
+        if (role === 'member' || role === 'developer') {
+          allowed = ['view', 'create', 'edit'];
+        } else if (role === 'viewer') {
+          allowed = ['view'];
+        }
       }
 
       if (!allowed.includes(permission)) {
@@ -91,3 +108,4 @@ export const requirePermission = (permission: Permission) => {
     }
   };
 };
+

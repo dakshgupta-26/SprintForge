@@ -32,10 +32,29 @@ import { rateLimiter } from './middleware/rateLimiter';
 const app = express();
 const server = http.createServer(app);
 
+const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean);
+
+const isOriginAllowed = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  if (!origin) return callback(null, true);
+  if (
+    configuredOrigins.includes(origin) ||
+    configuredOrigins.includes('*') ||
+    origin.endsWith('.vercel.app') ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:')
+  ) {
+    return callback(null, true);
+  }
+  return callback(null, true);
+};
+
 // Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: isOriginAllowed,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -48,7 +67,7 @@ initSocket(io);
 // Middleware
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: isOriginAllowed,
   credentials: true,
 }));
 app.use(morgan('dev'));

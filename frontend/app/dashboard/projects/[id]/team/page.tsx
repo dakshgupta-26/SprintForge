@@ -412,24 +412,63 @@ export default function TeamPage() {
       {pendingInvites.length > 0 && (
         <div className="p-5 rounded-2xl border border-dashed border-border bg-card/50">
           <h2 className="font-bold mb-4 flex items-center gap-2 text-muted-foreground">
-            <Mail className="w-4 h-4" /> Pending Invites
+            <Mail className="w-4 h-4" /> Pending Invites ({pendingInvites.length})
           </h2>
-          <div className="space-y-2">
-            {pendingInvites.map((invite) => (
-              <div key={invite._id} className="flex items-center gap-3 p-3 rounded-xl bg-background border border-border">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                  {invite.email.charAt(0).toUpperCase()}
+          <div className="space-y-3">
+            {pendingInvites.map((invite) => {
+              const clientUrl = typeof window !== "undefined" ? window.location.origin : "";
+              const inviteLink = `${clientUrl}/invite/${invite.token}`;
+              return (
+                <div key={invite._id} className="p-4 rounded-xl bg-background border border-border space-y-3">
+                  {/* Top row */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold flex-shrink-0">
+                      {invite.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{invite.email}</p>
+                      <p className="text-xs text-muted-foreground">Expires {formatDate(invite.expiresAt, "short")}</p>
+                    </div>
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 uppercase">Pending</span>
+                    <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full capitalize ${ROLE_COLORS[invite.role as keyof typeof ROLE_COLORS] || ""}`}>
+                      {invite.role}
+                    </span>
+                  </div>
+
+                  {/* Code + copy actions */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Short code badge */}
+                    {invite.code && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/20">
+                        <span className="text-xs text-muted-foreground">Code:</span>
+                        <span className="font-mono font-black text-primary tracking-widest text-sm">{invite.code}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(invite.code);
+                            toast.success("Code copied!");
+                          }}
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                          title="Copy code"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Copy invite link */}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteLink);
+                        toast.success("Invite link copied!");
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Link2 className="w-3.5 h-3.5" /> Copy invite link
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{invite.email}</p>
-                  <p className="text-xs text-muted-foreground">Expires {formatDate(invite.expiresAt, "short")}</p>
-                </div>
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-muted text-muted-foreground uppercase">Pending</span>
-                <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full capitalize ${ROLE_COLORS[invite.role as keyof typeof ROLE_COLORS] || ""}`}>
-                  {invite.role}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

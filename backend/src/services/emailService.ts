@@ -1,22 +1,25 @@
 import nodemailer from 'nodemailer';
 
 // ─── Transporter ───────────────────────────────────────────────────────────────
-// Uses env vars if set (SendGrid, custom SMTP), falls back to Ethereal for dev
 let transporter: nodemailer.Transporter | null = null;
 
 async function getTransporter() {
   if (transporter) return transporter;
 
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    // Production SMTP (e.g. SendGrid, Mailgun, custom)
+    // Production / configured SMTP (Gmail, SendGrid, Mailgun, etc.)
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      secure: process.env.SMTP_SECURE === 'true', // false → STARTTLS on 587
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
     });
+    console.log(`📧 Using SMTP: ${process.env.SMTP_HOST} (${process.env.SMTP_USER})`);
   } else {
-    // Development: Ethereal (catches emails, viewable at ethereal.email)
+    // Development fallback: Ethereal (fake SMTP — emails captured at ethereal.email)
     const testAccount = await nodemailer.createTestAccount();
     transporter = nodemailer.createTransport({
       host: 'smtp.ethereal.email',
@@ -38,6 +41,8 @@ function buildInviteEmail(opts: {
   projectColor: string;
   role: string;
   acceptUrl: string;
+  joinCode: string;
+  joinPageUrl: string;
   recipientEmail: string;
 }) {
   const roleColors: Record<string, string> = {
@@ -53,7 +58,7 @@ function buildInviteEmail(opts: {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>You're invited to ${opts.projectName}</title>
+  <title>You're invited to ${opts.projectName} on SprintForge</title>
 </head>
 <body style="margin:0;padding:0;background:#0f0f13;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f13;padding:40px 20px;">
@@ -106,7 +111,7 @@ function buildInviteEmail(opts: {
                     </h1>
 
                     <p style="color:#94a3b8;font-size:15px;line-height:1.7;margin:0 0 24px;">
-                      <strong style="color:#e2e8f0;">${opts.inviterName}</strong> has invited you to join
+                      <strong style="color:#e2e8f0;">${opts.inviterName}</strong> has invited you to join the project
                       <strong style="color:#e2e8f0;">${opts.projectName}</strong> on SprintForge — the modern
                       Agile platform for high-performing teams.
                     </p>
@@ -122,13 +127,40 @@ function buildInviteEmail(opts: {
                       </tr>
                     </table>
 
+                    <!-- ══ JOIN CODE BOX (prominent) ══ -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+                      <tr>
+                        <td style="background:#0f0f13;border:2px dashed #6366f1;border-radius:16px;padding:20px;text-align:center;">
+                          <p style="color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">
+                            Your Join Code
+                          </p>
+                          <p style="color:#6366f1;font-size:36px;font-weight:900;font-family:monospace;letter-spacing:8px;margin:0 0 12px;">
+                            ${opts.joinCode}
+                          </p>
+                          <p style="color:#64748b;font-size:12px;margin:0;line-height:1.5;">
+                            Enter this code at<br/>
+                            <a href="${opts.joinPageUrl}" style="color:#8b5cf6;text-decoration:none;font-weight:600;">${opts.joinPageUrl}</a>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Divider with OR -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                      <tr>
+                        <td style="height:1px;background:#2a2a3a;width:45%;vertical-align:middle;"></td>
+                        <td style="text-align:center;padding:0 12px;color:#475569;font-size:12px;white-space:nowrap;">OR</td>
+                        <td style="height:1px;background:#2a2a3a;width:45%;vertical-align:middle;"></td>
+                      </tr>
+                    </table>
+
                     <!-- CTA Button -->
                     <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
                       <tr>
                         <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;">
                           <a href="${opts.acceptUrl}"
                              style="display:inline-block;padding:14px 32px;color:#fff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:-0.2px;">
-                            Accept Invitation →
+                            Accept Invitation &amp; Join Project →
                           </a>
                         </td>
                       </tr>
@@ -160,8 +192,8 @@ function buildInviteEmail(opts: {
                   <td>
                     <p style="color:#475569;font-size:11px;margin:0;line-height:1.5;">
                       This invitation was sent to <strong>${opts.recipientEmail}</strong>.
-                      If you weren't expecting this, you can safely ignore this email.
-                      Sent by <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}" style="color:#6366f1;text-decoration:none;">SprintForge</a>
+                      If you weren't expecting this, you can safely ignore this email.<br/>
+                      This invite expires in 7 days. Sent by <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}" style="color:#6366f1;text-decoration:none;">SprintForge</a>.
                     </p>
                   </td>
                 </tr>
@@ -177,13 +209,18 @@ function buildInviteEmail(opts: {
 </html>`;
 
   const text = `
-You've been invited to join ${opts.projectName} on SprintForge!
+You've been invited to join ${opts.projectName} on SprintForge! 🚀
 
 ${opts.inviterName} has invited you to collaborate as a ${opts.role}.
 
-Accept your invitation: ${opts.acceptUrl}
+━━ YOUR JOIN CODE ━━
+${opts.joinCode}
+Enter this at: ${opts.joinPageUrl}
+━━━━━━━━━━━━━━━━━━━
 
-If you weren't expecting this, you can safely ignore this email.
+Or click your invite link: ${opts.acceptUrl}
+
+This invite expires in 7 days. If you weren't expecting this, you can safely ignore this email.
 `.trim();
 
   return { html, text };
@@ -197,26 +234,36 @@ export async function sendInviteEmail(opts: {
   projectColor: string;
   role: string;
   acceptUrl: string;
+  joinCode: string;
 }) {
   try {
     const t = await getTransporter();
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const joinPageUrl = `${clientUrl}/join`;
+
     const { html, text } = buildInviteEmail({
       ...opts,
+      joinPageUrl,
       recipientEmail: opts.to,
     });
 
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
+
     const info = await t.sendMail({
-      from: `"SprintForge" <${process.env.SMTP_FROM || 'noreply@sprintforge.io'}>`,
+      from: `"${fromName}" <${fromEmail}>`,
       to: opts.to,
       subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
       html,
       text,
     });
 
-    // In dev, print Ethereal preview URL
+    // In dev with Ethereal, print the preview URL
     const previewUrl = nodemailer.getTestMessageUrl(info);
     if (previewUrl) {
       console.log(`📧 Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 Email sent to ${opts.to} (messageId: ${info.messageId})`);
     }
 
     return { success: true, messageId: info.messageId };

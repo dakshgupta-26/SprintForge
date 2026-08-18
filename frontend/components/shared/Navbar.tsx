@@ -1,6 +1,6 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Search, Moon, Sun, Menu, Plus, Command, User, Settings, LogOut, ChevronDown } from "lucide-react";
+import { Search, Moon, Sun, Menu, Plus, Command, User, Settings, LogOut, ChevronDown } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
@@ -10,8 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import { generateAvatar } from "@/lib/utils";
 import { CreateTaskModal } from "@/components/board/CreateTaskModal";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
-import { notificationAPI, projectAPI } from "@/lib/api";
-import { connectSocket, getSocket } from "@/lib/socket";
+import { NotificationBell } from "@/components/shared/NotificationBell";
 import toast from "react-hot-toast";
 
 const BREADCRUMB_MAP: Record<string, string> = {
@@ -42,50 +41,15 @@ export function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
   const profileRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    if (user) {
-      connectSocket(user._id);
-      const s = getSocket();
-      s.on("notification:new", (notif) => {
-        setNotifications((prev) => [notif, ...prev]);
-        toast.success(notif.title);
-      });
-      notificationAPI.getAll().then((res) => {
-        if (res.data && Array.isArray(res.data.notifications)) {
-          setNotifications(res.data.notifications);
-        } else if (Array.isArray(res.data)) {
-          setNotifications(res.data);
-        }
-      }).catch(() => {});
-      return () => { s.off("notification:new"); };
-    }
-  }, [user]);
-
-  const safeNotifications = Array.isArray(notifications) ? notifications : [];
-  const unreadCount = safeNotifications.filter((n) => !n.isRead).length;
-
-  const handleMarkRead = async (id: string) => {
-    try {
-      await notificationAPI.markRead(id);
-      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
-    } catch {}
-  };
-
-  // Close dropdown on outside click
+  // Close profile dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
-      }
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotificationsOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -170,77 +134,8 @@ export function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
           </motion.button>
         )}
 
-        {/* Notifications */}
-        <div ref={notifRef} className="relative">
-          <button 
-            onClick={() => setNotificationsOpen(!notificationsOpen)}
-            className="relative p-2 rounded-lg hover:bg-muted transition-colors"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            )}
-          </button>
-          
-          <AnimatePresence>
-            {notificationsOpen && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -8 }}
-                className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden"
-              >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                  <h3 className="font-semibold text-sm">Notifications</h3>
-                  {unreadCount > 0 && (
-                    <button 
-                      onClick={() => {
-                        notificationAPI.markAllRead();
-                        setNotifications(notifications.map(n => ({...n, isRead: true})));
-                      }}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-[300px] overflow-y-auto">
-                  {safeNotifications.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-muted-foreground">No notifications</div>
-                  ) : (
-                    safeNotifications.map((n) => (
-                      <div key={n._id} className={`p-3 border-b border-border/50 hover:bg-muted/50 transition-colors ${!n.isRead ? 'bg-primary/5' : ''}`}>
-                        <div className="flex gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground">{n.title}</p>
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
-                            <div className="mt-2 flex items-center gap-2">
-                              {n.link && (
-                                <Link 
-                                  href={n.link} 
-                                  onClick={() => handleMarkRead(n._id)}
-                                  className="text-[11px] bg-primary text-white px-2 py-1 rounded shadow-sm hover:bg-primary/90 transition-colors"
-                                >
-                                  View
-                                </Link>
-                              )}
-                              {!n.isRead && (
-                                <button onClick={() => handleMarkRead(n._id)} className="text-[11px] text-muted-foreground hover:text-foreground">
-                                  Mark read
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {!n.isRead && <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1 flex-shrink-0" />}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* Notifications — delegated to NotificationBell component */}
+        <NotificationBell />
 
         {/* ─── Profile Dropdown ──────────────────────────────────── */}
         <div ref={profileRef} className="relative">

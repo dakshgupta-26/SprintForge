@@ -4,7 +4,14 @@ import { useParams, useRouter } from "next/navigation";
 import { sprintAPI, taskAPI } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Zap, Calendar, ArrowLeft, Target, Play, CheckCircle, Trash2, Settings, Flag, ExternalLink, Loader2 } from "lucide-react";
-import { cn, formatDate, statusColor, PRIORITY_BG } from "@/lib/utils";
+import { cn, formatDate, PRIORITY_BG } from "@/lib/utils";
+
+const statusColor: Record<string, string> = {
+  planning: "text-yellow-500 bg-yellow-500/10",
+  active: "text-green-500 bg-green-500/10",
+  completed: "text-slate-400 bg-slate-500/10",
+};
+
 import toast from "react-hot-toast";
 import { TaskDetailModal } from "@/components/board/TaskDetailModal";
 

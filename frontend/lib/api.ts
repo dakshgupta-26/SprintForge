@@ -39,6 +39,8 @@ export const authAPI = {
     api.post("/auth/register", data),
   login: (data: { email: string; password: string }) =>
     api.post("/auth/login", data),
+  googleLogin: (data: { credential?: string; token?: string }) =>
+    api.post("/auth/google", data),
   getMe: () => api.get("/auth/me"),
   updateProfile: (data: any) => api.put("/auth/profile", data),
   changePassword: (data: any) => api.put("/auth/change-password", data),
@@ -58,12 +60,13 @@ export const projectAPI = {
     api.post(`/projects/${id}/invite`, data),
   removeMember: (projectId: string, userId: string) =>
     api.delete(`/projects/${projectId}/members/${userId}`),
-  
+
   // Invitations
   getPendingInvites: (projectId: string) => api.get(`/projects/${projectId}/invites`),
   getInviteInfo: (token: string) => api.get(`/projects/invites/${token}`),
   acceptInvite: (token: string) => api.post(`/projects/invites/${token}/accept`),
-  
+  acceptByCode: (code: string) => api.post(`/projects/invites/accept-by-code`, { code }),
+
   // Join Codes & Roles
   generateJoinCode: (projectId: string) => api.post(`/projects/${projectId}/generate-code`),
   disableJoinCode: (projectId: string) => api.post(`/projects/${projectId}/disable-code`),
@@ -71,6 +74,7 @@ export const projectAPI = {
   updateMemberRole: (projectId: string, userId: string, data: any) =>
     api.patch(`/projects/${projectId}/members/${userId}/role`, data),
 };
+
 
 // ─── Tasks ───
 export const taskAPI = {

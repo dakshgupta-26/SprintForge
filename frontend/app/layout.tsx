@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/shared/ThemeProvider";
+import { GoogleAuthProvider } from "@/components/shared/GoogleAuthProvider";
 import { Toaster } from "react-hot-toast";
 
 const inter = Inter({
@@ -36,7 +37,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
-          {children}
+          <GoogleAuthProvider>
+            {children}
+          </GoogleAuthProvider>
           <Toaster
             position="top-right"
             toastOptions={{

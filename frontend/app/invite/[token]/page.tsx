@@ -151,7 +151,21 @@ export default function InvitePage() {
                 <p className="text-sm font-semibold text-foreground truncate">{inviteData.email}</p>
               </div>
             </div>
+
+            {/* Short join code — prominent display */}
+            {inviteData.code && (
+              <div className="p-4 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 text-center">
+                <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-2">Your Join Code</p>
+                <p className="text-3xl font-black font-mono tracking-[0.3em] text-primary mb-1">{inviteData.code}</p>
+                <p className="text-xs text-muted-foreground">
+                  You can also join at{" "}
+                  <a href="/join" className="text-primary hover:underline font-medium">/join</a>
+                  {" "}using this code
+                </p>
+              </div>
+            )}
           </div>
+
 
           {/* Action section based on Auth state */}
           {!isAuthenticated ? (

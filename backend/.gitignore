@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env*
+*.env
+*.env.*
+.env.example
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build outputs
+dist/
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Logs & temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tsc_errors.txt
+.DS_Store
+
+# Agent notes
+AGENTS.md
+agents.md
+CLAUDE.md
+claude.md
