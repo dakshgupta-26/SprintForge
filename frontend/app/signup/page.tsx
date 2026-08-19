@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
-import { Sparkles, Eye, EyeOff, Loader2, ArrowRight, CheckCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
+import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 const passwordRules = [
   { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
@@ -43,11 +44,8 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="flex items-center gap-2.5 mb-8">
-        <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-          <Sparkles className="w-4.5 h-4.5 text-white" />
-        </div>
-        <span className="font-black text-lg">SprintForge</span>
+      <div className="mb-8">
+        <SprintForgeLogo href="/" size="lg" />
       </div>
 
       <h1 className="text-3xl font-black mb-2">Create your account</h1>
@@ -68,19 +66,19 @@ function SignupForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium mb-1.5">Full name</label>
+          <label htmlFor="name" className="block text-sm font-medium mb-1.5">Full Name</label>
           <input
             id="name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Jane Smith"
+            placeholder="John Doe"
             required
             className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-sm font-medium mb-1.5">Work email</label>
+          <label htmlFor="email" className="block text-sm font-medium mb-1.5">Email</label>
           <input
             id="email"
             type="email"
@@ -99,7 +97,7 @@ function SignupForm() {
               type={showPass ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Create a strong password"
+              placeholder="••••••••"
               required
               className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
             />
@@ -111,24 +109,25 @@ function SignupForm() {
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          {password && (
-            <div className="mt-2 space-y-1">
-              {passwordRules.map((rule) => (
-                <div key={rule.label} className="flex items-center gap-1.5 text-xs">
-                  <CheckCircle className={`w-3 h-3 ${rule.test(password) ? "text-green-500" : "text-muted-foreground"}`} />
-                  <span className={rule.test(password) ? "text-green-500" : "text-muted-foreground"}>{rule.label}</span>
+          <div className="mt-2 space-y-1">
+            {passwordRules.map((r) => {
+              const pass = r.test(password);
+              return (
+                <div key={r.label} className={`flex items-center gap-1.5 text-xs ${pass ? "text-green-500" : "text-muted-foreground"}`}>
+                  <CheckCircle className="w-3 h-3" />
+                  <span>{r.label}</span>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 mt-2 cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed mt-2 cursor-pointer"
         >
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create account <ArrowRight className="w-4 h-4" /></>}
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create Account <ArrowRight className="w-4 h-4" /></>}
         </button>
       </form>
 
@@ -157,7 +156,7 @@ export default function SignupPage() {
       >
         <Suspense
           fallback={
-            <div className="flex flex-col items-center justify-center min-h-[300px] text-muted-foreground">
+            <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
               <p className="text-sm">Loading registration...</p>
             </div>

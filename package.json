@@ -1,0 +1,12 @@
+{
+  "name": "sprintforge-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SprintForge monorepo workspace",
+  "scripts": {
+    "dev": "echo \"Please run the backend and frontend in separate terminals, or use npm run dev:frontend / npm run dev:backend\" && npm run dev:frontend --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend"
+  }
+}

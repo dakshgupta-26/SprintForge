@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { projectAPI } from "@/lib/api";
 import { Sparkles, Loader2, ArrowRight, ShieldCheck, Mail, AlertTriangle } from "lucide-react";
 import toast from "react-hot-toast";
+import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
@@ -89,11 +90,8 @@ export default function InvitePage() {
         <div className="orb orb-2" />
         <div className="absolute inset-0 bg-grid-pattern opacity-20" />
         <div className="relative z-10 max-w-md">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-black">SprintForge</span>
+          <div className="mb-10">
+            <SprintForgeLogo href="/" size="xl" />
           </div>
           <h2 className="text-4xl font-black leading-tight mb-4">
             Join your team and start <span className="gradient-text">building.</span>
@@ -165,7 +163,6 @@ export default function InvitePage() {
               </div>
             )}
           </div>
-
 
           {/* Action section based on Auth state */}
           {!isAuthenticated ? (

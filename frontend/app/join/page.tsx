@@ -7,10 +7,11 @@ import Link from "next/link";
 import { useAuthStore } from "@/lib/store/authStore";
 import { projectAPI } from "@/lib/api";
 import {
-  Sparkles, Loader2, ArrowRight, KeyRound, CheckCircle2, AlertTriangle,
+  Loader2, ArrowRight, KeyRound, CheckCircle2, AlertTriangle,
   LogIn, UserPlus,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 // ─── Inner component (uses useSearchParams which needs Suspense) ──────────────
 function JoinPageInner() {
@@ -28,38 +29,38 @@ function JoinPageInner() {
     initialize();
   }, [initialize]);
 
-  // If token param is present, redirect to the invite page
+  // Keep code in sync if searchParams change
   useEffect(() => {
-    const token = searchParams.get("token");
-    if (token) router.replace(`/invite/${token}`);
-  }, [searchParams, router]);
+    const paramCode = searchParams.get("code");
+    if (paramCode) setCode(paramCode.toUpperCase());
+  }, [searchParams]);
 
-  const handleJoin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code.trim()) return;
-    setError(null);
+  const handleJoin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) {
+      setError("Please enter a join code");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      // Redirect to login, but keep the code in redirect param
+      router.push(`/login?next=${encodeURIComponent(`/join?code=${cleanCode}`)}`);
+      return;
+    }
+
     setIsJoining(true);
+    setError(null);
+
     try {
-      // Try invite code first (email-matched, single use)
-      const { data } = await projectAPI.acceptByCode(code.trim().toUpperCase());
-      setProjectId(data.projectId);
+      const res = await projectAPI.joinWithCode(cleanCode);
+      setProjectId(res.data._id);
       setJoined(true);
-      toast.success("Joined the project! 🎉");
+      toast.success(res.data.message || `Joined "${res.data.name}" successfully! 🎉`);
     } catch (err: any) {
-      const msg = err?.response?.data?.message || "";
-      // If it's not a personal invite code, try the project-wide join code
-      if (err?.response?.status === 404) {
-        try {
-          const { data } = await projectAPI.joinWithCode(code.trim().toUpperCase());
-          setProjectId(data.projectId);
-          setJoined(true);
-          toast.success("Joined the project! 🎉");
-        } catch (err2: any) {
-          setError(err2?.response?.data?.message || "Invalid or expired code. Double-check and try again.");
-        }
-      } else {
-        setError(msg || "Something went wrong. Please try again.");
-      }
+      const msg = err.response?.data?.message || "Invalid or disabled join code. Please try again.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsJoining(false);
     }
@@ -98,11 +99,8 @@ function JoinPageInner() {
 
         <div className="relative z-10 max-w-md">
           {/* Logo */}
-          <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-black tracking-tight">SprintForge</span>
+          <div className="mb-12">
+            <SprintForgeLogo href="/" size="xl" />
           </div>
 
           <h2 className="text-4xl font-black leading-tight mb-6">
@@ -141,11 +139,8 @@ function JoinPageInner() {
           className="w-full max-w-md"
         >
           {/* Mobile logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-xl font-black">SprintForge</span>
+          <div className="mb-8 lg:hidden">
+            <SprintForgeLogo href="/" size="md" />
           </div>
 
           <AnimatePresence mode="wait">
@@ -166,7 +161,7 @@ function JoinPageInner() {
                 </p>
                 <button
                   onClick={handleGoToProject}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95 cursor-pointer"
                 >
                   Go to Project Board <ArrowRight className="w-4 h-4" />
                 </button>
@@ -202,20 +197,25 @@ function JoinPageInner() {
                 <div className="space-y-3">
                   <Link
                     href={`/login?next=${encodeURIComponent(`/join${code ? `?code=${code}` : ""}`)}`}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95 shadow-lg shadow-primary/20"
                   >
-                    <LogIn className="w-4 h-4" /> Log in to join
+                    <LogIn className="w-4 h-4" /> Sign In to Continue
                   </Link>
+
                   <Link
                     href={`/signup?next=${encodeURIComponent(`/join${code ? `?code=${code}` : ""}`)}`}
-                    className="w-full flex items-center justify-center gap-2 py-3 border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all active:scale-95"
+                    className="w-full flex items-center justify-center gap-2 py-3 border border-border text-foreground font-semibold rounded-xl hover:bg-muted transition-all"
                   >
-                    <UserPlus className="w-4 h-4" /> Create an account
+                    <UserPlus className="w-4 h-4" /> Create New Account
                   </Link>
                 </div>
+
+                <p className="text-center text-xs text-muted-foreground mt-6">
+                  Need a join code? Ask your project administrator to share one from the project settings.
+                </p>
               </motion.div>
             ) : (
-              /* ── Logged in — show the code form ── */
+              /* ── Logged in: Enter join code form ── */
               <motion.div
                 key="form"
                 initial={{ opacity: 0, y: 10 }}
@@ -230,26 +230,25 @@ function JoinPageInner() {
                   </div>
                   <h1 className="text-2xl font-black text-foreground mb-2">Join a Project</h1>
                   <p className="text-sm text-muted-foreground">
-                    Enter the invite code from your email or from a team member
+                    Enter the 6-character code shared by your team
                   </p>
                 </div>
 
                 <form onSubmit={handleJoin} className="space-y-5">
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Invite Code
+                    <label htmlFor="join-code-input" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center">
+                      Project Join Code
                     </label>
                     <input
-                      id="invite-code-input"
+                      id="join-code-input"
                       type="text"
+                      maxLength={8}
                       value={code}
                       onChange={(e) => {
-                        setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""));
+                        setCode(e.target.value.toUpperCase());
                         setError(null);
                       }}
-                      placeholder="e.g. ABC123"
-                      maxLength={8}
-                      required
+                      placeholder="SF-XXXX"
                       autoFocus
                       className="w-full px-4 py-4 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-2xl font-black font-mono tracking-[0.3em] text-center uppercase focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                     />
@@ -274,7 +273,7 @@ function JoinPageInner() {
                     id="join-project-btn"
                     type="submit"
                     disabled={isJoining || code.trim().length < 4}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isJoining ? (
                       <Loader2 className="w-5 h-5 animate-spin" />

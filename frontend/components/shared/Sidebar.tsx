@@ -4,13 +4,14 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FolderKanban, Zap, BarChart3, BookOpen,
-  Bell, Users, Settings, ChevronDown, Plus, Sparkles,
-  Target, Bug, AlignLeft, MessageSquare
+  Bell, Users, Settings, ChevronDown, Plus,
+  Bug, AlignLeft, MessageSquare
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 interface NavItem {
   label: string;
@@ -47,14 +48,8 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       {/* Logo */}
-      <div className="p-4 border-b border-border flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-          <Sparkles className="w-4 h-4 text-white" />
-        </div>
-        <div>
-          <span className="font-bold text-foreground text-sm">SprintForge</span>
-          <p className="text-xs text-muted-foreground">Agile Platform</p>
-        </div>
+      <div className="p-4 border-b border-border">
+        <SprintForgeLogo href="/dashboard" size="sm" />
       </div>
 
       {/* Main Nav */}

@@ -38,12 +38,14 @@ yarn-error.log*
 .env.development
 .env.production
 .env.test
+test.png
 
 # Agent notes
 AGENTS.md
 agents.md
 CLAUDE.md
 claude.md
+
 
 # Vercel
 .vercel

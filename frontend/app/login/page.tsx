@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
-import { Sparkles, Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
+import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 function LoginForm() {
   const router = useRouter();
@@ -32,11 +33,8 @@ function LoginForm() {
   return (
     <div className="w-full max-w-sm">
       {/* Mobile logo */}
-      <div className="flex items-center gap-2 mb-8 lg:hidden">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-          <Sparkles className="w-4 h-4 text-white" />
-        </div>
-        <span className="font-bold">SprintForge</span>
+      <div className="mb-8 lg:hidden">
+        <SprintForgeLogo href="/" size="md" />
       </div>
 
       <h1 className="text-2xl font-black mb-2">Welcome back</h1>
@@ -124,11 +122,8 @@ export default function LoginPage() {
         <div className="orb orb-2" />
         <div className="absolute inset-0 bg-grid-pattern opacity-20" />
         <div className="relative z-10 max-w-md">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-black">SprintForge</span>
+          <div className="mb-10">
+            <SprintForgeLogo href="/" size="xl" />
           </div>
           <h2 className="text-4xl font-black leading-tight mb-4">
             Ship better software,{" "}
