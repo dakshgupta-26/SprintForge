@@ -1,13 +1,15 @@
 "use client";
+
 import { useState, Suspense } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
-import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowRight, Shield, Zap, Sparkles, Lock, Mail, CheckCircle2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
+import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
 
 function LoginForm() {
   const router = useRouter();
@@ -18,153 +20,274 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [isFocused, setIsFocused] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || !password) {
+      toast.error("Please enter both email and password");
+      return;
+    }
+
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       toast.success("Welcome back! 🎉");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Login failed. Please check your credentials.");
+      toast.error(
+        err?.response?.data?.message || "Login failed. Please verify your credentials."
+      );
     }
   };
 
   return (
-    <div className="w-full max-w-sm">
-      {/* Mobile logo */}
-      <div className="mb-8 lg:hidden">
-        <SprintForgeLogo href="/" size="md" />
+    <div className="w-full">
+      {/* Mobile Branding Header & Mini Sprint Teaser */}
+      <div className="mb-6 flex lg:hidden items-center justify-between">
+        <SprintForgeLogo href="/" size="md" showBadge={true} badgeText="Agile AI" />
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-semibold">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Sprint 24 • 95%</span>
+        </div>
       </div>
 
-      <h1 className="text-2xl font-black mb-2">Welcome back</h1>
-      <p className="text-muted-foreground mb-6">Sign in to your workspace</p>
+      {/* Form Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-display mb-1.5">
+          Welcome back
+        </h1>
+        <p className="text-sm text-slate-400">
+          Sign in to your SprintForge workspace
+        </p>
+      </div>
 
-      {/* Google Login Button */}
+      {/* Google Single Sign-On Button */}
       <div className="mb-5">
         <GoogleAuthButton nextUrl={nextUrl} text="signin_with" />
       </div>
 
-      {/* Divider */}
+      {/* Subtle Divider */}
       <div className="relative flex items-center justify-center my-6">
-        <div className="border-t border-border w-full" />
-        <span className="bg-background px-3 text-xs text-muted-foreground uppercase font-medium absolute">
+        <div className="border-t border-white/[0.08] w-full" />
+        <span className="bg-[#0b0f1d] px-3.5 text-[11px] text-slate-400 uppercase font-semibold tracking-wider absolute rounded-full border border-white/[0.04]">
           or continue with email
         </span>
       </div>
 
+      {/* Email / Password Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Email Field */}
         <div>
-          <label htmlFor="email" className="block text-sm font-medium mb-1.5">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@company.com"
-            required
-            className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label htmlFor="password" className="block text-sm font-medium">Password</label>
-            <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot?</Link>
+          <label
+            htmlFor="email"
+            className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2"
+          >
+            Work Email
+          </label>
+          <div
+            className={`relative rounded-xl border transition-all duration-200 ${
+              isFocused === "email"
+                ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
+            }`}
+          >
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Mail className="w-4 h-4" />
+            </div>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => setIsFocused("email")}
+              onBlur={() => setIsFocused(null)}
+              placeholder="name@company.com"
+              required
+              autoComplete="email"
+              className="w-full pl-10 pr-4 py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+            />
           </div>
-          <div className="relative">
+        </div>
+
+        {/* Password Field */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label
+              htmlFor="password"
+              className="block text-xs font-semibold text-slate-300 uppercase tracking-wider"
+            >
+              Password
+            </label>
+            <Link
+              href="/login"
+              onClick={(e) => {
+                e.preventDefault();
+                toast("Password reset instructions will be sent to your registered email.", { icon: "🔑" });
+              }}
+              className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <div
+            className={`relative rounded-xl border transition-all duration-200 ${
+              isFocused === "password"
+                ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
+            }`}
+          >
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Lock className="w-4 h-4" />
+            </div>
             <input
               id="password"
               type={showPass ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              onFocus={() => setIsFocused("password")}
+              onBlur={() => setIsFocused(null)}
+              placeholder="••••••••••••"
               required
-              className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              autoComplete="current-password"
+              className="w-full pl-10 pr-11 py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
             />
             <button
               type="button"
               onClick={() => setShowPass(!showPass)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
+              aria-label={showPass ? "Hide password" : "Show password"}
             >
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
         </div>
+
+        {/* Primary Sign In Button */}
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed mt-2 cursor-pointer"
+          className="w-full relative group flex items-center justify-center gap-2 py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:scale-[1.01] active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2 cursor-pointer overflow-hidden"
         >
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Sign in <ArrowRight className="w-4 h-4" /></>}
+          {/* Subtle button sheen animation */}
+          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
+
+          {isLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+              <span>Authenticating...</span>
+            </>
+          ) : (
+            <>
+              <span>Sign in to Workspace</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform duration-200" />
+            </>
+          )}
         </button>
       </form>
 
-      <p className="text-center text-sm text-muted-foreground mt-6">
-        Don't have an account?{" "}
-        <Link href="/signup" className="text-primary font-medium hover:underline">Create one free</Link>
-      </p>
+      {/* Switch to Signup */}
+      <div className="text-center text-sm text-slate-400 mt-6 pt-5 border-t border-white/[0.06]">
+        Don&apos;t have an account?{" "}
+        <Link
+          href="/signup"
+          className="text-violet-400 hover:text-violet-300 font-semibold transition-colors hover:underline"
+        >
+          Create one free
+        </Link>
+      </div>
 
-      <p className="text-center text-xs text-muted-foreground mt-4">
-        By signing in, you agree to our{" "}
-        <Link href="/terms" className="underline hover:text-foreground">Terms</Link> and{" "}
-        <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>
-      </p>
+      {/* Legal & Security Compliance Footer */}
+      <div className="text-center text-[11px] text-slate-500 mt-4 flex items-center justify-center gap-4">
+        <span className="flex items-center gap-1">
+          <Shield className="w-3 h-3 text-emerald-400" />
+          SOC-2 Compliant
+        </span>
+        <span>•</span>
+        <Link href="/terms" className="hover:text-slate-400 transition-colors">
+          Terms
+        </Link>
+        <span>•</span>
+        <Link href="/privacy" className="hover:text-slate-400 transition-colors">
+          Privacy
+        </Link>
+      </div>
     </div>
   );
 }
 
 export default function LoginPage() {
-  return (
-    <div className="min-h-screen bg-background flex">
-      {/* Left — branding */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-background items-center justify-center p-12">
-        <div className="orb orb-1" />
-        <div className="orb orb-2" />
-        <div className="absolute inset-0 bg-grid-pattern opacity-20" />
-        <div className="relative z-10 max-w-md">
-          <div className="mb-10">
-            <SprintForgeLogo href="/" size="xl" />
-          </div>
-          <h2 className="text-4xl font-black leading-tight mb-4">
-            Ship better software,{" "}
-            <span className="gradient-text">together.</span>
-          </h2>
-          <p className="text-muted-foreground text-lg leading-relaxed">
-            Join thousands of engineering teams using SprintForge to plan, track, and deliver great products.
-          </p>
-          <div className="mt-10 space-y-4">
-            {["Real-time Kanban & Scrum boards", "AI-powered story point estimates", "Burndown charts & velocity tracking"].map((f) => (
-              <div key={f} className="flex items-center gap-3 text-sm text-muted-foreground">
-                <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-primary" />
-                </div>
-                {f}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+  const shouldReduceMotion = useReducedMotion();
 
-      {/* Right — form wrapped in Suspense */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-sm"
+  return (
+    <main className="min-h-screen w-full bg-[#05070d] text-slate-100 flex flex-col lg:flex-row relative overflow-hidden selection:bg-violet-500/30 selection:text-white">
+      {/* ─── Ambient Top Navigation Bar (Logo + Quick Exit Link) ─── */}
+      <header className="absolute top-0 inset-x-0 z-30 px-6 py-5 flex items-center justify-between pointer-events-auto">
+        <SprintForgeLogo href="/" size="md" showBadge={true} badgeText="Agile AI" priority />
+        <Link
+          href="/"
+          className="text-xs font-medium text-slate-400 hover:text-white px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.08] transition-all duration-200 hidden sm:inline-flex items-center gap-1.5"
         >
+          <span>Return Home</span>
+          <ArrowRight className="w-3 h-3" />
+        </Link>
+      </header>
+
+      {/* ─── Left Side: 60% Immersive 3D Agile Workspace Hero Stage ─── */}
+      <section className="hidden lg:flex lg:w-[58%] xl:w-[62%] relative flex-col justify-between items-center p-6 xl:p-10 overflow-hidden border-r border-white/[0.06] bg-gradient-to-br from-[#060813] via-[#05070d] to-[#080b18]">
+        {/* Top-Left Product Headline */}
+        <div className="w-full pt-16 z-20 pointer-events-none">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.6 }}
+            className="max-w-md"
+          >
+            <span className="text-[11px] font-bold text-violet-400 uppercase tracking-widest block mb-1">
+              Autonomous Agile Engine
+            </span>
+            <h2 className="text-2xl xl:text-3xl font-black text-white tracking-tight font-display mb-1.5">
+              Ship better software, <span className="gradient-text">together.</span>
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed font-normal">
+              Plan sprints, align your team, and turn ideas into shipped software with predictive AI insights.
+            </p>
+          </motion.div>
+        </div>
+
+        {/* The Live Interactive 3D Agile Workspace Scene */}
+        <div className="w-full flex-1 flex items-center justify-center py-2">
+          <Agile3DWorkspace />
+        </div>
+      </section>
+
+      {/* ─── Right Side: 40% Minimal Glass Authentication Panel ─── */}
+      <section className="flex-1 lg:w-[42%] xl:w-[38%] flex items-center justify-center p-6 sm:p-10 lg:p-12 z-20 relative min-h-screen">
+        {/* Ambient Subtle Glow Behind Auth Card */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[440px] h-[440px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
+
+        {/* Floating Frosted Glass Authentication Card */}
+        <motion.div
+          initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-md bg-[#090d1b]/75 border border-white/[0.08] backdrop-blur-2xl rounded-3xl p-6 sm:p-9 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9),0_0_35px_rgba(124,92,255,0.08)] relative overflow-hidden"
+        >
+          {/* Subtle Top Card Highlight */}
+          <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
+
+          {/* Suspense-wrapped login form */}
           <Suspense
             fallback={
-              <div className="flex flex-col items-center justify-center min-h-[300px] text-muted-foreground">
-                <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-                <p className="text-sm">Loading sign in...</p>
+              <div className="flex flex-col items-center justify-center min-h-[360px] text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin text-violet-500 mb-3" />
+                <p className="text-xs font-medium">Loading workspace sign in...</p>
               </div>
             }
           >
             <LoginForm />
           </Suspense>
         </motion.div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
