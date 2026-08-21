@@ -45,7 +45,7 @@
 - **Scrum & Kanban Projects** — Create projects in either methodology with custom colors, icons, and descriptions
 - **Public & Private Projects** — Control visibility with fine-grained access
 - **Project Join Codes** — Share a 6-character alphanumeric code for instant access (like Google Classroom)
-- **Email Invitations** — Invite team members by email with customized invite links (7-day expiry)
+- **Email Invitations** — Invite team members by email with customized invite links (3-day expiry)
 
 ### 📋 Kanban Board
 - **Drag-and-Drop Board** — Move tasks across **5 columns**: `To Do → In Progress → In Review → Blocked → Done`
