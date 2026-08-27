@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/store/authStore";
+import { useProjectStore } from "@/lib/store/projectStore";
 import { projectAPI } from "@/lib/api";
 import { Sparkles, Loader2, ArrowRight, ShieldCheck, Mail, AlertTriangle } from "lucide-react";
 import toast from "react-hot-toast";
@@ -14,6 +15,7 @@ export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
   const { user, isAuthenticated, initialize } = useAuthStore();
+  const { acceptInvite } = useProjectStore();
   
   const [inviteData, setInviteData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +44,11 @@ export default function InvitePage() {
     if (!isAuthenticated) return;
     setIsAccepting(true);
     try {
-      const { data } = await projectAPI.acceptInvite(token);
+      const data = await acceptInvite(token);
       toast.success(data.message || "Welcome to the project! 🎉");
-      router.push(`/dashboard/projects/${data.projectId}`);
+      router.push(`/dashboard/projects/${data.projectId}/board`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to accept invitation");
+      toast.error(err?.response?.data?.message || err?.message || "Failed to accept invitation");
     } finally {
       setIsAccepting(false);
     }

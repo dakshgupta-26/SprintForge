@@ -21,7 +21,7 @@ const ROLE_COLORS = {
 export default function TeamPage() {
   const { id } = useParams<{ id: string }>();
   // Layout already loaded currentProject — we just refresh after mutations
-  const { currentProject, fetchProject } = useProjectStore();
+  const { currentProject, fetchProject, joinWithCode } = useProjectStore();
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
@@ -131,15 +131,16 @@ export default function TeamPage() {
 
   const handleJoinWithCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinInput.trim()) return;
+    const cleanCode = joinInput.trim().toUpperCase();
+    if (!cleanCode) return;
     setIsJoining(true);
     try {
-      await projectAPI.joinWithCode(joinInput.trim().toUpperCase());
-      toast.success("Successfully joined the project!");
+      const res = await joinWithCode(cleanCode);
+      toast.success(res?.message || "Successfully joined the project!");
       setJoinInput("");
       fetchProject(id);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Invalid or expired code");
+      toast.error(err?.response?.data?.message || err?.message || "Invalid or expired code");
     } finally { setIsJoining(false); }
   };
 

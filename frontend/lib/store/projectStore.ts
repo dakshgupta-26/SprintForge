@@ -7,7 +7,7 @@ interface Member {
   joinedAt: string;
 }
 
-interface Project {
+export interface Project {
   _id: string;
   name: string;
   key: string;
@@ -32,7 +32,11 @@ interface ProjectState {
   isLoading: boolean;
   fetchProjects: () => Promise<void>;
   fetchProject: (id: string) => Promise<void>;
+  addProject: (project: Project) => void;
   createProject: (data: any) => Promise<Project>;
+  joinWithCode: (code: string) => Promise<{ message: string; projectId: string; project?: Project }>;
+  acceptInvite: (token: string) => Promise<{ message: string; projectId: string; project?: Project }>;
+  acceptInviteByCode: (code: string) => Promise<{ message: string; projectId: string; project?: Project }>;
   updateProject: (id: string, data: any) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   setCurrentProject: (project: Project | null) => void;
@@ -45,8 +49,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   fetchProjects: async () => {
     set({ isLoading: true });
-    const { data } = await projectAPI.getAll();
-    set({ projects: data, isLoading: false });
+    try {
+      const { data } = await projectAPI.getAll();
+      set({ projects: data || [], isLoading: false });
+    } catch (err) {
+      set({ isLoading: false });
+      throw err;
+    }
   },
 
   fetchProject: async (id) => {
@@ -60,9 +69,55 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  addProject: (project: Project) => {
+    set((state) => {
+      const existingIdx = state.projects.findIndex((p) => p._id === project._id);
+      let updatedList: Project[];
+      if (existingIdx !== -1) {
+        updatedList = state.projects.map((p) => (p._id === project._id ? { ...p, ...project } : p));
+      } else {
+        updatedList = [project, ...state.projects];
+      }
+      return {
+        projects: updatedList,
+        currentProject: project,
+      };
+    });
+  },
+
   createProject: async (projectData) => {
     const { data } = await projectAPI.create(projectData);
-    set((state) => ({ projects: [data, ...state.projects] }));
+    get().addProject(data);
+    return data;
+  },
+
+  joinWithCode: async (code: string) => {
+    const { data } = await projectAPI.joinWithCode(code);
+    if (data.project) {
+      get().addProject(data.project);
+    } else {
+      await get().fetchProjects();
+    }
+    return data;
+  },
+
+  acceptInvite: async (token: string) => {
+    const { data } = await projectAPI.acceptInvite(token);
+    if (data.project) {
+      get().addProject(data.project);
+    } else {
+      await get().fetchProjects();
+    }
+    return data;
+  },
+
+  acceptInviteByCode: async (code: string) => {
+    const { data } = await projectAPI.acceptInviteByCode(code);
+    if (data.project) {
+      get().addProject(data.project);
+    } else {
+      await get().fetchProjects();
+    }
     return data;
   },
 

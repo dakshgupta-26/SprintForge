@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/store/authStore";
+import { useProjectStore } from "@/lib/store/projectStore";
 import { projectAPI } from "@/lib/api";
 import {
   Loader2, ArrowRight, KeyRound, CheckCircle2, AlertTriangle,
@@ -18,6 +19,7 @@ function JoinPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAuthenticated, initialize, isLoading: authLoading } = useAuthStore();
+  const { joinWithCode } = useProjectStore();
 
   const [code, setCode] = useState(searchParams.get("code") || "");
   const [isJoining, setIsJoining] = useState(false);
@@ -53,12 +55,13 @@ function JoinPageInner() {
     setError(null);
 
     try {
-      const res = await projectAPI.joinWithCode(cleanCode);
-      setProjectId(res.data._id);
+      const res = await joinWithCode(cleanCode);
+      const targetId = res.projectId || res.project?._id || null;
+      setProjectId(targetId);
       setJoined(true);
-      toast.success(res.data.message || `Joined "${res.data.name}" successfully! 🎉`);
+      toast.success(res.message || `Joined "${res.project?.name || "project"}" successfully! 🎉`);
     } catch (err: any) {
-      const msg = err.response?.data?.message || "Invalid or disabled join code. Please try again.";
+      const msg = err.response?.data?.message || err?.message || "Invalid or disabled join code. Please try again.";
       setError(msg);
       toast.error(msg);
     } finally {

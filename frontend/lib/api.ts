@@ -66,6 +66,7 @@ export const projectAPI = {
   getInviteInfo: (token: string) => api.get(`/projects/invites/${token}`),
   acceptInvite: (token: string) => api.post(`/projects/invites/${token}/accept`),
   acceptByCode: (code: string) => api.post(`/projects/invites/accept-by-code`, { code }),
+  acceptInviteByCode: (code: string) => api.post(`/projects/invites/accept-by-code`, { code }),
 
   // Join Codes & Roles
   generateJoinCode: (projectId: string) => api.post(`/projects/${projectId}/generate-code`),

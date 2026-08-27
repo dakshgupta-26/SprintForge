@@ -83,37 +83,40 @@ export function Sidebar() {
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="overflow-hidden"
+                className="overflow-hidden space-y-0.5"
               >
-                {projects.slice(0, 8).map((project) => (
-                  <div key={project._id}>
-                    <Link
-                      href={`/dashboard/projects/${project._id}/board`}
-                      className={cn(
-                        "flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm transition-all duration-150 group",
-                        isActive(`/dashboard/projects/${project._id}`)
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <div
-                        className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                        style={{ backgroundColor: project.color }}
+                {projects.map((project) => {
+                  const isProjectActive = currentProject?._id === project._id || isActive(`/dashboard/projects/${project._id}`);
+                  return (
+                    <div key={project._id}>
+                      <Link
+                        href={`/dashboard/projects/${project._id}/board`}
+                        className={cn(
+                          "flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm transition-all duration-150 group",
+                          isProjectActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        )}
                       >
-                        {project.key.charAt(0)}
-                      </div>
-                      <span className="truncate">{project.name}</span>
-                    </Link>
-                    {/* Project sub-nav when active */}
-                    {currentProject?._id === project._id && (
-                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2">
-                        {projectNav(project._id).map((item) => (
-                          <NavLink key={item.href} item={item} isActive={isActive(item.href)} small />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                        <div
+                          className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                          style={{ backgroundColor: project.color || "#6366f1" }}
+                        >
+                          {project.key?.charAt(0) || "P"}
+                        </div>
+                        <span className="truncate">{project.name}</span>
+                      </Link>
+                      {/* Project sub-nav when active */}
+                      {isProjectActive && (
+                        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2">
+                          {projectNav(project._id).map((item) => (
+                            <NavLink key={item.href} item={item} isActive={isActive(item.href)} small />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 {projects.length === 0 && (
                   <p className="text-xs text-muted-foreground px-2 py-2">No projects yet</p>
                 )}

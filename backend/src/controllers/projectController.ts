@@ -336,7 +336,12 @@ export const acceptInvite = async (req: AuthRequest, res: Response) => {
       io,
     });
 
-    res.json({ message: 'You have joined the project! 🎉', projectId: project._id });
+    const populatedProject = await Project.findById(project._id)
+      .populate('owner', 'name avatar email')
+      .populate('members.user', 'name avatar email')
+      .populate('sprints');
+
+    res.json({ message: 'You have joined the project! 🎉', projectId: project._id, project: populatedProject });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -385,7 +390,12 @@ export const acceptInviteByCode = async (req: AuthRequest, res: Response) => {
     invitation.status = 'accepted';
     await invitation.save();
 
-    res.json({ message: 'You have joined the project! 🎉', projectId: project._id });
+    const populatedProject = await Project.findById(project._id)
+      .populate('owner', 'name avatar email')
+      .populate('members.user', 'name avatar email')
+      .populate('sprints');
+
+    res.json({ message: 'You have joined the project! 🎉', projectId: project._id, project: populatedProject });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -436,9 +446,15 @@ export const joinWithCode = async (req: AuthRequest, res: Response) => {
       (m: any) => m.user.toString() === req.user._id.toString()
     );
     if (alreadyMember) {
+      const populatedProject = await Project.findById(project._id)
+        .populate('owner', 'name avatar email')
+        .populate('members.user', 'name avatar email')
+        .populate('sprints');
+
       return res.status(400).json({
         message: 'You are already a member of this project',
         projectId: project._id,
+        project: populatedProject,
       });
     }
 
@@ -464,7 +480,12 @@ export const joinWithCode = async (req: AuthRequest, res: Response) => {
       io,
     });
 
-    res.json({ message: 'Successfully joined the project', projectId: project._id });
+    const populatedProject = await Project.findById(project._id)
+      .populate('owner', 'name avatar email')
+      .populate('members.user', 'name avatar email')
+      .populate('sprints');
+
+    res.json({ message: 'Successfully joined the project', projectId: project._id, project: populatedProject });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

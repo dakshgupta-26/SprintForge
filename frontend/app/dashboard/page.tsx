@@ -18,7 +18,7 @@ import {
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { projects } = useProjectStore();
+  const { projects, joinWithCode } = useProjectStore();
   const [myTasks, setMyTasks] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, done: 0, inProgress: 0, overdue: 0 });
   const [joinCode, setJoinCode] = useState("");
@@ -48,11 +48,12 @@ export default function DashboardPage() {
 
   const handleJoinWithCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinCode.trim()) return;
+    const cleanCode = joinCode.trim().toUpperCase();
+    if (!cleanCode) return;
     setIsJoining(true);
     try {
-      const { data } = await projectAPI.joinWithCode(joinCode);
-      toast.success(data.message);
+      const data = await joinWithCode(cleanCode);
+      toast.success(data.message || "Joined project successfully! 🎉");
       setJoinCode("");
       router.push(`/dashboard/projects/${data.projectId}/board`);
     } catch (err: any) {
