@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
+  ArrowLeft,
   FolderKanban,
   Zap,
   Columns3,
@@ -70,24 +71,28 @@ export function AppCommandPalette({
     if (isOpen) {
       setQuery("");
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 40);
     }
   }, [isOpen]);
 
-  // Global Cmd+K / Ctrl+K listener handled in parent or here
+  // Robust Global Key listener (Escape + Cmd/Ctrl+K) using capture phase
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    if (!isOpen) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
         e.preventDefault();
-        if (isOpen) {
-          onClose();
-        }
-      } else if (e.key === "Escape" && isOpen) {
+        e.stopPropagation();
+        onClose();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
   }, [isOpen, onClose]);
 
   // Build searchable items
@@ -328,8 +333,14 @@ export function AppCommandPalette({
     );
   }, [query, projects, currentProject, user, theme, setTheme, router, onClose, onOpenNewTask, onOpenNewProject]);
 
-  // Handle keyboard arrow navigation
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  // Handle keyboard arrow navigation & Escape on input
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIndex((prev) => (prev + 1) % Math.max(1, items.length));
@@ -352,7 +363,7 @@ export function AppCommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Command Palette"
-        className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[15vh] p-4"
+        className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] sm:pt-[14vh] p-3 sm:p-4"
       >
         {/* Backdrop */}
         <motion.div
@@ -369,12 +380,24 @@ export function AppCommandPalette({
           initial={{ opacity: 0, scale: 0.96, y: -10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: -10 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative w-full max-w-2xl bg-[#090d1c] border border-white/[0.12] rounded-2xl shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9),0_0_40px_rgba(124,92,255,0.15)] z-10 overflow-hidden flex flex-col max-h-[70vh]"
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-full max-w-2xl bg-[#090d1c] border border-white/[0.12] rounded-2xl shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9),0_0_40px_rgba(124,92,255,0.15)] z-10 overflow-hidden flex flex-col max-h-[72vh]"
         >
-          {/* Search Input Bar */}
-          <div className="flex items-center px-4 py-3.5 border-b border-white/[0.08] gap-3">
+          {/* ── Search Input Header with Back/Close Arrow ── */}
+          <div className="flex items-center px-3 sm:px-4 py-3 border-b border-white/[0.08] gap-2.5 sm:gap-3 bg-[#090d1c]">
+            {/* Clickable Back/Close Arrow Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/[0.06] active:scale-95 transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+              title="Close"
+              aria-label="Close Command Palette"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+
             <Search className="w-4 h-4 text-violet-400 flex-shrink-0" />
+
             <input
               ref={inputRef}
               type="text"
@@ -383,26 +406,29 @@ export function AppCommandPalette({
                 setQuery(e.target.value);
                 setSelectedIndex(0);
               }}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handleInputKeyDown}
               placeholder="Search projects, views, tasks, or jump to page..."
-              className="w-full bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none"
+              className="w-full bg-transparent text-white placeholder:text-slate-500 text-xs sm:text-sm focus:outline-none"
             />
+
             {query ? (
               <button
+                type="button"
                 onClick={() => setQuery("")}
-                className="p-1 rounded text-slate-500 hover:text-white transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                title="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <kbd className="hidden sm:flex items-center gap-1 text-[10px] font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5">
-                ESC to close
+              <kbd className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-0.5 select-none">
+                ESC
               </kbd>
             )}
           </div>
 
           {/* Results List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
             {items.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs">
                 No matching results found for &ldquo;{query}&rdquo;
