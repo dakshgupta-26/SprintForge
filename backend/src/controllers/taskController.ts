@@ -85,6 +85,8 @@ export const getTasks = async (req: AuthRequest, res: Response): Promise<void> =
     if (search)   filter.title     = { $regex: String(search), $options: 'i' };
 
     const tasks = await Task.find(filter)
+      .populate('project', 'name key color type')
+      .populate('sprint',  'name status startDate endDate')
       .populate('assignees', 'name avatar email')
       .populate('reporter',  'name avatar')
       .sort({ boardOrder: 1, createdAt: -1 });

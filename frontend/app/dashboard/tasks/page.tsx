@@ -1,223 +1,579 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
-import { useAuthStore } from "@/lib/store/authStore";
-import { taskAPI } from "@/lib/api";
-import { cn, PRIORITY_BG, STATUS_LABELS, formatDate, generateAvatar } from "@/lib/utils";
 import {
-  CheckCircle2, Clock, Flag, Filter, Search, SlidersHorizontal,
-  Plus, Loader2, AlertCircle, Circle, ArrowRight, Zap
+  CheckSquare,
+  CheckCircle2,
+  Clock,
+  Flag,
+  Filter,
+  Search,
+  SlidersHorizontal,
+  Plus,
+  Zap,
+  Sparkles,
+  Layers,
+  ArrowRight,
+  FolderKanban,
+  Calendar,
+  RefreshCw,
+  TrendingUp,
 } from "lucide-react";
+import { taskAPI, projectAPI } from "@/lib/api";
+import { useAuthStore } from "@/lib/store/authStore";
+import { useProjectStore } from "@/lib/store/projectStore";
+import { getSocket, connectSocket } from "@/lib/socket";
+import { TaskStats } from "@/components/tasks/TaskStats";
+import { ProductivitySnapshot } from "@/components/tasks/ProductivitySnapshot";
+import {
+  TaskToolbar,
+  TaskViewMode,
+  TaskGroupBy,
+  TaskSortBy,
+} from "@/components/tasks/TaskToolbar";
+import { TaskRow } from "@/components/tasks/TaskRow";
+import { TaskCompactRow } from "@/components/tasks/TaskCompactRow";
+import { TaskBoardView } from "@/components/tasks/TaskBoardView";
+import { TaskEmptyState } from "@/components/tasks/TaskEmptyState";
+import { TaskSkeleton } from "@/components/tasks/TaskSkeleton";
+import { TaskDetailDrawer } from "@/components/board/TaskDetailDrawer";
+import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
-const STATUS_OPTIONS = ["all", "todo", "in_progress", "in_review", "done", "blocked"];
-const PRIORITY_OPTIONS = ["all", "low", "medium", "high", "critical"];
-
-const STATUS_ICONS: Record<string, React.ReactNode> = {
-  todo:        <Circle        className="w-3.5 h-3.5 text-slate-400" />,
-  in_progress: <Zap          className="w-3.5 h-3.5 text-indigo-400" />,
-  in_review:   <SlidersHorizontal className="w-3.5 h-3.5 text-violet-400" />,
-  done:        <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />,
-  blocked:     <AlertCircle  className="w-3.5 h-3.5 text-red-400" />,
-};
+type TimeScope = "all" | "today" | "week" | "overdue" | "completed";
 
 export default function MyTasksPage() {
   const { user } = useAuthStore();
-  const [tasks, setTasks]           = useState<any[]>([]);
-  const [isLoading, setIsLoading]   = useState(true);
-  const [search, setSearch]         = useState("");
-  const [statusFilter, setStatus]   = useState("all");
-  const [priorityFilter, setPriority] = useState("all");
+  const { projects, fetchProjects } = useProjectStore();
 
-  const load = useCallback(async () => {
-    if (!user?._id) return;
-    setIsLoading(true);
-    try {
-      const params: any = { assignee: user._id };
-      if (statusFilter !== "all")   params.status   = statusFilter;
-      if (priorityFilter !== "all") params.priority = priorityFilter;
-      if (search.trim())            params.search   = search.trim();
-      const { data } = await taskAPI.getAll(params);
-      setTasks(data);
-    } catch {
-      toast.error("Failed to load tasks");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user?._id, statusFilter, priorityFilter, search]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => { load(); }, [load]);
+  // Quick Scope Header Tab
+  const [timeScope, setTimeScope] = useState<TimeScope>("all");
 
-  // Stats from loaded tasks (ignore filters for stats)
-  const [allTasks, setAllTasks] = useState<any[]>([]);
+  // Filters & Controls
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [groupBy, setGroupBy] = useState<TaskGroupBy>("dueDate");
+  const [sortBy, setSortBy] = useState<TaskSortBy>("dueDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [viewMode, setViewMode] = useState<TaskViewMode>("list");
+
+  // Task Detail Drawer
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // ── Load User's Assigned Tasks ──
+  const loadTasks = useCallback(
+    async (isBackground = false) => {
+      if (!user?._id) return;
+      if (!isBackground) setIsLoading(true);
+      else setIsRefreshing(true);
+
+      try {
+        const { data } = await taskAPI.getAll({ assignee: user._id });
+        setTasks(Array.isArray(data) ? data : []);
+      } catch {
+        toast.error("Failed to load your assigned tasks");
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [user?._id]
+  );
+
+  useEffect(() => {
+    loadTasks();
+    fetchProjects();
+  }, [loadTasks, fetchProjects]);
+
+  // ── Real-Time Socket.IO Synchronization ──
   useEffect(() => {
     if (!user?._id) return;
-    taskAPI.getAll({ assignee: user._id }).then(({ data }) => setAllTasks(data)).catch(() => {});
-  }, [user?._id]);
+    connectSocket(user._id);
+    const socket = getSocket();
+    if (!socket) return;
 
-  const stats = {
-    total:      allTasks.length,
-    done:       allTasks.filter((t) => t.status === "done").length,
-    inProgress: allTasks.filter((t) => t.status === "in_progress").length,
-    overdue:    allTasks.filter((t) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "done").length,
+    const handleTaskEvent = () => {
+      loadTasks(true);
+    };
+
+    socket.on("task:created", handleTaskEvent);
+    socket.on("task:updated", handleTaskEvent);
+    socket.on("task:deleted", handleTaskEvent);
+    socket.on("task:status_changed", handleTaskEvent);
+    socket.on("notification", handleTaskEvent);
+
+    return () => {
+      socket.off("task:created", handleTaskEvent);
+      socket.off("task:updated", handleTaskEvent);
+      socket.off("task:deleted", handleTaskEvent);
+      socket.off("task:status_changed", handleTaskEvent);
+      socket.off("notification", handleTaskEvent);
+    };
+  }, [user?._id, loadTasks]);
+
+  // ── Stats Calculations ──
+  const stats = useMemo(() => {
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.status === "done").length;
+    const inProgress = tasks.filter((t) => t.status === "in_progress").length;
+    const highPriority = tasks.filter(
+      (t) => t.priority === "high" || t.priority === "critical"
+    ).length;
+
+    const now = new Date();
+    const todayStr = now.toDateString();
+
+    const dueToday = tasks.filter((t) => {
+      if (!t.dueDate || t.status === "done") return false;
+      return new Date(t.dueDate).toDateString() === todayStr;
+    }).length;
+
+    const overdue = tasks.filter((t) => {
+      if (!t.dueDate || t.status === "done") return false;
+      return new Date(t.dueDate).getTime() < new Date().setHours(0, 0, 0, 0);
+    }).length;
+
+    return { total, completed, inProgress, overdue, dueToday, highPriority };
+  }, [tasks]);
+
+  // ── Filter & Search Application ──
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      // 1. TimeScope Header Tab
+      if (timeScope === "today") {
+        const isToday =
+          task.dueDate &&
+          new Date(task.dueDate).toDateString() === new Date().toDateString();
+        const isInProgress = task.status === "in_progress";
+        if (!isToday && !isInProgress) return false;
+      } else if (timeScope === "week") {
+        if (!task.dueDate) return false;
+        const diffDays =
+          (new Date(task.dueDate).getTime() - Date.now()) /
+          (1000 * 60 * 60 * 24);
+        if (diffDays < -1 || diffDays > 7) return false;
+      } else if (timeScope === "overdue") {
+        const isOverdue =
+          task.dueDate &&
+          new Date(task.dueDate).getTime() < new Date().setHours(0, 0, 0, 0) &&
+          task.status !== "done";
+        if (!isOverdue) return false;
+      } else if (timeScope === "completed") {
+        if (task.status !== "done") return false;
+      }
+
+      // 2. Status Dropdown
+      if (statusFilter !== "all" && task.status !== statusFilter) {
+        return false;
+      }
+
+      // 3. Priority Dropdown
+      if (priorityFilter !== "all" && task.priority !== priorityFilter) {
+        return false;
+      }
+
+      // 4. Project Filter
+      if (projectFilter !== "all") {
+        const pId = task.project?._id || task.project;
+        if (pId !== projectFilter) return false;
+      }
+
+      // 5. Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const titleMatch = task.title?.toLowerCase().includes(q);
+        const descMatch = task.description?.toLowerCase().includes(q);
+        const projMatch = task.project?.name?.toLowerCase().includes(q);
+        const keyMatch = task.project?.key?.toLowerCase().includes(q);
+        const shortIdMatch = task._id?.slice(-4).toLowerCase().includes(q);
+        const labelMatch = task.labels?.some((l: string) =>
+          l.toLowerCase().includes(q)
+        );
+
+        if (
+          !titleMatch &&
+          !descMatch &&
+          !projMatch &&
+          !keyMatch &&
+          !shortIdMatch &&
+          !labelMatch
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    tasks,
+    timeScope,
+    statusFilter,
+    priorityFilter,
+    projectFilter,
+    searchQuery,
+  ]);
+
+  // ── Sorting ──
+  const sortedTasks = useMemo(() => {
+    return [...filteredTasks].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === "dueDate") {
+        if (a.dueDate && b.dueDate) {
+          comparison =
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        } else if (a.dueDate) comparison = -1;
+        else if (b.dueDate) comparison = 1;
+      } else if (sortBy === "priority") {
+        const pWeight: Record<string, number> = {
+          critical: 4,
+          high: 3,
+          medium: 2,
+          low: 1,
+        };
+        comparison = (pWeight[b.priority] || 0) - (pWeight[a.priority] || 0);
+      } else if (sortBy === "points") {
+        comparison = (b.storyPoints || 0) - (a.storyPoints || 0);
+      } else if (sortBy === "created") {
+        comparison =
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else if (sortBy === "status") {
+        comparison = (a.status || "").localeCompare(b.status || "");
+      } else if (sortBy === "title") {
+        comparison = (a.title || "").localeCompare(b.title || "");
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+  }, [filteredTasks, sortBy, sortOrder]);
+
+  // ── Grouping ──
+  const groupedTasks = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+
+    if (groupBy === "none") {
+      groups["ALL TASKS"] = sortedTasks;
+      return groups;
+    }
+
+    if (groupBy === "dueDate") {
+      groups["TODAY & ACTIVE"] = [];
+      groups["UPCOMING"] = [];
+      groups["COMPLETED"] = [];
+
+      const now = new Date();
+      const todayStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      ).getTime();
+
+      sortedTasks.forEach((t) => {
+        if (t.status === "done") {
+          groups["COMPLETED"].push(t);
+        } else if (!t.dueDate) {
+          groups["TODAY & ACTIVE"].push(t);
+        } else {
+          const dueTime = new Date(t.dueDate).getTime();
+          if (dueTime <= todayStart + 24 * 60 * 60 * 1000) {
+            groups["TODAY & ACTIVE"].push(t);
+          } else {
+            groups["UPCOMING"].push(t);
+          }
+        }
+      });
+
+      return groups;
+    }
+
+    if (groupBy === "status") {
+      groups["IN PROGRESS"] = [];
+      groups["TO DO"] = [];
+      groups["IN REVIEW"] = [];
+      groups["BLOCKED"] = [];
+      groups["COMPLETED"] = [];
+
+      sortedTasks.forEach((t) => {
+        if (t.status === "in_progress") groups["IN PROGRESS"].push(t);
+        else if (t.status === "review" || t.status === "in_review")
+          groups["IN REVIEW"].push(t);
+        else if (t.status === "blocked") groups["BLOCKED"].push(t);
+        else if (t.status === "done") groups["COMPLETED"].push(t);
+        else groups["TO DO"].push(t);
+      });
+
+      return groups;
+    }
+
+    if (groupBy === "priority") {
+      groups["CRITICAL (P0)"] = [];
+      groups["HIGH (P1)"] = [];
+      groups["MEDIUM (P2)"] = [];
+      groups["LOW (P3)"] = [];
+
+      sortedTasks.forEach((t) => {
+        if (t.priority === "critical") groups["CRITICAL (P0)"].push(t);
+        else if (t.priority === "high") groups["HIGH (P1)"].push(t);
+        else if (t.priority === "medium") groups["MEDIUM (P2)"].push(t);
+        else groups["LOW (P3)"].push(t);
+      });
+
+      return groups;
+    }
+
+    if (groupBy === "project") {
+      sortedTasks.forEach((t) => {
+        const pName = t.project?.name || "Unassigned Project";
+        if (!groups[pName]) groups[pName] = [];
+        groups[pName].push(t);
+      });
+
+      return groups;
+    }
+
+    return { "ALL TASKS": sortedTasks };
+  }, [sortedTasks, groupBy]);
+
+  // ── Actions ──
+  const handleToggleComplete = async (
+    taskId: string,
+    currentStatus: string
+  ) => {
+    const newStatus = currentStatus === "done" ? "todo" : "done";
+
+    // Optimistic UI update
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, status: newStatus } : t))
+    );
+
+    try {
+      await taskAPI.updateStatus(taskId, {
+        status: newStatus,
+        boardColumn: newStatus,
+      });
+      toast.success(
+        newStatus === "done" ? "Task completed! 🎉" : "Task marked as to do"
+      );
+    } catch {
+      toast.error("Failed to update task status");
+      loadTasks(true);
+    }
   };
 
+  const handleClearAllFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setProjectFilter("all");
+    setTimeScope("all");
+  };
+
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (priorityFilter !== "all" ? 1 : 0) +
+    (projectFilter !== "all" ? 1 : 0) +
+    (searchQuery ? 1 : 0) +
+    (timeScope !== "all" ? 1 : 0);
+
+  // Selected task context for detail drawer
+  const selectedTask = useMemo(() => {
+    return tasks.find((t) => t._id === selectedTaskId) || null;
+  }, [tasks, selectedTaskId]);
+
+  const selectedProjectId =
+    selectedTask?.project?._id || selectedTask?.project || projects[0]?._id || "";
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">My Tasks</h1>
-          <p className="text-sm text-muted-foreground mt-1">All tasks assigned to you across every project</p>
-        </div>
-      </motion.div>
-
-      {/* Stat strip */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-        className="grid grid-cols-4 gap-3">
-        {[
-          { label: "Total",       value: stats.total,      color: "text-blue-500",  bg: "bg-blue-500/10"  },
-          { label: "In Progress", value: stats.inProgress, color: "text-indigo-500",bg: "bg-indigo-500/10"},
-          { label: "Completed",   value: stats.done,       color: "text-green-500", bg: "bg-green-500/10" },
-          { label: "Overdue",     value: stats.overdue,    color: "text-red-500",   bg: "bg-red-500/10"   },
-        ].map((s) => (
-          <div key={s.label}
-            className="p-4 rounded-xl border border-border bg-card flex items-center gap-3">
-            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", s.bg)}>
-              <span className={cn("text-sm font-black", s.color)}>{s.value}</span>
+    <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 space-y-6 pb-16">
+      {/* ── 1. Page Header ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full flex flex-col md:flex-row md:items-center justify-between gap-4 pt-1"
+      >
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-600/20 to-violet-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-md flex-shrink-0">
+            <CheckSquare className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                My Tasks
+              </h1>
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-white/[0.04] text-slate-300 border border-white/[0.08]">
+                {tasks.length} total work items
+              </span>
             </div>
-            <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
-          </div>
-        ))}
-      </motion.div>
-
-      {/* Filters */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-        className="flex flex-wrap items-center gap-3 p-4 rounded-xl border border-border bg-card">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tasks…"
-            className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        {/* Status filter */}
-        <select value={statusFilter} onChange={(e) => setStatus(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>{s === "all" ? "All Statuses" : STATUS_LABELS[s] || s}</option>
-          ))}
-        </select>
-
-        {/* Priority filter */}
-        <select value={priorityFilter} onChange={(e) => setPriority(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-          {PRIORITY_OPTIONS.map((p) => (
-            <option key={p} value={p}>{p === "all" ? "All Priorities" : p.charAt(0).toUpperCase() + p.slice(1)}</option>
-          ))}
-        </select>
-      </motion.div>
-
-      {/* Task list */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-        className="rounded-xl border border-border bg-card overflow-hidden">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          </div>
-        ) : tasks.length === 0 ? (
-          <div className="text-center py-16">
-            <CheckCircle2 className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-            <p className="text-muted-foreground font-medium">No tasks found</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {statusFilter !== "all" || priorityFilter !== "all" || search
-                ? "Try adjusting your filters"
-                : "Tasks assigned to you will appear here"}
+            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+              Your personal engineering workspace across every project & sprint
             </p>
           </div>
-        ) : (
-          <div className="divide-y divide-border">
-            <AnimatePresence>
-              {tasks.map((task, i) => (
-                <motion.div
-                  key={task._id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03 }}
+        </div>
+
+        {/* Time Scope Tabs & Refresh */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center p-1 rounded-2xl bg-[#090d1f] border border-white/[0.08]">
+            {(
+              [
+                { id: "all", label: "All Tasks" },
+                { id: "today", label: "Today" },
+                { id: "week", label: "This Week" },
+                { id: "overdue", label: "Overdue" },
+                { id: "completed", label: "Completed" },
+              ] as const
+            ).map((tab) => {
+              const isSelected = timeScope === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setTimeScope(tab.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer",
+                    isSelected
+                      ? "bg-violet-600 text-white shadow-[0_0_12px_rgba(124,92,255,0.4)]"
+                      : "text-slate-400 hover:text-white"
+                  )}
                 >
-                  <Link
-                    href={`/dashboard/projects/${task.project?._id || task.project}/board`}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/50 transition-colors group"
-                  >
-                    {/* Status icon */}
-                    <div className="flex-shrink-0">
-                      {STATUS_ICONS[task.status] || <Circle className="w-3.5 h-3.5 text-muted-foreground" />}
-                    </div>
-
-                    {/* Title */}
-                    <span className={cn(
-                      "flex-1 text-sm truncate",
-                      task.status === "done"
-                        ? "line-through text-muted-foreground"
-                        : "text-foreground"
-                    )}>
-                      {task.title}
-                    </span>
-
-                    {/* Project badge */}
-                    {task.project?.name && (
-                      <span className="hidden md:block text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium flex-shrink-0">
-                        {task.project.name}
-                      </span>
-                    )}
-
-                    {/* Priority */}
-                    <span className={cn("text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0", PRIORITY_BG[task.priority])}>
-                      <Flag className="w-2.5 h-2.5 inline mr-0.5" />
-                      {task.priority}
-                    </span>
-
-                    {/* Due date */}
-                    {task.dueDate && (
-                      <span className={cn(
-                        "hidden sm:flex items-center gap-1 text-xs flex-shrink-0",
-                        new Date(task.dueDate) < new Date() && task.status !== "done"
-                          ? "text-red-500"
-                          : "text-muted-foreground"
-                      )}>
-                        <Clock className="w-3 h-3" />
-                        {formatDate(task.dueDate, "short")}
-                      </span>
-                    )}
-
-                    {/* Assignee avatars (others on same task) */}
-                    <div className="hidden md:flex -space-x-1.5 flex-shrink-0">
-                      {task.assignees?.slice(0, 3).map((u: any) => (
-                        <img key={u._id} src={u.avatar || generateAvatar(u.name)}
-                          alt={u.name} title={u.name}
-                          className="w-5 h-5 rounded-full border-2 border-card object-cover" />
-                      ))}
-                    </div>
-
-                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                  </Link>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
-        )}
+
+          <button
+            onClick={() => loadTasks(true)}
+            disabled={isRefreshing}
+            title="Refresh Tasks"
+            className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw
+              className={cn("w-4 h-4", isRefreshing && "animate-spin text-violet-400")}
+            />
+          </button>
+        </div>
       </motion.div>
 
-      {tasks.length > 0 && (
-        <p className="text-center text-xs text-muted-foreground">
-          Showing {tasks.length} task{tasks.length !== 1 ? "s" : ""}
-        </p>
+      {/* ── 2. Compact Personal Task Metrics ── */}
+      <TaskStats
+        total={stats.total}
+        inProgress={stats.inProgress}
+        completed={stats.completed}
+        overdue={stats.overdue}
+        dueToday={stats.dueToday}
+        highPriority={stats.highPriority}
+      />
+
+      {/* ── 3. Productivity Snapshot & Recommended Focus ── */}
+      <ProductivitySnapshot
+        tasks={tasks}
+        onSelectTask={(id) => setSelectedTaskId(id)}
+      />
+
+      {/* ── 4. Smart Task Filtering & Toolbar ── */}
+      <TaskToolbar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        statusFilter={statusFilter}
+        onStatusChange={setStatusFilter}
+        priorityFilter={priorityFilter}
+        onPriorityChange={setPriorityFilter}
+        projectFilter={projectFilter}
+        onProjectChange={setProjectFilter}
+        projectsList={projects}
+        groupBy={groupBy}
+        onGroupByChange={setGroupBy}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        sortOrder={sortOrder}
+        onToggleSortOrder={() =>
+          setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+        }
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onClearFilters={handleClearAllFilters}
+        activeFilterCount={activeFilterCount}
+      />
+
+      {/* ── 5. Main Task Workspace Feed ── */}
+      {isLoading ? (
+        <TaskSkeleton />
+      ) : filteredTasks.length === 0 ? (
+        <TaskEmptyState
+          hasFilters={activeFilterCount > 0}
+          onClearFilters={handleClearAllFilters}
+        />
+      ) : viewMode === "board" ? (
+        <TaskBoardView
+          tasks={sortedTasks}
+          onSelectTask={(id) => setSelectedTaskId(id)}
+          onToggleComplete={handleToggleComplete}
+        />
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupedTasks).map(([groupTitle, groupItems]) => {
+            if (groupItems.length === 0) return null;
+
+            return (
+              <div key={groupTitle} className="space-y-2.5">
+                {/* Group Section Header */}
+                <div className="flex items-center gap-2.5 px-1 pt-1">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                    {groupTitle}
+                  </span>
+                  <div className="flex-1 h-px bg-white/[0.06]" />
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {groupItems.length}{" "}
+                    {groupItems.length === 1 ? "task" : "tasks"}
+                  </span>
+                </div>
+
+                {/* Task Rows List */}
+                <div className="space-y-2">
+                  <AnimatePresence initial={false}>
+                    {groupItems.map((task) =>
+                      viewMode === "compact" ? (
+                        <TaskCompactRow
+                          key={task._id}
+                          task={task}
+                          onSelectTask={(id) => setSelectedTaskId(id)}
+                          onToggleComplete={handleToggleComplete}
+                        />
+                      ) : (
+                        <TaskRow
+                          key={task._id}
+                          task={task}
+                          onSelectTask={(id) => setSelectedTaskId(id)}
+                          onToggleComplete={handleToggleComplete}
+                        />
+                      )
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── 6. Task Detail Drawer Slide-over ── */}
+      {selectedTaskId && (
+        <TaskDetailDrawer
+          isOpen={Boolean(selectedTaskId)}
+          taskId={selectedTaskId}
+          projectId={selectedProjectId}
+          onClose={() => setSelectedTaskId(null)}
+          onTaskUpdated={() => loadTasks(true)}
+          onTaskDeleted={() => {
+            setSelectedTaskId(null);
+            loadTasks(true);
+          }}
+        />
       )}
     </div>
   );
