@@ -272,14 +272,14 @@ export function NotificationBell() {
                     const cfg = getConfig(notif.type);
                     const Icon = cfg.icon;
                     return (
-                      <motion.button
+                      <motion.div
                         key={notif._id}
                         layout
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         onClick={() => handleNotifClick(notif)}
                         className={cn(
-                          "w-full text-left flex items-start gap-3 p-3 rounded-xl transition-all group relative",
+                          "w-full text-left flex items-start gap-3 p-3 rounded-xl transition-all group relative cursor-pointer",
                           notif.isRead
                             ? "hover:bg-muted/60"
                             : "bg-primary/5 border border-primary/10 hover:bg-primary/10"
@@ -307,17 +307,19 @@ export function NotificationBell() {
                         <div className="flex flex-col items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                           {!notif.isRead && (
                             <button
+                              type="button"
                               title="Mark as read"
                               onClick={(e) => { e.stopPropagation(); markRead(notif._id); }}
-                              className="p-1 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                              className="p-1 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
                             >
                               <Check className="w-3 h-3" />
                             </button>
                           )}
                           <button
+                            type="button"
                             title="Delete"
                             onClick={(e) => deleteOne(notif._id, e)}
-                            className="p-1 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                            className="p-1 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -327,7 +329,7 @@ export function NotificationBell() {
                         {!notif.isRead && (
                           <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-primary" />
                         )}
-                      </motion.button>
+                      </motion.div>
                     );
                   })}
                 </div>
