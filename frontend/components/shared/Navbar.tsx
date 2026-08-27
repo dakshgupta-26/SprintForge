@@ -40,6 +40,7 @@ import { CreateTaskModal } from "@/components/board/CreateTaskModal";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import { NotificationBell } from "@/components/shared/NotificationBell";
 import { AppCommandPalette } from "@/components/shared/AppCommandPalette";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface NavbarProps {
@@ -553,10 +554,11 @@ export function Navbar({ onMenuClick }: NavbarProps) {
               aria-label="Open user profile menu"
               className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-white/[0.06] transition-colors cursor-pointer group"
             >
-              <img
-                src={user?.avatar || generateAvatar(user?.name || "User")}
-                alt={user?.name || "User"}
-                className="w-7 h-7 rounded-full object-cover ring-2 ring-violet-500/30 group-hover:ring-violet-500/60 transition-all"
+              <UserAvatar
+                src={user?.avatar}
+                name={user?.name}
+                size="sm"
+                ringClassName="ring-2 ring-violet-500/30 group-hover:ring-violet-500/60 transition-all"
               />
               <ChevronDown
                 className={cn(

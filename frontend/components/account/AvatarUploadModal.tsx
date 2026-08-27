@@ -4,7 +4,6 @@ import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
-  Camera,
   Upload,
   Trash2,
   Loader2,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react";
 import { authAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
-import { generateAvatar } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface AvatarUploadModalProps {
@@ -32,14 +31,12 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
 
   if (!isOpen) return null;
 
-  const currentAvatar = user?.avatar || generateAvatar(user?.name || "User");
-
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.match(/image\/(jpeg|jpg|png|webp)/)) {
-      toast.error("Please select a valid image file (JPEG, PNG, or WebP)");
+    if (!file.type.match(/image\/(jpeg|jpg|png|webp|gif)/)) {
+      toast.error("Please select a valid image file (JPEG, PNG, WebP, or GIF)");
       return;
     }
 
@@ -61,8 +58,15 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
       formData.append("avatar", selectedFile);
 
       const response = await authAPI.uploadAvatar(formData);
-      updateUser({ avatar: response.data.avatarUrl });
-      toast.success("Profile photo updated! ✨");
+      const newAvatarUrl = response.data.avatarUrl;
+      const updatedUserData = response.data.user || {};
+
+      updateUser({
+        avatar: newAvatarUrl,
+        profileImage: updatedUserData.profileImage,
+      });
+
+      toast.success("Profile photo updated permanently in MongoDB! ✨");
       onClose();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to upload photo");
@@ -74,8 +78,8 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
   const handleRemoveAvatar = async () => {
     setIsUploading(true);
     try {
-      await authAPI.updateProfile({ avatar: "" });
-      updateUser({ avatar: "" });
+      await authAPI.removeAvatar();
+      updateUser({ avatar: "", profileImage: undefined });
       toast.success("Profile photo removed");
       onClose();
     } catch (err: any) {
@@ -112,13 +116,22 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
           <div className="p-6 flex flex-col items-center text-center space-y-5">
             {/* Avatar Preview Ring */}
             <div className="relative">
-              <div className="w-32 h-32 rounded-full overflow-hidden ring-4 ring-violet-500/30 shadow-2xl bg-[#060914] flex items-center justify-center">
-                <img
-                  src={previewUrl || currentAvatar}
-                  alt={user?.name || "User"}
-                  className="w-full h-full object-cover"
+              {previewUrl ? (
+                <div className="w-32 h-32 rounded-full overflow-hidden ring-4 ring-violet-500/40 shadow-2xl bg-[#060914] flex items-center justify-center">
+                  <img
+                    src={previewUrl}
+                    alt={user?.name || "Preview"}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ) : (
+                <UserAvatar
+                  src={user?.avatar}
+                  name={user?.name}
+                  size="2xl"
+                  ringClassName="ring-4 ring-violet-500/40 shadow-2xl w-32 h-32"
                 />
-              </div>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -126,7 +139,7 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
                 Upload a clear photo or square image (max 5MB)
               </p>
               <p className="text-[11px] text-slate-500 font-mono">
-                Supported formats: JPEG, PNG, WebP
+                Persisted in MongoDB GridFS · Formats: JPEG, PNG, WebP, GIF
               </p>
             </div>
 
@@ -139,7 +152,7 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1] text-xs font-bold text-slate-200 hover:text-white transition-all cursor-pointer disabled:opacity-50"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>{selectedFile ? "Choose Different" : "Choose Image"}</span>
+                <span>{selectedFile ? "Choose Different Image" : "Choose Image"}</span>
               </button>
 
               {user?.avatar && (
@@ -149,6 +162,7 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
                   disabled={isUploading}
                   className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer disabled:opacity-50"
                   title="Remove current avatar"
+                  aria-label="Remove profile photo"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -158,7 +172,7 @@ export function AvatarUploadModal({ isOpen, onClose }: AvatarUploadModalProps) {
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileSelect}
-                accept="image/jpeg, image/png, image/webp"
+                accept="image/jpeg, image/png, image/webp, image/gif"
                 className="hidden"
               />
             </div>

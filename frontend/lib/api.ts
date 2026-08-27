@@ -46,6 +46,7 @@ export const authAPI = {
   changePassword: (data: any) => api.put("/auth/change-password", data),
   uploadAvatar: (formData: FormData) => 
     api.post("/auth/upload-avatar", formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  removeAvatar: () => api.delete("/auth/avatar"),
   logout: () => api.post("/auth/logout"),
 };
 

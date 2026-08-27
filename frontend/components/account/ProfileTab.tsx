@@ -22,6 +22,8 @@ import { generateAvatar, cn } from "@/lib/utils";
 import { AvatarUploadModal } from "./AvatarUploadModal";
 import Link from "next/link";
 
+import { UserAvatar } from "@/components/shared/UserAvatar";
+
 interface ProfileTabProps {
   formData: {
     name: string;
@@ -39,8 +41,6 @@ export function ProfileTab({ formData, onChange }: ProfileTabProps) {
   const { user } = useAuthStore();
   const { projects } = useProjectStore();
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
-
-  const avatar = user?.avatar || generateAvatar(user?.name || "User");
 
   // Profile strength calculation
   const completedFields = [
@@ -62,17 +62,16 @@ export function ProfileTab({ formData, onChange }: ProfileTabProps) {
           <div className="flex items-center gap-5">
             {/* Avatar with Change Button */}
             <div className="relative group">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden ring-2 ring-violet-500/40 bg-[#060914] shadow-md flex-shrink-0">
-                <img
-                  src={avatar}
-                  alt={user?.name || ""}
-                  className="w-full h-full object-cover"
-                />
-              </div>
+              <UserAvatar
+                src={user?.avatar}
+                name={user?.name}
+                size="2xl"
+                ringClassName="ring-2 ring-violet-500/40 shadow-md"
+              />
               <button
                 type="button"
                 onClick={() => setIsAvatarModalOpen(true)}
-                className="absolute inset-0 bg-black/60 rounded-2xl opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity cursor-pointer"
+                className="absolute inset-0 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity cursor-pointer"
                 title="Change Photo"
                 aria-label="Change profile photo"
               >

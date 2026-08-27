@@ -66,7 +66,23 @@ export const PROJECT_COLORS = [
 ];
 
 export function generateAvatar(name: string) {
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff&size=40&bold=true`;
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "User")}&background=6366f1&color=fff&size=80&bold=true`;
+}
+
+export function getAvatarUrl(avatar?: string | null, name: string = "User"): string {
+  if (!avatar || avatar.trim() === "") {
+    return generateAvatar(name);
+  }
+  if (
+    avatar.startsWith("http://") ||
+    avatar.startsWith("https://") ||
+    avatar.startsWith("data:") ||
+    avatar.startsWith("blob:")
+  ) {
+    return avatar;
+  }
+  const backendBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000";
+  return `${backendBase}${avatar.startsWith("/") ? "" : "/"}${avatar}`;
 }
 
 export function truncate(str: string, len: number) {

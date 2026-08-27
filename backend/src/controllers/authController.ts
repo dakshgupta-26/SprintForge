@@ -1,7 +1,14 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
+import path from 'path';
+import { ObjectId } from 'mongodb';
 import User from '../models/User';
+import {
+  getProfileImagesBucket,
+  uploadBufferToGridFS,
+  deleteGridFSFile,
+} from '../utils/gridfs';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -47,7 +54,14 @@ export const login = async (req: Request, res: Response) => {
     const token = generateToken(user._id.toString());
     res.json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, role: user.role, avatar: user.avatar },
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+        profileImage: user.profileImage,
+      },
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -66,6 +80,31 @@ export const getMe = async (req: any, res: Response) => {
 export const updateProfile = async (req: any, res: Response) => {
   try {
     const { name, bio, title, avatar, location, website, timezone, language } = req.body;
+    
+    // If removing avatar
+    if (avatar === "") {
+      const existing = await User.findById(req.user._id);
+      if (existing?.profileImage?.fileId) {
+        await deleteGridFSFile(existing.profileImage.fileId);
+      }
+      const updated = await User.findByIdAndUpdate(
+        req.user._id,
+        {
+          name,
+          bio,
+          title,
+          avatar: "",
+          $unset: { profileImage: 1 },
+          location,
+          website,
+          timezone,
+          language,
+        },
+        { new: true, runValidators: true }
+      );
+      return res.json(updated);
+    }
+
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { name, bio, title, avatar, location, website, timezone, language },
@@ -93,31 +132,126 @@ export const changePassword = async (req: any, res: Response) => {
   }
 };
 
+/**
+ * Upload Avatar to MongoDB GridFS with automatic cleanup of old image
+ */
 export const uploadAvatar = async (req: any, res: Response) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please upload an image file' });
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ message: 'Please select a valid image file' });
     }
 
-    // The file is saved automatically by multer; construct its accessible URL
-    const avatarUrl = `/uploads/${req.file.filename}`;
-    
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { avatar: avatarUrl },
-      { new: true, runValidators: true }
+    const userId = req.user._id;
+    const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+    const timestamp = Date.now();
+    const safeFilename = `avatar_${userId}_${timestamp}${ext}`;
+    const contentType = req.file.mimetype || 'image/jpeg';
+
+    // 1. Upload buffer to MongoDB GridFS bucket "profileImages"
+    const gridFSFileId = await uploadBufferToGridFS(
+      req.file.buffer,
+      safeFilename,
+      contentType
     );
-    
-    res.json({ message: 'Avatar updated', user, avatarUrl });
+
+    // 2. Fetch current user to check for old image to clean up
+    const currentUser = await User.findById(userId);
+    const oldFileId = currentUser?.profileImage?.fileId;
+
+    // 3. Update user document with persistent URL and GridFS reference
+    const avatarUrl = `/api/auth/avatar/${userId}?v=${timestamp}`;
+
+    currentUser!.avatar = avatarUrl;
+    currentUser!.profileImage = {
+      fileId: gridFSFileId as any,
+      filename: safeFilename,
+      contentType,
+      uploadedAt: new Date(),
+    };
+
+    await currentUser!.save({ validateBeforeSave: false });
+
+    // 4. Clean up old GridFS image file if it existed
+    if (oldFileId) {
+      await deleteGridFSFile(oldFileId);
+    }
+
+    res.json({
+      message: 'Avatar updated successfully',
+      avatarUrl,
+      user: currentUser,
+    });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ message: error.message || 'Failed to upload avatar' });
+  }
+};
+
+/**
+ * Stream persistent avatar image from MongoDB GridFS
+ */
+export const getAvatar = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || !user.profileImage?.fileId) {
+      return res.status(404).json({ message: 'No profile image found' });
+    }
+
+    const fileId = new ObjectId(user.profileImage.fileId);
+    const bucket = getProfileImagesBucket();
+
+    res.setHeader('Content-Type', user.profileImage.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+
+    const downloadStream = bucket.openDownloadStream(fileId);
+
+    downloadStream.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(404).json({ message: 'Image not found in storage' });
+      }
+    });
+
+    downloadStream.pipe(res);
+  } catch (error: any) {
+    console.error('Get avatar error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Error retrieving avatar' });
+    }
+  }
+};
+
+/**
+ * Remove Avatar from MongoDB GridFS
+ */
+export const removeAvatar = async (req: any, res: Response) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.profileImage?.fileId) {
+      await deleteGridFSFile(user.profileImage.fileId);
+    }
+
+    user.avatar = "";
+    user.profileImage = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    res.json({ message: 'Avatar removed successfully', user });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Failed to remove avatar' });
   }
 };
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    // With stateless JWT, we simply acknowledge logout logic from the server side.
-    // The client is responsible for deleting the token and closing WS.
     res.json({ message: 'Successfully logged out' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -135,7 +269,6 @@ export const googleAuth = async (req: Request, res: Response) => {
 
     let payload: any = null;
 
-    // First attempt: verify via google-auth-library
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken,
@@ -143,12 +276,10 @@ export const googleAuth = async (req: Request, res: Response) => {
       });
       payload = ticket.getPayload();
     } catch (verifyErr) {
-      // Fallback: verify via Google tokeninfo endpoint (useful if client ID is flexible or token is an access token)
       const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
       if (tokenInfoRes.ok) {
         payload = await tokenInfoRes.json();
       } else {
-        // Also check if it was an access token
         const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${idToken}` },
         });
@@ -166,17 +297,14 @@ export const googleAuth = async (req: Request, res: Response) => {
 
     const { email, name, picture, sub } = payload;
 
-    // Check if user already exists with this email
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (user) {
-      // Update profile info if missing
       if (!user.avatar && picture) user.avatar = picture;
       if (!user.providerId && sub) user.providerId = sub;
       user.lastSeen = new Date();
       await user.save({ validateBeforeSave: false });
     } else {
-      // Create new user with Google provider
       user = await User.create({
         name: name || email.split('@')[0],
         email: email.toLowerCase(),
@@ -199,6 +327,7 @@ export const googleAuth = async (req: Request, res: Response) => {
         role: user.role,
         avatar: user.avatar,
         provider: user.provider,
+        profileImage: user.profileImage,
       },
     });
   } catch (error: any) {
@@ -206,4 +335,3 @@ export const googleAuth = async (req: Request, res: Response) => {
     res.status(500).json({ message: error.message || 'Google authentication failed' });
   }
 };
-

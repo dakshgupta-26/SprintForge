@@ -1,11 +1,19 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+export interface IProfileImage {
+  fileId: mongoose.Types.ObjectId;
+  filename: string;
+  contentType: string;
+  uploadedAt: Date;
+}
+
 export interface IUser extends Document {
   name: string;
   email: string;
   password?: string;
   avatar?: string;
+  profileImage?: IProfileImage;
   role: 'admin' | 'member' | 'viewer';
   provider: 'local' | 'google' | 'github';
   providerId?: string;
@@ -30,6 +38,12 @@ const userSchema = new Schema<IUser>(
     email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, select: false },
     avatar:   { type: String },
+    profileImage: {
+      fileId: { type: Schema.Types.ObjectId },
+      filename: { type: String },
+      contentType: { type: String },
+      uploadedAt: { type: Date, default: Date.now },
+    },
     role:     { type: String, enum: ['admin', 'member', 'viewer'], default: 'member' },
     provider: { type: String, enum: ['local', 'google', 'github'], default: 'local' },
     providerId: { type: String },

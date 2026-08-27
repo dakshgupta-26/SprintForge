@@ -15,7 +15,8 @@ import {
   Circle,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
-import { generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
+import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface SidebarUserMenuProps {
@@ -51,8 +52,6 @@ export function SidebarUserMenu({ isCollapsed, onCloseMobile }: SidebarUserMenuP
     }
   };
 
-  const avatar = user?.avatar || generateAvatar(user?.name || "User");
-
   return (
     <div className="relative p-2.5 border-t border-white/[0.06] bg-[#070b1a]" ref={menuRef}>
       {/* User Row Button */}
@@ -63,12 +62,13 @@ export function SidebarUserMenu({ isCollapsed, onCloseMobile }: SidebarUserMenuP
           className="relative w-10 h-10 mx-auto rounded-xl flex items-center justify-center cursor-pointer group"
           title={user?.name || "Profile"}
         >
-          <img
-            src={avatar}
-            alt={user?.name || ""}
-            className="w-8 h-8 rounded-full object-cover ring-2 ring-white/[0.1] group-hover:ring-violet-500/50 transition-all"
+          <UserAvatar
+            src={user?.avatar}
+            name={user?.name}
+            size="md"
+            showOnline
+            ringClassName="ring-2 ring-white/[0.1] group-hover:ring-violet-500/50"
           />
-          <div className="absolute bottom-0 right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#070b1a]" />
         </button>
       ) : (
         <button
@@ -82,14 +82,13 @@ export function SidebarUserMenu({ isCollapsed, onCloseMobile }: SidebarUserMenuP
           )}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="relative flex-shrink-0">
-              <img
-                src={avatar}
-                alt={user?.name || ""}
-                className="w-7 h-7 rounded-full object-cover ring-1 ring-white/[0.1] group-hover:ring-violet-500/40 transition-all"
-              />
-              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#070b1a]" />
-            </div>
+            <UserAvatar
+              src={user?.avatar}
+              name={user?.name}
+              size="sm"
+              showOnline
+              ringClassName="ring-1 ring-white/[0.1] group-hover:ring-violet-500/40"
+            />
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate group-hover:text-violet-200 transition-colors">
                 {user?.name || "Developer"}

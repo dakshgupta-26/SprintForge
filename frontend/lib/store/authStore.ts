@@ -17,6 +17,12 @@ interface User {
   timezone?: string;
   language?: string;
   createdAt?: string;
+  profileImage?: {
+    fileId?: string;
+    filename?: string;
+    contentType?: string;
+    uploadedAt?: string;
+  };
 }
 
 interface AuthState {
