@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
-import { getSocket } from "@/lib/socket";
+import { getSocket, connectSocket } from "@/lib/socket";
 import { chatAPI } from "@/lib/api";
 import { format, isToday, isYesterday, isSameDay } from "date-fns";
 import {
@@ -25,12 +25,11 @@ import {
   ArrowDown,
   FileText,
   Image as ImageIcon,
-  ChevronRight,
   ShieldCheck,
   MessageSquare,
-  Globe,
   Info,
-  Terminal,
+  Clock,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateAvatar, cn } from "@/lib/utils";
@@ -42,6 +41,16 @@ interface MessageSender {
   email: string;
   avatar?: string;
   role?: string;
+}
+
+interface ReadReceipt {
+  user: {
+    _id: string;
+    name?: string;
+    avatar?: string;
+    email?: string;
+  } | string;
+  readAt: string;
 }
 
 interface Message {
@@ -60,6 +69,7 @@ interface Message {
     type: "image" | "file" | "code";
     url?: string;
   }>;
+  readBy?: ReadReceipt[];
   reactions?: Record<string, string[]>; // emoji -> array of userIds
   isOptimistic?: boolean;
 }
@@ -82,6 +92,10 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [selectedMessageInfo, setSelectedMessageInfo] = useState<Message | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
   const [pendingAttachments, setPendingAttachments] = useState<
     Array<{ name: string; size: string; type: "image" | "file"; dataUrl?: string }>
   >([]);
@@ -89,14 +103,12 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [unreadBelowCount, setUnreadBelowCount] = useState(0);
 
-  // Local Reactions Storage per message
-  const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({});
-
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Derive active project
   const project = useMemo(() => {
@@ -114,11 +126,49 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     }
   }, [project, projectId, fetchProject]);
 
+  // Project members list for presence drawer & read receipts
+  const projectMembers = useMemo(() => {
+    if (project?.members && Array.isArray(project.members)) {
+      return project.members.map((m: any) => {
+        const memberUser = m.user || {};
+        const memberId = memberUser._id || (typeof m.user === "string" ? m.user : `m-${Math.random()}`);
+        return {
+          _id: memberId,
+          name: memberUser.name || "Team Member",
+          email: memberUser.email || "",
+          avatar: memberUser.avatar,
+          role: m.role || "member",
+          isOnline: onlineUserIds.has(memberId),
+        };
+      });
+    }
+    return [
+      {
+        _id: user?._id || "1",
+        name: user?.name || "You",
+        email: user?.email || "",
+        avatar: user?.avatar,
+        role: "admin",
+        isOnline: true,
+      },
+    ];
+  }, [project, onlineUserIds, user]);
+
+  const activeOnlineCount = useMemo(() => {
+    if (onlineUserIds.size > 0) {
+      // Return count of online members in this project (or total online in project room)
+      const projectMemberIds = new Set(projectMembers.map((m) => m._id));
+      const matched = Array.from(onlineUserIds).filter((id) => projectMemberIds.has(id));
+      return Math.max(matched.length, onlineUserIds.size > 0 ? onlineUserIds.size : 1);
+    }
+    return 1;
+  }, [onlineUserIds, projectMembers]);
+
   // ─── Scroll Management ───────────────────────────────────────────────────────
   const isNearBottom = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return true;
-    const threshold = 120;
+    const threshold = 140;
     return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
   }, []);
 
@@ -140,14 +190,57 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     }
   };
 
+  // ─── Emit Read Receipts for visible unread messages ──────────────────────────
+  const markMessagesAsRead = useCallback(
+    (msgs: Message[]) => {
+      if (!user?._id || !projectId) return;
+
+      const unreadMessageIds = msgs
+        .filter((m) => {
+          if (m.sender?._id === user._id) return false;
+          if (m.isOptimistic) return false;
+          const alreadyRead = (m.readBy || []).some((r) => {
+            const rUserId = typeof r.user === "object" ? r.user?._id : r.user;
+            return rUserId === user._id;
+          });
+          return !alreadyRead;
+        })
+        .map((m) => m._id);
+
+      if (unreadMessageIds.length > 0) {
+        const socket = getSocket();
+        if (socket) {
+          socket.emit("chat:message:read", {
+            projectId,
+            messageIds: unreadMessageIds,
+            userId: user._id,
+            user: {
+              _id: user._id,
+              name: user.name,
+              avatar: user.avatar,
+              email: user.email,
+            },
+          });
+        }
+      }
+    },
+    [projectId, user]
+  );
+
   // ─── Fetch Messages & Socket Listeners ────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
+    if (user?._id) {
+      connectSocket(user._id);
+    }
+
     const fetchHistory = async () => {
       try {
         const { data } = await chatAPI.getMessages(projectId);
         if (mounted) {
-          setMessages(data || []);
+          const list = data || [];
+          setMessages(list);
+          markMessagesAsRead(list);
         }
       } catch (error) {
         console.error("Failed to load project messages", error);
@@ -164,21 +257,45 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     const socket = getSocket();
     if (!socket) return;
 
-    socket.emit("join:project", projectId);
+    // Join project room with explicit userId for server-authoritative presence
+    socket.emit("join:project", { projectId, userId: user?._id });
 
-    // Initial online presence
-    if (user?._id) {
-      setOnlineUserIds((prev) => new Set([...prev, user._id]));
-    }
+    // Handle initial presence snapshot
+    const handlePresenceSync = ({ onlineUserIds: ids }: { onlineUserIds: string[] }) => {
+      if (Array.isArray(ids)) {
+        setOnlineUserIds(new Set(ids));
+      }
+    };
+
+    // Handle real-time presence updates (join/leave/disconnect)
+    const handlePresenceUpdate = ({ onlineUserIds: ids }: { onlineUserIds: string[] }) => {
+      if (Array.isArray(ids)) {
+        setOnlineUserIds(new Set(ids));
+      }
+    };
 
     const handleMessageReceive = (message: Message) => {
       setMessages((prev) => {
-        // Avoid duplicate if optimistic
         const filtered = prev.filter(
-          (m) => !(m.isOptimistic && m.content === message.content && m.sender._id === message.sender._id)
+          (m) => !(m.isOptimistic && m.content === message.content && m.sender?._id === message.sender?._id)
         );
         return [...filtered, message];
       });
+
+      // If user is currently focused in chat, mark incoming message as read
+      if (user?._id && message.sender?._id !== user._id) {
+        socket.emit("chat:message:read", {
+          projectId,
+          messageIds: [message._id],
+          userId: user._id,
+          user: {
+            _id: user._id,
+            name: user.name,
+            avatar: user.avatar,
+            email: user.email,
+          },
+        });
+      }
 
       if (isNearBottom()) {
         setTimeout(() => scrollToBottom(true), 50);
@@ -186,6 +303,55 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         setUnreadBelowCount((c) => c + 1);
         setShowScrollBottom(true);
       }
+    };
+
+    const handleReadReceiptUpdate = ({
+      messageIds,
+      userId,
+      user: readerUser,
+      readAt,
+    }: {
+      messageIds: string[];
+      userId: string;
+      user?: any;
+      readAt: string;
+    }) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (messageIds.includes(msg._id)) {
+            const currentReadBy = msg.readBy || [];
+            const exists = currentReadBy.some((r) => {
+              const rId = typeof r.user === "object" ? r.user?._id : r.user;
+              return rId === userId;
+            });
+            if (!exists) {
+              return {
+                ...msg,
+                readBy: [
+                  ...currentReadBy,
+                  {
+                    user: readerUser || { _id: userId },
+                    readAt: readAt || new Date().toISOString(),
+                  },
+                ],
+              };
+            }
+          }
+          return msg;
+        })
+      );
+    };
+
+    const handleReactionUpdate = ({
+      messageId,
+      reactions,
+    }: {
+      messageId: string;
+      reactions: Record<string, string[]>;
+    }) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === messageId ? { ...msg, reactions } : msg))
+      );
     };
 
     const handleTypingStart = ({ userId, userName }: { userId: string; userName: string }) => {
@@ -201,38 +367,26 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       });
     };
 
-    const handlePresenceJoined = ({ userId }: { userId: string }) => {
-      if (userId) {
-        setOnlineUserIds((prev) => new Set([...prev, userId]));
-      }
-    };
-
-    const handlePresenceLeft = ({ userId }: { userId: string }) => {
-      if (userId) {
-        setOnlineUserIds((prev) => {
-          const next = new Set(prev);
-          next.delete(userId);
-          return next;
-        });
-      }
-    };
-
+    socket.on("presence:sync", handlePresenceSync);
+    socket.on("presence:update", handlePresenceUpdate);
     socket.on("chat:message:receive", handleMessageReceive);
+    socket.on("chat:message:read:update", handleReadReceiptUpdate);
+    socket.on("chat:message:react:update", handleReactionUpdate);
     socket.on("chat:typing:start", handleTypingStart);
     socket.on("chat:typing:stop", handleTypingStop);
-    socket.on("presence:joined", handlePresenceJoined);
-    socket.on("presence:left", handlePresenceLeft);
 
     return () => {
       mounted = false;
+      socket.off("presence:sync", handlePresenceSync);
+      socket.off("presence:update", handlePresenceUpdate);
       socket.off("chat:message:receive", handleMessageReceive);
+      socket.off("chat:message:read:update", handleReadReceiptUpdate);
+      socket.off("chat:message:react:update", handleReactionUpdate);
       socket.off("chat:typing:start", handleTypingStart);
       socket.off("chat:typing:stop", handleTypingStop);
-      socket.off("presence:joined", handlePresenceJoined);
-      socket.off("presence:left", handlePresenceLeft);
-      socket.emit("leave:project", projectId);
+      socket.emit("leave:project", { projectId, userId: user?._id });
     };
-  }, [projectId, user?._id, isNearBottom, scrollToBottom]);
+  }, [projectId, user, isNearBottom, scrollToBottom, markMessagesAsRead]);
 
   // ─── Input & Typing Handlers ─────────────────────────────────────────────────
   const handleTyping = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -265,7 +419,6 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     const socket = getSocket();
     if (!socket) return;
 
-    // Compose formatted text if reply or attachments exist
     let formattedContent = text;
     if (replyingTo) {
       formattedContent = `> Replying to @${replyingTo.sender.name}: "${replyingTo.content.slice(0, 60)}${
@@ -293,6 +446,8 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         avatar: user.avatar,
       },
       content: formattedContent,
+      readBy: [],
+      reactions: {},
       createdAt: new Date().toISOString(),
       isOptimistic: true,
     };
@@ -369,18 +524,51 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   };
 
   // ─── Reactions & Message Actions ─────────────────────────────────────────────
-  const handleAddReaction = (msgId: string, emoji: string) => {
-    setLocalReactions((prev) => {
-      const msgReactions = { ...(prev[msgId] || {}) };
-      msgReactions[emoji] = (msgReactions[emoji] || 0) + 1;
-      return { ...prev, [msgId]: msgReactions };
+  const handleToggleReaction = (msgId: string, emoji: string) => {
+    if (!user?._id) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Optimistic local update
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg._id === msgId) {
+          const currentReactions = { ...(msg.reactions || {}) };
+          const userList = currentReactions[emoji] || [];
+          if (userList.includes(user._id)) {
+            currentReactions[emoji] = userList.filter((id) => id !== user._id);
+            if (currentReactions[emoji].length === 0) delete currentReactions[emoji];
+          } else {
+            currentReactions[emoji] = [...userList, user._id];
+          }
+          return { ...msg, reactions: currentReactions };
+        }
+        return msg;
+      })
+    );
+
+    socket.emit("chat:message:react", {
+      projectId,
+      messageId: msgId,
+      emoji,
+      userId: user._id,
     });
-    toast(`Reacted ${emoji}`, { duration: 1500 });
   };
 
-  const handleCopyMessage = (text: string) => {
+  const handleCopyMessage = (msgId: string, text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success("Message copied to clipboard", { duration: 1500 });
+    setCopiedMessageId(msgId);
+    toast.success("Copied to clipboard", { duration: 1500 });
+    setTimeout(() => setCopiedMessageId(null), 1800);
+  };
+
+  const handleScrollToMessage = (targetMsgId: string) => {
+    const el = messageRefs.current[targetMsgId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(targetMsgId);
+      setTimeout(() => setHighlightedMessageId(null), 2000);
+    }
   };
 
   // ─── Filtered Messages for Search ───────────────────────────────────────────
@@ -390,35 +578,9 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     return messages.filter(
       (m) =>
         m.content.toLowerCase().includes(q) ||
-        m.sender.name.toLowerCase().includes(q)
+        m.sender?.name?.toLowerCase().includes(q)
     );
   }, [messages, searchQuery]);
-
-  // Project members list for presence drawer
-  const projectMembers = useMemo(() => {
-    if (project?.members && Array.isArray(project.members)) {
-      return project.members.map((m: any) => ({
-        _id: m.user?._id || m.user || `m-${Math.random()}`,
-        name: m.user?.name || "Team Member",
-        email: m.user?.email || "",
-        avatar: m.user?.avatar,
-        role: m.role || "Member",
-        isOnline: onlineUserIds.has(m.user?._id || m.user),
-      }));
-    }
-    return [
-      {
-        _id: user?._id || "1",
-        name: user?.name || "You",
-        email: user?.email || "",
-        avatar: user?.avatar,
-        role: "Admin",
-        isOnline: true,
-      },
-    ];
-  }, [project, onlineUserIds, user]);
-
-  const activeOnlineCount = projectMembers.filter((m) => m.isOnline).length;
 
   if (isLoading) {
     return (
@@ -436,6 +598,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   }
 
   const typingArray = Object.values(typingUsers);
+  const totalRecipientsCount = Math.max(projectMembers.length - 1, 1);
 
   return (
     <div
@@ -475,7 +638,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* ── 1. Top Chat Header ── */}
         <div className="px-4 sm:px-6 py-3.5 border-b border-white/[0.06] bg-[#080b18]/80 backdrop-blur-md flex items-center justify-between gap-3 flex-shrink-0 z-20">
-          {/* Project Identity & Security Badges */}
+          {/* Project Identity & Presence Badges */}
           <div className="flex items-center gap-3 min-w-0">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md flex-shrink-0"
@@ -493,9 +656,12 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="font-mono text-emerald-400 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                  <span className="font-mono text-emerald-400 font-semibold">
                     {activeOnlineCount} online
                   </span>
                 </span>
@@ -524,7 +690,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
               <Search className="w-4 h-4" />
             </button>
 
-            {/* Members Drawer Toggle */}
+            {/* Interactive Members Drawer Toggle */}
             <button
               onClick={() => setShowMembersDrawer((prev) => !prev)}
               className={cn(
@@ -533,10 +699,11 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                   ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
                   : "bg-white/[0.03] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.06]"
               )}
+              title="View members & presence"
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 text-violet-400" />
               <span className="hidden sm:inline-block">Members</span>
-              <span className="text-[10px] font-mono bg-white/[0.06] px-1 rounded">
+              <span className="text-[10px] font-mono bg-white/[0.06] px-1.5 py-0.2 rounded text-slate-300">
                 {projectMembers.length}
               </span>
             </button>
@@ -550,7 +717,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="px-4 sm:px-6 py-2.5 bg-[#090d1e] border-b border-white/[0.06] flex items-center gap-2 overflow-hidden"
+              className="px-4 sm:px-6 py-2.5 bg-[#090d1e] border-b border-white/[0.06] flex items-center gap-2 overflow-hidden z-10"
             >
               <Search className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
               <input
@@ -571,7 +738,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                   setSearchQuery("");
                   setShowSearchBar(false);
                 }}
-                className="p-1 text-slate-400 hover:text-white"
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -604,7 +771,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-cyan-400" /> Realtime Sync
+                  <Sparkles className="w-3 h-3 text-cyan-400" /> Realtime Presence
                 </span>
               </div>
             </div>
@@ -629,7 +796,16 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 ) <
                   5 * 60 * 1000;
 
-              const reactions = localReactions[msg._id] || {};
+              const reactions = msg.reactions || {};
+              const readReceipts = msg.readBy || [];
+              const validReaders = readReceipts.filter((r) => {
+                const rId = typeof r.user === "object" ? r.user?._id : r.user;
+                return rId !== msg.sender?._id;
+              });
+              const isReadByAll = validReaders.length >= totalRecipientsCount && totalRecipientsCount > 0;
+              const isReadBySome = validReaders.length > 0;
+
+              const isHighlighted = highlightedMessageId === msg._id;
 
               return (
                 <React.Fragment key={msg._id || `msg-${index}`}>
@@ -647,18 +823,22 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                     </div>
                   )}
 
-                  {/* Message Item */}
+                  {/* Message Row */}
                   <motion.div
+                    ref={(el) => {
+                      messageRefs.current[msg._id] = el;
+                    }}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.15 }}
                     className={cn(
-                      "group relative flex gap-3 max-w-[88%] sm:max-w-[80%]",
+                      "group relative flex gap-3 max-w-[85%] sm:max-w-[78%] transition-all",
                       isMe ? "ml-auto flex-row-reverse" : "mr-auto",
-                      isSameSenderAsPrev ? "mt-1" : "mt-3.5"
+                      isSameSenderAsPrev ? "mt-1" : "mt-3.5",
+                      isHighlighted && "ring-2 ring-violet-500/70 rounded-2xl bg-violet-500/10 p-1"
                     )}
                   >
-                    {/* Avatar (only on non-grouped messages) */}
+                    {/* Avatar */}
                     {!isMe && (
                       <div className="w-8 flex-shrink-0">
                         {!isSameSenderAsPrev ? (
@@ -674,8 +854,8 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                       </div>
                     )}
 
-                    {/* Message Bubble Body */}
-                    <div className={cn("flex flex-col min-w-0", isMe ? "items-end" : "items-start")}>
+                    {/* Message Bubble Body Container */}
+                    <div className={cn("flex flex-col min-w-0 max-w-full", isMe ? "items-end" : "items-start")}>
                       {/* Sender Header */}
                       {!isSameSenderAsPrev && (
                         <div
@@ -698,101 +878,155 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                         </div>
                       )}
 
-                      {/* Main Message Bubble */}
-                      <div
-                        className={cn(
-                          "relative px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed shadow-sm break-words",
-                          isMe
-                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-sm"
-                            : "bg-[#0b0f22] border border-white/[0.08] text-slate-200 rounded-tl-sm"
-                        )}
-                      >
-                        {/* Quote Block if Reply */}
-                        {msg.content.startsWith("> Replying to") ? (
-                          <div className="p-2 rounded-lg bg-black/20 border-l-2 border-violet-400 text-[11px] mb-2 text-slate-300 italic">
-                            {msg.content.split("\n\n")[0]}
-                          </div>
-                        ) : null}
+                      {/* Message Bubble + Closely-Attached Floating Action Toolbar */}
+                      <div className="relative group/bubble max-w-full">
+                        {/* ── Contextual Action Toolbar (Attached directly to bubble) ── */}
+                        <div
+                          className={cn(
+                            "absolute -top-3.5 z-30 opacity-0 group-hover/bubble:opacity-100 transition-all duration-200 pointer-events-none group-hover/bubble:pointer-events-auto flex items-center gap-0.5 p-1 rounded-xl bg-[#090d1c] border border-white/[0.15] shadow-xl backdrop-blur-md",
+                            isMe ? "right-2" : "left-2"
+                          )}
+                        >
+                          {/* Reactions */}
+                          {["👍", "🚀", "❤️"].map((emoji) => {
+                            const hasReacted = (reactions[emoji] || []).includes(user?._id || "");
+                            return (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(msg._id, emoji)}
+                                className={cn(
+                                  "p-1 rounded-lg hover:bg-white/[0.1] text-xs transition-transform hover:scale-125 cursor-pointer",
+                                  hasReacted && "bg-violet-500/20"
+                                )}
+                                title={`React with ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            );
+                          })}
 
-                        {/* Render Message Text with formatted code/tickets */}
-                        <div className="whitespace-pre-wrap font-sans">
-                          {msg.content.startsWith("> Replying to")
-                            ? msg.content.split("\n\n").slice(1).join("\n\n")
-                            : msg.content}
+                          <div className="w-[1px] h-3 bg-white/[0.1] mx-0.5" />
+
+                          {/* Reply Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingTo(msg);
+                              textareaRef.current?.focus();
+                            }}
+                            className="p-1 rounded-lg hover:bg-white/[0.1] text-slate-400 hover:text-white transition-colors cursor-pointer"
+                            title="Reply to message"
+                          >
+                            <Reply className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Copy Text Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyMessage(msg._id, msg.content)}
+                            className="p-1 rounded-lg hover:bg-white/[0.1] text-slate-400 hover:text-white transition-colors cursor-pointer"
+                            title="Copy text"
+                          >
+                            {copiedMessageId === msg._id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+
+                          {/* Read Receipts Info (For own messages) */}
+                          {isMe && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMessageInfo(msg)}
+                              className="p-1 rounded-lg hover:bg-white/[0.1] text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                              title="Message Info / Read Receipts"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
 
-                        {/* Delivery Status for Own Messages */}
-                        {isMe && (
-                          <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-violet-200/70 font-mono">
-                            <span>{format(new Date(msg.createdAt), "h:mm a")}</span>
-                            {msg.isOptimistic ? (
-                              <Check className="w-2.5 h-2.5 text-violet-300 animate-pulse" />
-                            ) : (
-                              <CheckCheck className="w-3 h-3 text-cyan-300" />
-                            )}
+                        {/* Actual Message Bubble Card */}
+                        <div
+                          className={cn(
+                            "relative px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed shadow-sm break-words max-w-full",
+                            isMe
+                              ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-sm"
+                              : "bg-[#0b0f22] border border-white/[0.08] text-slate-200 rounded-tl-sm"
+                          )}
+                        >
+                          {/* Quote Block if Reply */}
+                          {msg.content.startsWith("> Replying to") ? (
+                            <div className="p-2 rounded-lg bg-black/25 border-l-2 border-violet-400 text-[11px] mb-2 text-slate-300 italic">
+                              {msg.content.split("\n\n")[0]}
+                            </div>
+                          ) : null}
+
+                          {/* Message Text Content */}
+                          <div className="whitespace-pre-wrap font-sans">
+                            {msg.content.startsWith("> Replying to")
+                              ? msg.content.split("\n\n").slice(1).join("\n\n")
+                              : msg.content}
                           </div>
-                        )}
+
+                          {/* Delivery & Read Receipts Indicator for Own Messages */}
+                          {isMe && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMessageInfo(msg)}
+                              className="flex items-center justify-end gap-1 mt-1 text-[9px] text-violet-200/80 font-mono hover:text-white transition-colors cursor-pointer ml-auto"
+                              title="Click for message info and read receipts"
+                            >
+                              <span>{format(new Date(msg.createdAt), "h:mm a")}</span>
+                              {msg.isOptimistic ? (
+                                <Check className="w-2.5 h-2.5 text-violet-300 animate-pulse" />
+                              ) : isReadByAll ? (
+                                <CheckCheck className="w-3.5 h-3.5 text-cyan-300 font-bold" />
+                              ) : isReadBySome ? (
+                                <span className="flex items-center gap-0.5 text-cyan-200">
+                                  <CheckCheck className="w-3 h-3 text-cyan-200" />
+                                  <span className="text-[8px] font-mono">
+                                    {validReaders.length}/{totalRecipientsCount}
+                                  </span>
+                                </span>
+                              ) : (
+                                <CheckCheck className="w-3 h-3 text-violet-300/60" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Emoji Reactions Pill Bar */}
+                      {/* Emoji Reactions Attached Directly Underneath Bubble */}
                       {Object.keys(reactions).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
-                          {Object.entries(reactions).map(([emoji, count]) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleAddReaction(msg._id, emoji)}
-                              className="px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] flex items-center gap-1 text-slate-300 transition-colors"
-                            >
-                              <span>{emoji}</span>
-                              <span className="font-mono text-[10px] text-slate-400">
-                                {count}
-                              </span>
-                            </button>
-                          ))}
+                          {Object.entries(reactions).map(([emoji, userIds]) => {
+                            if (!userIds || userIds.length === 0) return null;
+                            const hasReacted = userIds.includes(user?._id || "");
+                            return (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(msg._id, emoji)}
+                                className={cn(
+                                  "px-2 py-0.5 rounded-full border text-[11px] flex items-center gap-1 transition-all cursor-pointer active:scale-95",
+                                  hasReacted
+                                    ? "bg-violet-500/20 border-violet-500/40 text-violet-200 shadow-sm"
+                                    : "bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-slate-300"
+                                )}
+                                title={`Reacted by ${userIds.length} member(s)`}
+                              >
+                                <span>{emoji}</span>
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  {userIds.length}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
-                    </div>
-
-                    {/* Floating Hover Action Toolbar */}
-                    <div
-                      className={cn(
-                        "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5 p-1 rounded-xl bg-[#090d1c] border border-white/[0.12] shadow-xl",
-                        isMe ? "right-full mr-2" : "left-full ml-2"
-                      )}
-                    >
-                      {/* Reaction Shortcuts */}
-                      {["👍", "🚀", "❤️"].map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => handleAddReaction(msg._id, emoji)}
-                          className="p-1 rounded-lg hover:bg-white/[0.08] text-xs transition-transform hover:scale-125"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-
-                      <div className="w-[1px] h-3 bg-white/[0.1] mx-0.5" />
-
-                      {/* Reply Button */}
-                      <button
-                        onClick={() => {
-                          setReplyingTo(msg);
-                          textareaRef.current?.focus();
-                        }}
-                        className="p-1 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
-                        title="Reply to message"
-                      >
-                        <Reply className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Copy Text Button */}
-                      <button
-                        onClick={() => handleCopyMessage(msg.content)}
-                        className="p-1 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
-                        title="Copy text"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   </motion.div>
                 </React.Fragment>
@@ -853,7 +1087,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 <div className="flex items-center gap-2 min-w-0 text-xs">
                   <Reply className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                   <span className="text-violet-300 font-bold">
-                    Replying to {replyingTo.sender.name}:
+                    Replying to {replyingTo.sender?.name}:
                   </span>
                   <span className="text-slate-400 truncate">
                     &ldquo;{replyingTo.content}&rdquo;
@@ -861,7 +1095,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 </div>
                 <button
                   onClick={() => setReplyingTo(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -890,7 +1124,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                     onClick={() =>
                       setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
                     }
-                    className="p-0.5 hover:text-rose-400 transition-colors"
+                    className="p-0.5 hover:text-rose-400 transition-colors cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -985,7 +1219,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                               setShowEmojiPicker(false);
                               textareaRef.current?.focus();
                             }}
-                            className="p-1.5 rounded-lg hover:bg-white/[0.08] text-base transition-transform hover:scale-125"
+                            className="p-1.5 rounded-lg hover:bg-white/[0.08] text-base transition-transform hover:scale-125 cursor-pointer"
                           >
                             {emoji}
                           </button>
@@ -1012,7 +1246,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       </div>
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* ─── RIGHT COLLAPSIBLE DRAWER: Members & Workspace Context ─── */}
+      {/* ─── RIGHT COLLAPSIBLE DRAWER: Members & Presence List ─── */}
       {/* ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showMembersDrawer && (
@@ -1028,12 +1262,12 @@ export function ChatRoom({ projectId }: { projectId: string }) {
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-violet-400" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                  Project Members
+                  Members & Presence
                 </h3>
               </div>
               <button
                 onClick={() => setShowMembersDrawer(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -1041,9 +1275,10 @@ export function ChatRoom({ projectId }: { projectId: string }) {
 
             {/* Members List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              <span className="text-[10px] font-mono text-slate-500 uppercase px-2">
-                Online — {activeOnlineCount}
-              </span>
+              <div className="flex items-center justify-between px-2 py-1 text-[10px] font-mono text-slate-400 uppercase">
+                <span>Active Presence</span>
+                <span className="text-emerald-400 font-bold">{activeOnlineCount} Online</span>
+              </div>
 
               {projectMembers.map((m) => (
                 <div
@@ -1059,7 +1294,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                     <span
                       className={cn(
                         "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#080b18]",
-                        m.isOnline ? "bg-emerald-400" : "bg-slate-600"
+                        m.isOnline ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
                       )}
                     />
                   </div>
@@ -1067,9 +1302,13 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                     <p className="text-xs font-semibold text-slate-200 truncate">
                       {m.name}
                     </p>
-                    <span className="text-[10px] font-mono text-slate-400 capitalize">
-                      {m.role}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                      <span className={m.isOnline ? "text-emerald-400" : "text-slate-500"}>
+                        {m.isOnline ? "Online" : "Offline"}
+                      </span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-slate-400 capitalize">{m.role}</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1077,7 +1316,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
               {/* Workspace Info Card */}
               <div className="mt-6 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-2">
                 <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
-                  Channel Properties
+                  Channel Security
                 </span>
                 <div className="flex items-center justify-between text-xs text-slate-300">
                   <span className="text-slate-500">Method</span>
@@ -1096,6 +1335,146 @@ export function ChatRoom({ projectId }: { projectId: string }) {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* ─── MESSAGE INFO / READ RECEIPTS MODAL ─── */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {selectedMessageInfo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-[#090d1e] border border-white/[0.12] rounded-3xl p-6 shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Info className="w-4 h-4 text-violet-400" />
+                  <h3 className="text-sm font-bold text-white">Message Info & Read Receipts</h3>
+                </div>
+                <button
+                  onClick={() => setSelectedMessageInfo(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Message Snippet */}
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] mb-4">
+                <p className="text-xs text-slate-200 line-clamp-3 font-sans">
+                  {selectedMessageInfo.content}
+                </p>
+                <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400 font-mono">
+                  <Clock className="w-3 h-3 text-slate-500" />
+                  <span>Sent {format(new Date(selectedMessageInfo.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
+                </div>
+              </div>
+
+              {/* Read Receipts Breakdown */}
+              {(() => {
+                const readers = (selectedMessageInfo.readBy || []).filter((r) => {
+                  const rId = typeof r.user === "object" ? r.user?._id : r.user;
+                  return rId !== selectedMessageInfo.sender?._id;
+                });
+
+                const readUserIds = new Set(
+                  readers.map((r) => (typeof r.user === "object" ? r.user?._id : r.user))
+                );
+
+                const unreadMembers = projectMembers.filter(
+                  (m) => m._id !== selectedMessageInfo.sender?._id && !readUserIds.has(m._id)
+                );
+
+                return (
+                  <div className="space-y-4 max-h-60 overflow-y-auto pr-1">
+                    {/* Seen Section */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-cyan-300 mb-2">
+                        <span className="flex items-center gap-1 font-bold">
+                          <CheckCheck className="w-3.5 h-3.5 text-cyan-400" />
+                          Read by ({readers.length}/{totalRecipientsCount})
+                        </span>
+                      </div>
+                      {readers.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic px-2">No recipients have read this message yet.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {readers.map((r, idx) => {
+                            const u =
+                              typeof r.user === "object"
+                                ? r.user
+                                : projectMembers.find((m) => m._id === r.user) || {
+                                    _id: r.user,
+                                    name: "Team Member",
+                                  };
+                            return (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between p-2 rounded-xl bg-cyan-500/[0.04] border border-cyan-500/15 text-xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img
+                                    src={u?.avatar || generateAvatar(u?.name || "U")}
+                                    alt={u?.name}
+                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-cyan-400/30"
+                                  />
+                                  <span className="font-semibold text-slate-200 truncate">{u?.name}</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {r.readAt ? format(new Date(r.readAt), "h:mm a") : "Read"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Unread Section */}
+                    {unreadMembers.length > 0 && (
+                      <div>
+                        <div className="text-[11px] font-mono text-slate-400 mb-2 font-bold">
+                          Not read yet ({unreadMembers.length})
+                        </div>
+                        <div className="space-y-1.5">
+                          {unreadMembers.map((m) => (
+                            <div
+                              key={m._id}
+                              className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-xs opacity-70"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <img
+                                  src={m.avatar || generateAvatar(m.name)}
+                                  alt={m.name}
+                                  className="w-6 h-6 rounded-full object-cover ring-1 ring-white/[0.08]"
+                                />
+                                <span className="font-medium text-slate-300 truncate">{m.name}</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-500">Delivered</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setSelectedMessageInfo(null)}
+                className="w-full mt-5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold text-white transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

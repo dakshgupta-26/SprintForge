@@ -22,7 +22,8 @@ export const getMessages = async (req: any, res: Response) => {
     const messages = await Message.find({ project: projectId })
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate('sender', 'name email avatar role');
+      .populate('sender', 'name email avatar role')
+      .populate('readBy.user', 'name avatar email');
 
     // Decrypt messages before sending them to the client
     const decryptedMessages = messages.map((msg) => {
@@ -32,6 +33,8 @@ export const getMessages = async (req: any, res: Response) => {
         project: msg.project,
         sender: msg.sender,
         content: decryptedContent,
+        readBy: msg.readBy || [],
+        reactions: msg.reactions || {},
         createdAt: msg.createdAt,
         updatedAt: msg.updatedAt,
       };
