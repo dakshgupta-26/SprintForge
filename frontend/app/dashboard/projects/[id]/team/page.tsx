@@ -1,470 +1,748 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useProjectStore } from "@/lib/store/projectStore";
-import { projectAPI, teamsAPI } from "@/lib/api";
-import { motion } from "framer-motion";
+import { useAuthStore } from "@/lib/store/authStore";
+import { projectAPI, taskAPI, sprintAPI } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  UserPlus, Trash2, Crown, Shield, Eye, Users, Loader2,
-  Search, Mail, Copy, RefreshCw, Link2, CheckCircle2, LogIn,
+  UserPlus,
+  Crown,
+  Shield,
+  Eye,
+  Users,
+  Loader2,
+  Search,
+  Mail,
+  Copy,
+  RefreshCw,
+  Link2,
+  CheckCircle2,
+  LogIn,
+  Zap,
+  Radio,
+  SlidersHorizontal,
+  ChevronRight,
+  Flame,
+  ArrowRight,
+  Sparkles,
+  Check,
+  Calendar,
+  Layers,
+  Settings,
 } from "lucide-react";
-import { generateAvatar, formatDate } from "@/lib/utils";
+import { generateAvatar, formatDate, cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+import { InviteMemberModal } from "@/components/team/InviteMemberModal";
+import { ManageMemberModal } from "@/components/team/ManageMemberModal";
 
 const ROLE_ICONS = { admin: Crown, member: Shield, viewer: Eye } as const;
-const ROLE_COLORS = {
-  admin: "text-yellow-500 bg-yellow-500/10",
-  member: "text-blue-500 bg-blue-500/10",
-  viewer: "text-gray-500 bg-gray-500/10",
+const ROLE_BADGES = {
+  admin: "text-amber-400 bg-amber-500/10 border-amber-500/25",
+  member: "text-violet-400 bg-violet-500/10 border-violet-500/25",
+  viewer: "text-slate-400 bg-slate-500/10 border-slate-500/25",
 } as const;
 
 export default function TeamPage() {
-  const { id } = useParams<{ id: string }>();
-  // Layout already loaded currentProject — we just refresh after mutations
+  const { id: projectId } = useParams<{ id: string }>();
+  const router = useRouter();
   const { currentProject, fetchProject, joinWithCode } = useProjectStore();
+  const { user: currentUser } = useAuthStore();
 
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("member");
-  const [isInviting, setIsInviting] = useState(false);
+  // Modal states
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [managingMember, setManagingMember] = useState<any | null>(null);
+
+  // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<"all" | "online" | "admin" | "member">("all");
+
+  // Real-time presence
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+
+  // Project tasks & active sprint context
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [activeSprint, setActiveSprint] = useState<any | null>(null);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+
+  // Join-code state
   const [codeCopied, setCodeCopied] = useState(false);
-
-  // Role editor
-  const [editingMember, setEditingMember] = useState<string | null>(null);
-  const [editedRole, setEditedRole] = useState("");
-  const [editedPermissions, setEditedPermissions] = useState<string[]>([]);
-
-  // Join-code states
+  const [linkCopied, setLinkCopied] = useState(false);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [joinInput, setJoinInput] = useState("");
   const [isJoining, setIsJoining] = useState(false);
 
-  // Only fetch invites (not project — layout already did that)
+  // Refresh pending invites
   const refreshInvites = useCallback(async () => {
     try {
-      const res = await projectAPI.getPendingInvites(id);
-      setPendingInvites(res.data);
-    } catch {}
-  }, [id]);
-
-  useEffect(() => {
-    refreshInvites();
-  }, [refreshInvites]);
-
-  // User search debounce
-  useEffect(() => {
-    if (searchQuery.trim().length < 2) { 
-      setSearchResults([]); 
-      setIsSearching(false);
-      return; 
+      const res = await projectAPI.getPendingInvites(projectId);
+      setPendingInvites(res.data || []);
+    } catch {
+      setPendingInvites([]);
     }
-    const timeout = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const { data } = await teamsAPI.search(searchQuery.trim());
-        setSearchResults(data || []);
-      } catch {
-        setSearchResults([]);
-      } finally { 
-        setIsSearching(false); 
-      }
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [projectId]);
 
-  /* ── Actions ── */
+  // Load project context (tasks, active sprint, invites)
+  useEffect(() => {
+    fetchProject(projectId);
+    refreshInvites();
 
-  const invite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-    setIsInviting(true);
-    try {
-      await projectAPI.invite(id, { email, role });
-      toast.success(`Invitation sent to ${email}!`);
-      setEmail("");
-      fetchProject(id);
+    // Fetch tasks to calculate member workloads
+    taskAPI
+      .getAll({ project: projectId })
+      .then((res) => setTasks(res.data || []))
+      .catch(() => setTasks([]));
+
+    // Fetch sprints to find active sprint
+    sprintAPI
+      .getAll(projectId)
+      .then((res) => {
+        const active = (res.data || []).find((s: any) => s.status === "active");
+        setActiveSprint(active || null);
+      })
+      .catch(() => setActiveSprint(null));
+  }, [projectId, fetchProject, refreshInvites]);
+
+  // ── Socket.IO Real-Time Presence & Updates ──
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !projectId || !currentUser?._id) return;
+
+    // Join the project room and announce presence
+    socket.emit("join:project", { projectId, userId: currentUser._id });
+
+    const handlePresenceSync = (data: { onlineUserIds: string[] }) => {
+      if (data?.onlineUserIds) setOnlineUserIds(data.onlineUserIds);
+    };
+    const handlePresenceUpdate = (data: { onlineUserIds: string[] }) => {
+      if (data?.onlineUserIds) setOnlineUserIds(data.onlineUserIds);
+    };
+    const handleMemberJoined = () => {
+      fetchProject(projectId);
       refreshInvites();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to invite member");
-    } finally { setIsInviting(false); }
-  };
+    };
+    const handleMemberUpdated = () => {
+      fetchProject(projectId);
+    };
 
-  const removeMember = async (userId: string, name: string) => {
-    if (!confirm(`Remove ${name} from the project?`)) return;
-    try {
-      await projectAPI.removeMember(id, userId);
-      toast.success("Member removed");
-      fetchProject(id);
-    } catch { toast.error("Failed to remove member"); }
-  };
+    socket.on("presence:sync", handlePresenceSync);
+    socket.on("presence:update", handlePresenceUpdate);
+    socket.on("project:member_joined", handleMemberJoined);
+    socket.on("project:member_updated", handleMemberUpdated);
 
+    return () => {
+      socket.off("presence:sync", handlePresenceSync);
+      socket.off("presence:update", handlePresenceUpdate);
+      socket.off("project:member_joined", handleMemberJoined);
+      socket.off("project:member_updated", handleMemberUpdated);
+    };
+  }, [projectId, currentUser?._id, fetchProject, refreshInvites]);
+
+  // Calculate current user's role in this project
+  const members = currentProject?.members || [];
+  const currentMemberRecord = members.find(
+    (m: any) => m.user?._id === currentUser?._id || m.user === currentUser?._id
+  );
+  const isOwner =
+    currentProject?.owner?._id === currentUser?._id ||
+    currentProject?.owner === currentUser?._id;
+  const isAdminOrOwner = isOwner || currentMemberRecord?.role === "admin";
+
+  // Task count per member
+  const memberTaskCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    tasks.forEach((t) => {
+      if (t.status !== "done" && Array.isArray(t.assignees)) {
+        t.assignees.forEach((a: any) => {
+          const aId = typeof a === "object" ? a._id : a;
+          counts[aId] = (counts[aId] || 0) + 1;
+        });
+      }
+    });
+    return counts;
+  }, [tasks]);
+
+  // Online count
+  const onlineCount = useMemo(() => {
+    return members.filter((m: any) => onlineUserIds.includes(m.user?._id)).length;
+  }, [members, onlineUserIds]);
+
+  // Filtered members list
+  const filteredMembers = useMemo(() => {
+    return members.filter((member: any) => {
+      const u = member.user;
+      if (!u) return false;
+
+      // Text search
+      const q = searchQuery.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        u.name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q);
+
+      if (!matchSearch) return false;
+
+      // Filter tabs
+      if (activeFilter === "online") return onlineUserIds.includes(u._id);
+      if (activeFilter === "admin") return member.role === "admin";
+      if (activeFilter === "member") return member.role === "member";
+      return true;
+    });
+  }, [members, searchQuery, activeFilter, onlineUserIds]);
+
+  // ── Join Code Actions ──
   const handleGenerateCode = async () => {
     setIsGeneratingCode(true);
     try {
-      await projectAPI.generateJoinCode(id);
-      toast.success("Join code generated!");
-      fetchProject(id);           // Refresh so joinCode appears in UI
+      await projectAPI.generateJoinCode(projectId);
+      toast.success("New join code generated! 🚀");
+      fetchProject(projectId);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to generate code");
-    } finally { setIsGeneratingCode(false); }
+    } finally {
+      setIsGeneratingCode(false);
+    }
   };
 
   const handleDisableCode = async () => {
-    if (!confirm("Disable the join code? Existing users who haven't joined yet won't be able to use it.")) return;
+    if (!confirm("Disable this join code? New members won't be able to join using it."))
+      return;
     try {
-      await projectAPI.disableJoinCode(id);
+      await projectAPI.disableJoinCode(projectId);
       toast.success("Join code disabled");
-      fetchProject(id);
-    } catch { toast.error("Failed to disable code"); }
+      fetchProject(projectId);
+    } catch {
+      toast.error("Failed to disable code");
+    }
   };
 
   const copyCode = () => {
     if (!currentProject?.joinCode) return;
     navigator.clipboard.writeText(currentProject.joinCode);
     setCodeCopied(true);
-    toast.success("Code copied to clipboard!");
+    toast.success("Join code copied to clipboard!");
     setTimeout(() => setCodeCopied(false), 2000);
   };
 
-  const handleJoinWithCode = async (e: React.FormEvent) => {
+  const copyJoinLink = () => {
+    if (!currentProject?.joinCode) return;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const joinUrl = `${origin}/join?code=${currentProject.joinCode}`;
+    navigator.clipboard.writeText(joinUrl);
+    setLinkCopied(true);
+    toast.success("Direct join link copied!");
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const handleJoinAnotherProject = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = joinInput.trim().toUpperCase();
     if (!cleanCode) return;
     setIsJoining(true);
     try {
       const res = await joinWithCode(cleanCode);
-      toast.success(res?.message || "Successfully joined the project!");
+      toast.success(res?.message || "Successfully joined project! 🎉");
       setJoinInput("");
-      fetchProject(id);
+      fetchProject(projectId);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.message || "Invalid or expired code");
-    } finally { setIsJoining(false); }
-  };
-
-  const saveRoleUpdate = async (userId: string) => {
-    try {
-      await projectAPI.updateMemberRole(id, userId, { role: editedRole, permissions: editedPermissions });
-      toast.success("Member role updated");
-      setEditingMember(null);
-      fetchProject(id);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to update role");
+    } finally {
+      setIsJoining(false);
     }
   };
 
-  const members = currentProject?.members || [];
-  const filteredResults = searchResults.filter(
-    (u) => !members.some((m: any) => m.user._id === u._id)
-  );
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-xl font-bold">Team</h1>
-        <p className="text-sm text-muted-foreground">
-          {currentProject?.name} • {members.length} members
-        </p>
-      </motion.div>
-
-      {/* ── Invite Form ── */}
-      <div className="p-5 rounded-2xl border border-border bg-card">
-        <h2 className="font-bold mb-4 flex items-center gap-2">
-          <UserPlus className="w-4 h-4 text-primary" /> Invite Team Member
-        </h2>
-        <form onSubmit={invite} className="flex items-end gap-3">
-          <div className="flex-1 relative">
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email address</label>
-            <input
-              type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="colleague@company.com" required
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          <div className="w-36">
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
-              <option value="admin">Admin</option>
-              <option value="member">Member</option>
-              <option value="viewer">Viewer</option>
-            </select>
-          </div>
-          <button type="submit" disabled={isInviting}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-60">
-            {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Invite</>}
-          </button>
-        </form>
-
-        {/* User search */}
-        <div className="mt-4 relative">
-          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Or search existing users</label>
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by name or email…"
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          
-          {(searchQuery.trim().length >= 2 || isSearching) && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-xl z-20 overflow-hidden max-h-60 overflow-y-auto">
-              {isSearching ? (
-                <div className="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Searching...
-                </div>
-              ) : filteredResults.length > 0 ? (
-                filteredResults.map((user) => (
-                  <button key={user._id} type="button" onClick={() => { setEmail(user.email); setSearchResults([]); setSearchQuery(""); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-left border-b border-border last:border-0">
-                    <img src={user.avatar || generateAvatar(user.name)} alt={user.name} className="w-7 h-7 rounded-full" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{user.name}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="p-4 text-center text-sm text-muted-foreground">
-                  No users found
-                </div>
-              )}
+    <div className="max-w-6xl mx-auto space-y-8 pb-16">
+      {/* ── 1. PAGE HEADER ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/[0.06]">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div
+              className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+              style={{ backgroundColor: currentProject?.color || "#6366f1" }}
+            >
+              {currentProject?.key?.charAt(0) || "T"}
             </div>
-          )}
+            <span className="text-xs font-mono font-bold text-slate-400">
+              {currentProject?.name || "PROJECT"}
+            </span>
+            <span className="text-slate-600">•</span>
+            <span className="text-xs text-slate-400 font-mono">
+              {members.length} member{members.length === 1 ? "" : "s"}
+            </span>
+            {onlineCount > 0 && (
+              <>
+                <span className="text-slate-600">•</span>
+                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {onlineCount} online
+                </span>
+              </>
+            )}
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Team
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+            Build together. Manage your engineering team, access roles, and permissions.
+          </p>
+        </div>
+
+        {isAdminOrOwner && (
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(124,92,255,0.35)] hover:shadow-[0_0_28px_rgba(124,92,255,0.55)] transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Invite Member</span>
+          </button>
+        )}
+      </div>
+
+      {/* ── 2. TEAM OVERVIEW METRICS STRIP ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="p-4 rounded-2xl bg-[#090d1f] border border-white/[0.08] shadow-sm">
+          <p className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+            Team Members
+          </p>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-black text-white">{members.length}</span>
+            <span className="text-xs text-slate-500 font-mono">collaborators</span>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#090d1f] border border-white/[0.08] shadow-sm">
+          <p className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+            Online Now
+          </p>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-black text-emerald-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {onlineCount}
+            </span>
+            <span className="text-xs text-slate-500 font-mono">active sockets</span>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#090d1f] border border-white/[0.08] shadow-sm">
+          <p className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+            Pending Invites
+          </p>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-black text-amber-400">
+              {pendingInvites.length}
+            </span>
+            <span className="text-xs text-slate-500 font-mono">awaiting join</span>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#090d1f] border border-white/[0.08] shadow-sm">
+          <p className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+            Your Project Role
+          </p>
+          <div className="flex items-center gap-1.5 mt-1">
+            {isOwner ? (
+              <span className="text-xs font-mono font-bold uppercase text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <Crown className="w-3 h-3" /> Owner
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "text-xs font-mono font-bold uppercase px-2.5 py-0.5 rounded-full border flex items-center gap-1",
+                  ROLE_BADGES[currentMemberRecord?.role as keyof typeof ROLE_BADGES] ||
+                    "text-slate-400 bg-slate-500/10 border-slate-500/20"
+                )}
+              >
+                <Shield className="w-3 h-3" /> {currentMemberRecord?.role || "Member"}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Project Join Code Panel ── */}
-      <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-bold flex items-center gap-2 text-primary">
-              <Link2 className="w-4 h-4" /> Project Join Code
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {currentProject?.joinCodeEnabled
-                ? "Anyone with this code can instantly join the project."
-                : "Generate a code to let users join instantly without an email invite."}
+      {/* ── 3. REAL-TIME TEAM PRESENCE STRIP ── */}
+      {onlineCount > 0 && (
+        <div className="p-4 rounded-2xl bg-[#080c1d] border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span>Active Team Presence ({onlineCount} online)</span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {members
+              .filter((m: any) => onlineUserIds.includes(m.user?._id))
+              .map((m: any) => {
+                const u = m.user;
+                return (
+                  <div
+                    key={u._id}
+                    className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs"
+                  >
+                    <div className="relative">
+                      <img
+                        src={u.avatar || generateAvatar(u.name)}
+                        alt={u.name}
+                        className="w-5 h-5 rounded-full object-cover"
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-[#080c1d]" />
+                    </div>
+                    <span className="text-white font-medium text-xs">{u.name}</span>
+                    <span className="text-[10px] font-mono text-emerald-400">Online</span>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 4. MAIN TEAM MEMBERS DIRECTORY ── */}
+      <div className="space-y-4">
+        {/* Search & Filter Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search members by name or email..."
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-white/[0.08] bg-[#060914] text-white text-xs sm:text-sm focus:outline-none focus:border-violet-500/70 focus:ring-2 focus:ring-violet-500/20 transition-all placeholder:text-slate-600"
+            />
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            {[
+              { id: "all", label: `All (${members.length})` },
+              { id: "online", label: `Online (${onlineCount})` },
+              {
+                id: "admin",
+                label: `Admins (${members.filter((m: any) => m.role === "admin").length})`,
+              },
+              {
+                id: "member",
+                label: `Members (${members.filter((m: any) => m.role === "member").length})`,
+              },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setActiveFilter(f.id as any)}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+                  activeFilter === f.id
+                    ? "bg-violet-600 text-white shadow-[0_0_12px_rgba(124,92,255,0.4)]"
+                    : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-400 border border-white/[0.06]"
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Members Directory List */}
+        {filteredMembers.length === 0 ? (
+          <div className="p-10 rounded-3xl bg-[#090d1f] border border-white/[0.08] text-center space-y-2">
+            <p className="text-sm font-bold text-white">No teammates found</p>
+            <p className="text-xs text-slate-500">
+              Try adjusting your search query or filter criteria.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04] rounded-3xl border border-white/[0.08] bg-[#090d1f] shadow-lg overflow-hidden">
+            {filteredMembers.map((member: any) => {
+              const u = member.user;
+              const isUserOnline = onlineUserIds.includes(u?._id);
+              const RoleIcon = ROLE_ICONS[member.role?.toLowerCase() as keyof typeof ROLE_ICONS] || Shield;
+              const activeTaskCount = memberTaskCounts[u?._id] || 0;
+              const isMemberOwner = currentProject?.owner?._id === u?._id || currentProject?.owner === u?._id;
+
+              return (
+                <div
+                  key={u?._id || Math.random()}
+                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors group"
+                >
+                  {/* Left: Identity */}
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={u?.avatar || generateAvatar(u?.name || "U")}
+                        alt={u?.name}
+                        className="w-11 h-11 rounded-2xl object-cover border border-white/[0.1]"
+                      />
+                      <span
+                        className={cn(
+                          "absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-[#090d1f]",
+                          isUserOnline ? "bg-emerald-500" : "bg-slate-600"
+                        )}
+                        title={isUserOnline ? "Online now" : "Offline"}
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="text-sm font-bold text-white truncate">
+                          {u?.name}
+                        </h3>
+                        {currentUser?._id === u?._id && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                            You
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-mono text-slate-400 truncate">
+                        {u?.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Center: Workload & Online Status */}
+                  <div className="flex items-center gap-4 sm:gap-6 text-xs font-mono text-slate-400 flex-shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "w-2 h-2 rounded-full",
+                          isUserOnline ? "bg-emerald-400 animate-pulse" : "bg-slate-600"
+                        )}
+                      />
+                      <span className={isUserOnline ? "text-emerald-400 font-semibold" : "text-slate-500"}>
+                        {isUserOnline ? "Online" : "Offline"}
+                      </span>
+                    </div>
+
+                    <div className="hidden md:flex items-center gap-1 text-slate-400">
+                      <span>{activeTaskCount} active task{activeTaskCount === 1 ? "" : "s"}</span>
+                    </div>
+
+                    {/* Role Badge */}
+                    <span
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-mono font-bold px-2.5 py-1 rounded-full border capitalize",
+                        isMemberOwner
+                          ? "text-amber-400 bg-amber-500/10 border-amber-500/25"
+                          : ROLE_BADGES[member.role?.toLowerCase() as keyof typeof ROLE_BADGES] ||
+                              "text-slate-400 bg-slate-500/10 border-slate-500/20"
+                      )}
+                    >
+                      <RoleIcon className="w-3.5 h-3.5" />
+                      {isMemberOwner ? "Owner" : member.role}
+                    </span>
+
+                    {/* Action button */}
+                    {isAdminOrOwner && !isMemberOwner && (
+                      <button
+                        onClick={() => setManagingMember(member)}
+                        className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                      >
+                        Manage
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 5. CURRENT SPRINT & TEAM CONTEXT STRIP ── */}
+      {activeSprint && (
+        <div className="p-5 rounded-3xl bg-gradient-to-r from-violet-900/15 via-[#090d1f] to-transparent border border-violet-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono font-bold uppercase text-violet-400 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded-full">
+                Active Sprint Context
+              </span>
+              <h4 className="text-sm font-bold text-white">{activeSprint.name}</h4>
+            </div>
+            <p className="text-xs text-slate-400">
+              {activeSprint.tasks?.length || 0} total tasks • {activeSprint.velocity || activeSprint.completedPoints || 0} story points load
             </p>
           </div>
 
-          {/* Code display or Generate button */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() =>
+              router.push(`/dashboard/projects/${projectId}/sprints/${activeSprint._id}`)
+            }
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-violet-300 text-xs font-bold transition-all self-start sm:self-auto cursor-pointer"
+          >
+            <span>View Sprint Board</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ── 6. INVITE BY CODE SECTION (Clean & Compact) ── */}
+      <div className="p-6 rounded-3xl bg-[#090d1f] border border-white/[0.08] space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Link2 className="w-4 h-4 text-violet-400" />
+              <h3 className="text-sm font-bold text-white uppercase font-mono tracking-wider">
+                Invite Teammates by Code
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400">
+              Anyone with this 6-character code can instantly join {currentProject?.name}.
+            </p>
+          </div>
+
+          {/* Join code display & actions */}
+          <div className="flex items-center gap-2 flex-wrap">
             {currentProject?.joinCodeEnabled && currentProject?.joinCode ? (
               <>
-                <div className="px-4 py-2 bg-background border-2 border-primary/30 rounded-xl font-mono font-bold tracking-widest text-xl text-primary select-all">
+                <div className="px-4 py-2 bg-[#060914] border border-violet-500/40 rounded-2xl font-mono font-black tracking-widest text-lg text-violet-300 shadow-[0_0_15px_rgba(124,92,255,0.15)] select-all">
                   {currentProject.joinCode}
                 </div>
+
                 <button
-                  id="copy-join-code-btn"
                   onClick={copyCode}
-                  title="Copy code"
-                  className="p-2 rounded-xl border border-border bg-background hover:bg-muted transition-colors"
+                  title="Copy Code"
+                  className="p-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  {codeCopied
-                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    : <Copy className="w-4 h-4 text-muted-foreground" />}
+                  {codeCopied ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
                 </button>
+
                 <button
-                  id="regenerate-join-code-btn"
-                  onClick={handleGenerateCode}
-                  disabled={isGeneratingCode}
-                  title="Regenerate code"
-                  className="p-2 rounded-xl border border-border bg-background hover:bg-muted transition-colors disabled:opacity-60"
+                  onClick={copyJoinLink}
+                  title="Copy Direct Join Link"
+                  className="px-3 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
                 >
-                  <RefreshCw className={`w-4 h-4 text-muted-foreground ${isGeneratingCode ? "animate-spin" : ""}`} />
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>{linkCopied ? "Link Copied!" : "Copy Link"}</span>
                 </button>
-                <button
-                  id="disable-join-code-btn"
-                  onClick={handleDisableCode}
-                  className="text-xs text-red-500 hover:underline px-1"
-                >
-                  Disable
-                </button>
+
+                {isAdminOrOwner && (
+                  <>
+                    <button
+                      onClick={handleGenerateCode}
+                      disabled={isGeneratingCode}
+                      title="Regenerate code"
+                      className="p-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={cn(
+                          "w-4 h-4",
+                          isGeneratingCode && "animate-spin text-violet-400"
+                        )}
+                      />
+                    </button>
+                    <button
+                      onClick={handleDisableCode}
+                      className="text-xs text-rose-400 hover:underline px-1 cursor-pointer"
+                    >
+                      Disable
+                    </button>
+                  </>
+                )}
               </>
             ) : (
-              <button
-                id="generate-join-code-btn"
-                onClick={handleGenerateCode}
-                disabled={isGeneratingCode}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-60"
-              >
-                {isGeneratingCode
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <><RefreshCw className="w-4 h-4" /> Generate Code</>}
-              </button>
+              isAdminOrOwner && (
+                <button
+                  onClick={handleGenerateCode}
+                  disabled={isGeneratingCode}
+                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold shadow-[0_0_15px_rgba(124,92,255,0.4)] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isGeneratingCode ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  <span>Generate Join Code</span>
+                </button>
+              )
             )}
           </div>
         </div>
 
-        {/* ── Join with Code input ── */}
-        <div className="border-t border-primary/20 pt-4">
-          <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-            <LogIn className="w-3.5 h-3.5" /> Have a code? Join another project instantly:
+        {/* Join another project helper */}
+        <div className="pt-4 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+            <LogIn className="w-3.5 h-3.5 text-slate-500" />
+            <span>Have a code for another project?</span>
           </p>
-          <form onSubmit={handleJoinWithCode} className="flex gap-2">
+          <form
+            onSubmit={handleJoinAnotherProject}
+            className="flex items-center gap-2 w-full sm:w-auto"
+          >
             <input
-              id="join-with-code-input"
               value={joinInput}
               onChange={(e) => setJoinInput(e.target.value.toUpperCase())}
-              placeholder="Enter 6-character code…"
+              placeholder="ENTER 6-CHAR CODE..."
               maxLength={8}
-              className="flex-1 px-3.5 py-2 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#060914] text-white text-xs font-mono tracking-widest uppercase focus:outline-none focus:border-violet-500/70"
             />
             <button
-              id="submit-join-code-btn"
               type="submit"
               disabled={isJoining || joinInput.length < 4}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-all disabled:opacity-60"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1"
             >
-              {isJoining ? <Loader2 className="w-4 h-4 animate-spin" /> : <><LogIn className="w-4 h-4" /> Join</>}
+              {isJoining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Join"}
             </button>
           </form>
         </div>
       </div>
 
-      {/* ── Members List ── */}
-      <div className="p-5 rounded-2xl border border-border bg-card">
-        <h2 className="font-bold mb-4 flex items-center gap-2">
-          <Users className="w-4 h-4 text-primary" /> Project Members
-        </h2>
-        <div className="space-y-3">
-          {members.map((member: any) => {
-            const user = member.user;
-            const isEditing = editingMember === user._id;
-            const RoleIcon = ROLE_ICONS[member.role.toLowerCase() as keyof typeof ROLE_ICONS] || Shield;
-
-            return (
-              <div key={user?._id || Math.random()} className="flex flex-col gap-3 p-4 rounded-xl border border-border bg-background">
-                <div className="flex items-center gap-3">
-                  <img src={user?.avatar || generateAvatar(user?.name || "U")} alt={user?.name} className="w-9 h-9 rounded-full object-cover" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{user?.name}</p>
-                    <p className="text-xs text-muted-foreground">{user?.email}</p>
-                  </div>
-
-                  {!isEditing ? (
-                    <>
-                      <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full capitalize ${ROLE_COLORS[member.role.toLowerCase() as keyof typeof ROLE_COLORS] || "bg-muted text-muted-foreground"}`}>
-                        <RoleIcon className="w-3 h-3" /> {member.role}
-                      </span>
-                      {member.role !== "admin" && (
-                        <button onClick={() => {
-                          setEditingMember(user._id);
-                          setEditedRole(member.role);
-                          setEditedPermissions(member.permissions || []);
-                        }} className="text-xs text-primary hover:underline mx-2">
-                          Manage Roles
-                        </button>
-                      )}
-                      {member.role !== "admin" && (
-                        <button onClick={() => removeMember(user._id, user.name)}
-                          className="p-1.5 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 rounded-lg transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text" value={editedRole}
-                        onChange={(e) => setEditedRole(e.target.value)}
-                        placeholder="Role name…"
-                        className="px-2 py-1 border border-border rounded text-sm w-32"
-                      />
-                      <button onClick={() => saveRoleUpdate(user._id)} className="text-xs bg-primary text-white px-3 py-1 rounded">Save</button>
-                      <button onClick={() => setEditingMember(null)} className="text-xs text-muted-foreground hover:underline">Cancel</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Permissions */}
-                {(isEditing || member.permissions?.length > 0) && (
-                  <div className="ml-12 flex gap-2 flex-wrap">
-                    {(["view", "create", "edit", "delete", "manage"] as const).map((p) => {
-                      const hasP = isEditing ? editedPermissions.includes(p) : member.permissions?.includes(p);
-                      return (
-                        <div
-                          key={p}
-                          onClick={() => {
-                            if (!isEditing) return;
-                            setEditedPermissions((prev) =>
-                              prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-                            );
-                          }}
-                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border transition-all ${hasP
-                            ? "bg-green-500/10 border-green-500/20 text-green-600"
-                            : "bg-muted border-border text-muted-foreground opacity-50"
-                            } ${isEditing ? "cursor-pointer hover:opacity-100" : ""}`}
-                        >
-                          {p}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Pending Invites ── */}
+      {/* ── 7. PENDING INVITATIONS ── */}
       {pendingInvites.length > 0 && (
-        <div className="p-5 rounded-2xl border border-dashed border-border bg-card/50">
-          <h2 className="font-bold mb-4 flex items-center gap-2 text-muted-foreground">
-            <Mail className="w-4 h-4" /> Pending Invites ({pendingInvites.length})
-          </h2>
-          <div className="space-y-3">
+        <div className="p-6 rounded-3xl bg-[#090d1f] border border-dashed border-white/[0.12] space-y-4">
+          <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+            <Mail className="w-4 h-4" />
+            <span>Pending Invitations ({pendingInvites.length})</span>
+          </div>
+
+          <div className="divide-y divide-white/[0.04] bg-[#060914] rounded-2xl border border-white/[0.06] overflow-hidden">
             {pendingInvites.map((invite) => {
-              const clientUrl = typeof window !== "undefined" ? window.location.origin : "";
+              const clientUrl =
+                typeof window !== "undefined" ? window.location.origin : "";
               const inviteLink = `${clientUrl}/invite/${invite.token}`;
+
               return (
-                <div key={invite._id} className="p-4 rounded-xl bg-background border border-border space-y-3">
-                  {/* Top row */}
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold flex-shrink-0">
+                <div
+                  key={invite._id}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-violet-600/10 border border-violet-500/20 flex items-center justify-center text-violet-300 font-bold text-xs flex-shrink-0">
                       {invite.email.charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{invite.email}</p>
-                      <p className="text-xs text-muted-foreground">Expires {formatDate(invite.expiresAt, "short")}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">
+                        {invite.email}
+                      </p>
+                      <p className="text-[11px] font-mono text-slate-500">
+                        Expires {formatDate(invite.expiresAt, "short")}
+                      </p>
                     </div>
-                    <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 uppercase">Pending</span>
-                    <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full capitalize ${ROLE_COLORS[invite.role as keyof typeof ROLE_COLORS] || ""}`}>
-                      {invite.role}
-                    </span>
                   </div>
 
-                  {/* Code + copy actions */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* Short code badge */}
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
+                      Pending
+                    </span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 capitalize">
+                      {invite.role}
+                    </span>
                     {invite.code && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/20">
-                        <span className="text-xs text-muted-foreground">Code:</span>
-                        <span className="font-mono font-black text-primary tracking-widest text-sm">{invite.code}</span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(invite.code);
-                            toast.success("Code copied!");
-                          }}
-                          className="text-muted-foreground hover:text-primary transition-colors"
-                          title="Copy code"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.06] text-slate-300">
+                        Code: {invite.code}
+                      </span>
                     )}
-
-                    {/* Copy invite link */}
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(inviteLink);
                         toast.success("Invite link copied!");
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      className="px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-xs font-mono text-slate-300 transition-colors flex items-center gap-1 cursor-pointer"
                     >
-                      <Link2 className="w-3.5 h-3.5" /> Copy invite link
+                      <Link2 className="w-3 h-3" />
+                      <span>Copy Link</span>
                     </button>
                   </div>
                 </div>
@@ -473,6 +751,31 @@ export default function TeamPage() {
           </div>
         </div>
       )}
+
+      {/* ── Modals ── */}
+      <InviteMemberModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        projectId={projectId}
+        projectName={currentProject?.name}
+        projectColor={currentProject?.color}
+        existingMemberIds={members.map((m: any) => m.user?._id)}
+        onInviteSent={() => {
+          fetchProject(projectId);
+          refreshInvites();
+        }}
+      />
+
+      <ManageMemberModal
+        isOpen={!!managingMember}
+        onClose={() => setManagingMember(null)}
+        projectId={projectId}
+        member={managingMember}
+        isOwner={isOwner}
+        currentUserId={currentUser?._id}
+        onMemberUpdated={() => fetchProject(projectId)}
+        onMemberRemoved={() => fetchProject(projectId)}
+      />
     </div>
   );
 }
