@@ -101,7 +101,7 @@ function LoginForm() {
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setIsFocused("email")}
               onBlur={() => setIsFocused(null)}
-              placeholder="name@company.com"
+              placeholder="you@company.com"
               required
               autoComplete="email"
               className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
