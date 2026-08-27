@@ -1,77 +1,124 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  DropResult,
+} from "@hello-pangea/dnd";
 import { motion, AnimatePresence } from "framer-motion";
 import { taskAPI } from "@/lib/api";
-import { cn, PRIORITY_BG, STATUS_LABELS, STATUS_CARD_CLASS, formatDate, generateAvatar } from "@/lib/utils";
-import { Plus, MoreHorizontal, Paperclip, MessageCircle, Clock, Flag, X, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, AlertTriangle, Layers, X, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
-import { TaskDetailModal } from "./TaskDetailModal";
-import { CreateTaskModal } from "./CreateTaskModal";
+import { TaskCard } from "./TaskCard";
+import { TaskDetailDrawer } from "./TaskDetailDrawer";
 import { getSocket, joinProject, leaveProject } from "@/lib/socket";
 
 const COLUMNS = [
-  { id: "todo", label: "To Do", color: "#94a3b8" },
-  { id: "in_progress", label: "In Progress", color: "#6366f1" },
-  { id: "in_review", label: "In Review", color: "#8b5cf6" },
+  { id: "todo", label: "To Do", color: "#94a3b8", wipLimit: 8 },
+  { id: "in_progress", label: "In Progress", color: "#6366f1", wipLimit: 5 },
+  { id: "review", label: "In Review", color: "#8b5cf6", wipLimit: 4 },
   { id: "done", label: "Done", color: "#22c55e" },
-  { id: "blocked", label: "Blocked", color: "#ef4444" },
+  { id: "blocked", label: "Blocked", color: "#f43f5e", wipLimit: 3 },
 ];
 
 interface KanbanBoardProps {
   projectId: string;
   sprintId?: string;
-  filter?: { search: string; priority: string };
+  searchQuery?: string;
+  quickFilter?: string;
+  priorityFilter?: string;
+  sortBy?: string;
+  density?: "comfortable" | "compact";
+  projectMembers?: any[];
+  sprints?: any[];
+  currentUser?: any;
+  onCountsChange?: (counts: any) => void;
 }
 
-export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
+export function KanbanBoard({
+  projectId,
+  sprintId,
+  searchQuery = "",
+  quickFilter = "all",
+  priorityFilter = "all",
+  sortBy = "default",
+  density = "comfortable",
+  projectMembers = [],
+  sprints = [],
+  currentUser,
+  onCountsChange,
+}: KanbanBoardProps) {
   const [columns, setColumns] = useState<Record<string, any[]>>({
-    todo: [], in_progress: [], in_review: [], done: [], blocked: [],
+    todo: [],
+    in_progress: [],
+    review: [],
+    done: [],
+    blocked: [],
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
-  const [createColumn, setCreateColumn] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // Inline Quick Add per column
+  const [quickAddColumn, setQuickAddColumn] = useState<string | null>(null);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [isQuickAdding, setIsQuickAdding] = useState(false);
 
   const loadTasks = useCallback(async () => {
     try {
       setIsLoading(true);
       const params: any = { project: projectId };
       if (sprintId) params.sprint = sprintId;
+
       const { data } = await taskAPI.getAll(params);
-      const grouped: Record<string, any[]> = { todo: [], in_progress: [], in_review: [], done: [], blocked: [] };
+      const grouped: Record<string, any[]> = {
+        todo: [],
+        in_progress: [],
+        review: [],
+        done: [],
+        blocked: [],
+      };
+
       data.forEach((task: any) => {
-        const col = task.boardColumn || task.status || "todo";
+        let col = task.boardColumn || task.status || "todo";
+        if (col === "in_review") col = "review";
         if (!grouped[col]) grouped[col] = [];
         grouped[col].push(task);
       });
+
       Object.keys(grouped).forEach((key) => {
         grouped[key].sort((a, b) => (a.boardOrder || 0) - (b.boardOrder || 0));
       });
+
       setColumns(grouped);
-    } catch (err) {
-      toast.error("Failed to load tasks");
+    } catch {
+      toast.error("Failed to load board tasks");
     } finally {
       setIsLoading(false);
     }
   }, [projectId, sprintId]);
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
-  // ─── Real-time socket subscriptions ──────────────────────────────────────
+  // ── Real-Time Socket.IO Synchronization ──
   useEffect(() => {
     joinProject(projectId);
     const socket = getSocket();
+    if (!socket) return;
 
-    // Another user created a task → add it to the correct column
     const onTaskCreated = (newTask: any) => {
-      const col = newTask.boardColumn || newTask.status || "todo";
+      let col = newTask.boardColumn || newTask.status || "todo";
+      if (col === "in_review") col = "review";
       setColumns((prev) => ({
         ...prev,
         [col]: [newTask, ...(prev[col] || [])],
       }));
     };
 
-    // A task was updated (title, assignee, priority, etc.)
     const onTaskUpdated = (updated: any) => {
       setColumns((prev) => {
         const next = { ...prev };
@@ -84,25 +131,27 @@ export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
       });
     };
 
-    // A task was dragged to a new column
     const onTaskMoved = ({ taskId, boardColumn, boardOrder, status }: any) => {
       setColumns((prev) => {
-        // Find the task in any column
         let movedTask: any = null;
         const next: Record<string, any[]> = {};
         Object.keys(prev).forEach((col) => {
-          const filtered = prev[col].filter((t) => {
-            if (t._id === taskId) { movedTask = t; return false; }
+          next[col] = prev[col].filter((t) => {
+            if (t._id === taskId) {
+              movedTask = t;
+              return false;
+            }
             return true;
           });
-          next[col] = filtered;
         });
+
         if (movedTask && boardColumn) {
-          const col = boardColumn;
+          let col = boardColumn;
+          if (col === "in_review") col = "review";
           if (!next[col]) next[col] = [];
-          const updated = { ...movedTask, boardColumn, status: status || boardColumn };
+          const updated = { ...movedTask, boardColumn: col, status: status || col };
           next[col] = [...next[col]];
-          next[col].splice(Math.min(boardOrder, next[col].length), 0, updated);
+          next[col].splice(Math.min(boardOrder || 0, next[col].length), 0, updated);
         }
         return next;
       });
@@ -110,23 +159,35 @@ export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
 
     socket.on("task:created", onTaskCreated);
     socket.on("task:updated", onTaskUpdated);
-    socket.on("task:moved",   onTaskMoved);
+    socket.on("task:moved", onTaskMoved);
 
     return () => {
       leaveProject(projectId);
       socket.off("task:created", onTaskCreated);
       socket.off("task:updated", onTaskUpdated);
-      socket.off("task:moved",   onTaskMoved);
+      socket.off("task:moved", onTaskMoved);
     };
   }, [projectId]);
 
+  // ── Drag and Drop Handler ──
   const onDragEnd = async (result: DropResult) => {
     const { source, destination, draggableId } = result;
     if (!destination) return;
-    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
+      return;
+    }
+
+    const previousColumns = { ...columns };
 
     const srcCol = Array.from(columns[source.droppableId] || []);
-    const dstCol = source.droppableId === destination.droppableId ? srcCol : Array.from(columns[destination.droppableId] || []);
+    const dstCol =
+      source.droppableId === destination.droppableId
+        ? srcCol
+        : Array.from(columns[destination.droppableId] || []);
+
     const [moved] = srcCol.splice(source.index, 1);
     dstCol.splice(destination.index, 0, moved);
 
@@ -138,27 +199,141 @@ export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
 
     try {
       await taskAPI.updateStatus(draggableId, {
-        status: destination.droppableId === "in_progress" ? "in_progress" : destination.droppableId,
+        status: destination.droppableId,
         boardColumn: destination.droppableId,
         boardOrder: destination.index,
       });
     } catch {
-      toast.error("Failed to update task");
-      loadTasks();
+      toast.error("Failed to move task. Position reverted.");
+      setColumns(previousColumns);
     }
   };
 
+  // ── Inline Quick Add Handler ──
+  const handleQuickAdd = async (columnId: string, e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTitle.trim()) return;
+
+    setIsQuickAdding(true);
+    try {
+      const { data: newTask } = await taskAPI.create({
+        title: quickTitle.trim(),
+        type: "task",
+        priority: "medium",
+        project: projectId,
+        sprint: sprintId || undefined,
+        status: columnId,
+        boardColumn: columnId,
+      });
+      setColumns((prev) => ({
+        ...prev,
+        [columnId]: [...(prev[columnId] || []), newTask],
+      }));
+      setQuickTitle("");
+      setQuickAddColumn(null);
+      toast.success("Task added to board! 🚀");
+    } catch {
+      toast.error("Failed to create task");
+    } finally {
+      setIsQuickAdding(false);
+    }
+  };
+
+  // ── Filter and Sort Helpers ──
+  const filterAndSortTasks = (tasks: any[]) => {
+    return tasks
+      .filter((task) => {
+        // Search
+        const q = searchQuery.toLowerCase().trim();
+        if (q) {
+          const titleMatch = task.title?.toLowerCase().includes(q);
+          const descMatch = task.description?.toLowerCase().includes(q);
+          const keyMatch = `SFG-${task._id?.slice(-4).toLowerCase()}`.includes(q);
+          const assigneeMatch = task.assignees?.some((a: any) =>
+            a.name?.toLowerCase().includes(q)
+          );
+          if (!titleMatch && !descMatch && !keyMatch && !assigneeMatch) return false;
+        }
+
+        // Priority filter
+        if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
+
+        // Quick filter
+        if (quickFilter === "my_tasks") {
+          const isMe = task.assignees?.some(
+            (a: any) => (typeof a === "object" ? a._id : a) === currentUser?._id
+          );
+          if (!isMe) return false;
+        } else if (quickFilter === "unassigned") {
+          if (task.assignees && task.assignees.length > 0) return false;
+        } else if (quickFilter === "high") {
+          if (task.priority !== "critical" && task.priority !== "high") return false;
+        } else if (quickFilter === "bugs") {
+          if (task.type !== "bug") return false;
+        } else if (quickFilter === "blocked") {
+          if (task.status !== "blocked" && task.priority !== "critical") return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "priority") {
+          const weight: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+          return (weight[b.priority] || 0) - (weight[a.priority] || 0);
+        }
+        if (sortBy === "newest") {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        if (sortBy === "points") {
+          return (b.storyPoints || 0) - (a.storyPoints || 0);
+        }
+        return (a.boardOrder || 0) - (b.boardOrder || 0);
+      });
+  };
+
+  // Calculate metrics for Toolbar
+  useEffect(() => {
+    if (!onCountsChange) return;
+    let all = 0;
+    let myTasks = 0;
+    let unassigned = 0;
+    let high = 0;
+    let bugs = 0;
+    let blocked = 0;
+
+    Object.values(columns).forEach((tasks) => {
+      tasks.forEach((t) => {
+        all++;
+        if (t.assignees?.some((a: any) => (typeof a === "object" ? a._id : a) === currentUser?._id)) {
+          myTasks++;
+        }
+        if (!t.assignees || t.assignees.length === 0) unassigned++;
+        if (t.priority === "critical" || t.priority === "high") high++;
+        if (t.type === "bug") bugs++;
+        if (t.status === "blocked" || t.priority === "critical") blocked++;
+      });
+    });
+
+    onCountsChange({ all, myTasks, unassigned, high, bugs, blocked });
+  }, [columns, currentUser?._id, onCountsChange]);
+
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex gap-4 overflow-x-auto pb-4 pt-2">
         {COLUMNS.map((col) => (
-          <div key={col.id} className="kanban-column">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-4 w-24 skeleton" />
+          <div
+            key={col.id}
+            className="w-[280px] sm:w-[300px] flex-shrink-0 p-4 rounded-3xl bg-[#090d1f] border border-white/[0.06] space-y-3"
+          >
+            <div className="h-6 w-24 bg-white/[0.04] rounded-lg animate-pulse" />
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-24 bg-white/[0.02] border border-white/[0.04] rounded-2xl animate-pulse"
+                />
+              ))}
             </div>
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="task-card mb-2 h-24 skeleton" />
-            ))}
           </div>
         ))}
       </div>
@@ -168,85 +343,156 @@ export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
   return (
     <>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4 min-h-[600px]">
+        <div className="flex gap-4 overflow-x-auto pb-6 pt-1 min-h-[600px] scrollbar-thin">
           {COLUMNS.map((col) => {
-            let tasks = columns[col.id] || [];
-            
-            if (filter) {
-              const searchLower = filter.search.toLowerCase();
-              tasks = tasks.filter((task) => {
-                const searchMatch = !filter.search || 
-                  task.title?.toLowerCase().includes(searchLower) || 
-                  task.type?.toLowerCase().includes(searchLower) ||
-                  task.project?.key?.toLowerCase().includes(searchLower) ||
-                  task._id?.toLowerCase().includes(searchLower);
-                const priorityMatch = !filter.priority || task.priority === filter.priority;
-                return searchMatch && priorityMatch;
-              });
-            }
+            const rawTasks = columns[col.id] || [];
+            const tasks = filterAndSortTasks(rawTasks);
+            const isOverWIP = col.wipLimit && rawTasks.length > col.wipLimit;
 
             return (
-              <div key={col.id} className="kanban-column flex-shrink-0">
-                {/* Column header */}
-                <div className="flex items-center justify-between mb-3 px-1">
+              <div
+                key={col.id}
+                className="w-[280px] sm:w-[300px] flex-shrink-0 flex flex-col rounded-3xl bg-[#070b1a] border border-white/[0.08] shadow-lg p-3 space-y-3"
+              >
+                {/* ── Column Header ── */}
+                <div className="flex items-center justify-between px-1.5 pt-1">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
-                    <span className="text-xs font-semibold text-foreground">{col.label}</span>
-                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                    <div
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: col.color }}
+                    />
+                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                      {col.label}
+                    </h3>
+                    <span className="text-[11px] font-mono font-bold text-slate-400 bg-white/[0.06] px-2 py-0.2 rounded-full">
                       {tasks.length}
                     </span>
                   </div>
-                  <button
-                    onClick={() => setCreateColumn(col.id)}
-                    className="p-1 hover:bg-muted rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
+
+                  {/* WIP Badge & Add Button */}
+                  <div className="flex items-center gap-1.5">
+                    {col.wipLimit && (
+                      <span
+                        className={cn(
+                          "text-[9px] font-mono px-1.5 py-0.2 rounded-full border",
+                          isOverWIP
+                            ? "text-rose-400 bg-rose-500/10 border-rose-500/30 font-bold"
+                            : "text-slate-500 bg-white/[0.03] border-white/[0.06]"
+                        )}
+                        title={`WIP Limit: ${col.wipLimit}`}
+                      >
+                        WIP {rawTasks.length}/{col.wipLimit}
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => setQuickAddColumn(col.id)}
+                      className="p-1 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      title="Quick add task to this column"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Droppable */}
+                {/* ── Inline Quick Add Input (if active for this column) ── */}
+                {quickAddColumn === col.id && (
+                  <form
+                    onSubmit={(e) => handleQuickAdd(col.id, e)}
+                    className="p-2.5 rounded-2xl bg-[#090d1f] border border-violet-500/40 space-y-2 shadow-md"
+                  >
+                    <input
+                      type="text"
+                      value={quickTitle}
+                      onChange={(e) => setQuickTitle(e.target.value)}
+                      placeholder="Task title... (Press Enter)"
+                      autoFocus
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-[#060914] border border-white/[0.08] text-xs text-white focus:outline-none focus:border-violet-500/70"
+                    />
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickAddColumn(null);
+                          setQuickTitle("");
+                        }}
+                        className="px-2 py-0.5 text-slate-400 hover:text-white text-[11px]"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isQuickAdding || !quickTitle.trim()}
+                        className="px-3 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold disabled:opacity-50"
+                      >
+                        {isQuickAdding ? "Adding..." : "Add"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* ── Droppable Zone ── */}
                 <Droppable droppableId={col.id}>
                   {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       className={cn(
-                        "flex-1 min-h-[100px] rounded-xl transition-colors p-1",
-                        snapshot.isDraggingOver && "bg-primary/5 ring-1 ring-primary/30"
+                        "flex-1 min-h-[140px] space-y-2.5 rounded-2xl transition-all p-1",
+                        snapshot.isDraggingOver &&
+                          "bg-violet-500/10 border border-dashed border-violet-500/40"
                       )}
                     >
-                      <AnimatePresence>
-                        {tasks.map((task, index) => (
-                          <Draggable key={task._id} draggableId={task._id} index={index}>
+                      {tasks.length === 0 && !snapshot.isDraggingOver ? (
+                        <div className="h-28 flex flex-col items-center justify-center text-center p-3 border border-dashed border-white/[0.04] rounded-2xl text-[11px] font-mono text-slate-600">
+                          <span>No tasks in {col.label}</span>
+                          <button
+                            onClick={() => setQuickAddColumn(col.id)}
+                            className="text-violet-400 hover:underline mt-1 font-sans text-xs cursor-pointer"
+                          >
+                            + Add task
+                          </button>
+                        </div>
+                      ) : (
+                        tasks.map((task, index) => (
+                          <Draggable
+                            key={task._id}
+                            draggableId={task._id}
+                            index={index}
+                          >
                             {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
                                 className={cn(
-                                  "task-card mb-2", 
-                                  STATUS_CARD_CLASS[task.status] || STATUS_CARD_CLASS.todo,
-                                  snapshot.isDragging && "dragging"
+                                  "transition-shadow",
+                                  snapshot.isDragging &&
+                                    "shadow-[0_15px_35px_rgba(0,0,0,0.8)] scale-[1.02] opacity-95 z-50"
                                 )}
-                                onClick={() => setSelectedTask(task)}
                               >
-                                <TaskCard task={task} />
+                                <TaskCard
+                                  task={task}
+                                  density={density}
+                                  onClick={() => setSelectedTaskId(task._id)}
+                                />
                               </div>
                             )}
                           </Draggable>
-                        ))}
-                      </AnimatePresence>
+                        ))
+                      )}
                       {provided.placeholder}
                     </div>
                   )}
                 </Droppable>
 
-                {/* Add task button */}
+                {/* Bottom Add Task Button */}
                 <button
-                  onClick={() => setCreateColumn(col.id)}
-                  className="w-full mt-2 flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all"
+                  onClick={() => setQuickAddColumn(col.id)}
+                  className="w-full py-2 rounded-2xl bg-white/[0.02] hover:bg-white/[0.06] border border-dashed border-white/[0.06] hover:border-white/[0.12] text-xs font-semibold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add task
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add task</span>
                 </button>
               </div>
             );
@@ -254,109 +500,17 @@ export function KanbanBoard({ projectId, sprintId, filter }: KanbanBoardProps) {
         </div>
       </DragDropContext>
 
-      {selectedTask && (
-        <TaskDetailModal
-          taskId={selectedTask._id}
-          onClose={() => setSelectedTask(null)}
-          onUpdate={loadTasks}
-        />
-      )}
-      {createColumn && (
-        <CreateTaskModal
-          projectId={projectId}
-          defaultStatus={createColumn}
-          sprintId={sprintId}
-          onClose={() => setCreateColumn(null)}
-          onCreate={() => { setCreateColumn(null); loadTasks(); }}
-        />
-      )}
+      {/* Task Detail Drawer */}
+      <TaskDetailDrawer
+        isOpen={!!selectedTaskId}
+        taskId={selectedTaskId}
+        projectId={projectId}
+        projectMembers={projectMembers}
+        sprints={sprints}
+        onClose={() => setSelectedTaskId(null)}
+        onTaskUpdated={loadTasks}
+        onTaskDeleted={loadTasks}
+      />
     </>
-  );
-}
-
-function TaskCard({ task }: { task: any }) {
-  return (
-    <div className="space-y-2">
-      {/* Type & ID */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium",
-            task.type === "bug" ? "bg-red-500/15 text-red-400" :
-            task.type === "story" ? "bg-blue-500/15 text-blue-400" :
-            task.type === "epic" ? "bg-purple-500/15 text-purple-400" :
-            "bg-muted text-muted-foreground"
-          )}>
-            {task.type?.toUpperCase()}
-          </span>
-        </div>
-        <span className="text-[10px] text-muted-foreground">{task.project?.key || ""}-{task._id?.slice(-4).toUpperCase()}</span>
-      </div>
-
-      {/* Title */}
-      <p className="text-sm text-foreground leading-snug line-clamp-2">{task.title}</p>
-
-      {/* Labels */}
-      {task.labels?.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {task.labels.slice(0, 2).map((label: string) => (
-            <span key={label} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-              {label}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-1.5">
-          {/* Assignee avatars */}
-          <div className="flex -space-x-1.5">
-            {task.assignees?.slice(0, 3).map((user: any) => (
-              <img
-                key={user._id}
-                src={user.avatar || generateAvatar(user.name)}
-                alt={user.name}
-                title={user.name}
-                className="w-5 h-5 rounded-full border-2 border-card object-cover"
-              />
-            ))}
-          </div>
-          {/* Story points */}
-          {task.storyPoints && (
-            <span className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded font-medium">
-              {task.storyPoints}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {task.comments?.length > 0 && (
-            <span className="flex items-center gap-1 text-[10px]">
-              <MessageCircle className="w-3 h-3" /> {task.comments.length}
-            </span>
-          )}
-          {task.attachments?.length > 0 && (
-            <span className="flex items-center gap-1 text-[10px]">
-              <Paperclip className="w-3 h-3" /> {task.attachments.length}
-            </span>
-          )}
-          <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full border", PRIORITY_BG[task.priority] || "")}>
-            <Flag className="w-2.5 h-2.5 inline mr-0.5" />
-            {task.priority}
-          </span>
-        </div>
-      </div>
-
-      {/* Due date */}
-      {task.dueDate && (
-        <div className={cn("flex items-center gap-1 text-[10px]",
-          new Date(task.dueDate) < new Date() && task.status !== "done"
-            ? "text-red-500"
-            : "text-muted-foreground"
-        )}>
-          <Clock className="w-3 h-3" /> {formatDate(task.dueDate, "short")}
-        </div>
-      )}
-    </div>
   );
 }
