@@ -9,6 +9,8 @@ import {
   uploadAvatar,
   getAvatar,
   removeAvatar,
+  verifyEmailOtp,
+  resendEmailOtp,
   logout,
 } from '../controllers/authController';
 import { protect } from '../middleware/auth';
@@ -18,6 +20,9 @@ const router = Router();
 router.post('/register', register);
 router.post('/login', login);
 router.post('/google', googleAuth);
+router.post('/verify-email-otp', verifyEmailOtp);
+router.post('/resend-email-otp', resendEmailOtp);
+
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
 router.put('/change-password', protect, changePassword);

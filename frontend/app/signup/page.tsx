@@ -21,6 +21,7 @@ import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
+import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
 
 const passwordRules = [
   { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
@@ -39,6 +40,11 @@ function SignupForm() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isFocused, setIsFocused] = useState<string | null>(null);
+  const [verificationState, setVerificationState] = useState<{
+    tempToken?: string;
+    email: string;
+    maskedEmail?: string;
+  } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +66,17 @@ function SignupForm() {
     }
 
     try {
-      await register(name.trim(), email.trim(), password);
+      const result = await register(name.trim(), email.trim(), password);
+      if (result.verificationRequired) {
+        toast("Verification code sent to your email.", { icon: "🔐" });
+        setVerificationState({
+          tempToken: result.tempToken,
+          email: result.email || email.trim(),
+          maskedEmail: result.maskedEmail,
+        });
+        return;
+      }
+
       toast.success("Account created! Welcome to SprintForge 🚀");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
@@ -71,6 +87,18 @@ function SignupForm() {
       }
     }
   };
+
+  if (verificationState) {
+    return (
+      <OtpVerificationView
+        tempToken={verificationState.tempToken}
+        email={verificationState.email}
+        maskedEmail={verificationState.maskedEmail}
+        onSuccess={() => router.push(nextUrl || "/dashboard")}
+        onBackToLogin={() => setVerificationState(null)}
+      />
+    );
+  }
 
   return (
     <div className="w-full">

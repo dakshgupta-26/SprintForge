@@ -47,6 +47,10 @@ export const authAPI = {
   uploadAvatar: (formData: FormData) => 
     api.post("/auth/upload-avatar", formData, { headers: { "Content-Type": "multipart/form-data" } }),
   removeAvatar: () => api.delete("/auth/avatar"),
+  verifyEmailOtp: (data: { tempToken?: string; email?: string; otp: string }) =>
+    api.post("/auth/verify-email-otp", data),
+  resendEmailOtp: (data: { tempToken?: string; email?: string }) =>
+    api.post("/auth/resend-email-otp", data),
   logout: () => api.post("/auth/logout"),
 };
 

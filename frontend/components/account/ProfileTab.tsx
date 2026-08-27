@@ -97,7 +97,11 @@ export function ProfileTab({ formData, onChange }: ProfileTabProps) {
               <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-slate-500" />
                 <span>{user?.email}</span>
-                <span className="text-emerald-400 font-bold ml-1">Verified ✓</span>
+                {user?.emailVerified !== false ? (
+                  <span className="text-emerald-400 font-bold ml-1">Verified ✓</span>
+                ) : (
+                  <span className="text-amber-400 font-bold ml-1">⚠ Unverified</span>
+                )}
               </p>
 
               <p className="text-xs text-slate-400 font-medium">

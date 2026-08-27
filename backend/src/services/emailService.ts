@@ -272,3 +272,177 @@ export async function sendInviteEmail(opts: {
     return { success: false };
   }
 }
+
+// ─── OTP Email Template ────────────────────────────────────────────────────────
+function buildOtpEmail(opts: {
+  name: string;
+  otp: string;
+  recipientEmail: string;
+}) {
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify your SprintForge account</title>
+</head>
+<body style="margin:0;padding:0;background:#090d1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#090d1e;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding-bottom:28px;">
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#7c3aed,#6366f1);border-radius:12px;width:40px;height:40px;text-align:center;vertical-align:middle;">
+                    <span style="color:#fff;font-size:20px;line-height:40px;">⚡</span>
+                  </td>
+                  <td style="padding-left:12px;vertical-align:middle;">
+                    <span style="color:#fff;font-size:20px;font-weight:800;letter-spacing:-0.5px;">SprintForge</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Card -->
+          <tr>
+            <td style="background:#0f142e;border:1px solid rgba(255,255,255,0.1);border-radius:24px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+
+              <!-- Gradient Top Accent Bar -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="height:4px;background:linear-gradient(90deg,#7c3aed,#6366f1,#3b82f6);"></td>
+                </tr>
+              </table>
+
+              <!-- Body Content -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 36px;">
+                <tr>
+                  <td>
+                    <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0 0 12px;line-height:1.3;letter-spacing:-0.3px;">
+                      Verify your email address 🔐
+                    </h1>
+
+                    <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 24px;">
+                      Hello <strong style="color:#f1f5f9;">${opts.name || 'there'}</strong>,<br/>
+                      Please use the following 6-digit verification code to complete your sign in and activate your SprintForge workspace account.
+                    </p>
+
+                    <!-- OTP Display Box -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                      <tr>
+                        <td style="background:#070a18;border:2px dashed #7c3aed;border-radius:16px;padding:24px 16px;text-align:center;">
+                          <p style="color:#a78bfa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 10px;">
+                            Your One-Time Verification Code
+                          </p>
+                          <p style="color:#ffffff;font-size:40px;font-weight:900;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;letter-spacing:10px;margin:0 0 8px;text-shadow:0 0 20px rgba(124,58,237,0.5);">
+                            ${opts.otp}
+                          </p>
+                          <p style="color:#64748b;font-size:12px;margin:0;">
+                            ⏱️ Valid for <strong>10 minutes</strong>
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Security Alert Callout -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                      <tr>
+                        <td style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:14px 16px;">
+                          <p style="color:#cbd5e1;font-size:12px;line-height:1.5;margin:0;">
+                            🔒 <strong>Security tip:</strong> SprintForge will never ask for your password or verification code in an unsolicited email or message. Never share this code with anyone.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <p style="color:#64748b;font-size:12px;line-height:1.6;margin:0;">
+                      If you didn't attempt to sign in to SprintForge, you can safely ignore this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Footer -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:20px 36px;border-top:1px solid rgba(255,255,255,0.06);background:#0a0e22;">
+                <tr>
+                  <td>
+                    <p style="color:#475569;font-size:11px;margin:0;line-height:1.5;">
+                      Sent to <strong>${opts.recipientEmail}</strong> for first-time account verification.<br/>
+                      SprintForge © 2026 • Modern Agile Platform
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = `
+Verify your SprintForge account 🔐
+
+Hello ${opts.name || 'there'},
+
+Your 6-digit verification code is:
+
+${opts.otp}
+
+This code expires in 10 minutes.
+
+If you did not attempt to sign in to SprintForge, you can safely ignore this email.
+`.trim();
+
+  return { html, text };
+}
+
+// ─── Send OTP Email ───────────────────────────────────────────────────────────
+export async function sendOtpEmail(opts: {
+  to: string;
+  name: string;
+  otp: string;
+}) {
+  try {
+    const t = await getTransporter();
+    const { html, text } = buildOtpEmail({
+      name: opts.name,
+      otp: opts.otp,
+      recipientEmail: opts.to,
+    });
+
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge Security';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'security@sprintforge.io';
+
+    const info = await t.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: opts.to,
+      subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
+      html,
+      text,
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 OTP Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 OTP sent to ${opts.to} (messageId: ${info.messageId})`);
+    }
+
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('❌ OTP email send failed:', err);
+    return { success: false };
+  }
+}
+

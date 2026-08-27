@@ -17,6 +17,8 @@ export interface IUser extends Document {
   role: 'admin' | 'member' | 'viewer';
   provider: 'local' | 'google' | 'github';
   providerId?: string;
+  emailVerified: boolean;
+  emailVerifiedAt?: Date;
   bio?: string;
   title?: string;
   location?: string;
@@ -47,6 +49,8 @@ const userSchema = new Schema<IUser>(
     role:     { type: String, enum: ['admin', 'member', 'viewer'], default: 'member' },
     provider: { type: String, enum: ['local', 'google', 'github'], default: 'local' },
     providerId: { type: String },
+    emailVerified: { type: Boolean, default: false },
+    emailVerifiedAt: { type: Date, default: null },
     bio:      { type: String, maxlength: 500 },
     title:    { type: String },
     location: { type: String },
