@@ -206,8 +206,10 @@ export const getBacklog = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { projectId } = req.params;
     const tasks = await Task.find({ project: projectId, sprint: null })
-      .populate('assignees', 'name avatar')
-      .sort({ boardOrder: 1 });
+      .populate('assignees', 'name avatar email')
+      .populate('reporter', 'name avatar email')
+      .populate('comments')
+      .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
