@@ -1,16 +1,31 @@
 "use client";
+
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, FolderKanban, Zap, BarChart3, BookOpen,
-  Bell, Users, Settings, ChevronDown, Plus,
-  Bug, AlignLeft, MessageSquare
+  LayoutDashboard,
+  Columns3,
+  AlignLeft,
+  Zap,
+  Bug,
+  MessageSquare,
+  BarChart3,
+  Users,
+  BookOpen,
+  Bell,
+  Settings,
+  ChevronDown,
+  Plus,
+  Layers,
+  FolderKanban,
+  Check,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { getSocket } from "@/lib/socket";
+import { cn, generateAvatar } from "@/lib/utils";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 
 interface NavItem {
@@ -27,7 +42,7 @@ const mainNav: NavItem[] = [
 ];
 
 const projectNav = (id: string): NavItem[] => [
-  { label: "Board", href: `/dashboard/projects/${id}/board`, icon: FolderKanban },
+  { label: "Board", href: `/dashboard/projects/${id}/board`, icon: Columns3 },
   { label: "Backlog", href: `/dashboard/projects/${id}/backlog`, icon: AlignLeft },
   { label: "Sprints", href: `/dashboard/projects/${id}/sprints`, icon: Zap },
   { label: "Issues", href: `/dashboard/projects/${id}/issues`, icon: Bug },
@@ -37,88 +52,226 @@ const projectNav = (id: string): NavItem[] => [
   { label: "Wiki", href: `/dashboard/projects/${id}/wiki`, icon: BookOpen },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuthStore();
-  const { projects, currentProject } = useProjectStore();
-  const [projectsOpen, setProjectsOpen] = useState(true);
+  const { projects, currentProject, fetchProjects } = useProjectStore();
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+
+  // ── Extract active project ID from current URL route ──
+  const activeProjectIdFromUrl = useMemo(() => {
+    const match = pathname.match(/\/dashboard\/projects\/([a-f0-9]{24})/i);
+    return match ? match[1] : null;
+  }, [pathname]);
+
+  // ── Keep active project expanded ──
+  useEffect(() => {
+    if (activeProjectIdFromUrl) {
+      setExpandedProjects((prev) => ({
+        ...prev,
+        [activeProjectIdFromUrl]: true,
+      }));
+    } else if (projects.length > 0 && Object.keys(expandedProjects).length === 0) {
+      // By default expand the first project if nothing is selected
+      setExpandedProjects({ [projects[0]._id]: true });
+    }
+  }, [activeProjectIdFromUrl, projects]);
+
+  // ── Real-time Socket Listener to keep project list fresh ──
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleProjectUpdate = () => {
+      fetchProjects();
+    };
+
+    socket.on("project:updated", handleProjectUpdate);
+    socket.on("member:joined", handleProjectUpdate);
+
+    return () => {
+      socket.off("project:updated", handleProjectUpdate);
+      socket.off("member:joined", handleProjectUpdate);
+    };
+  }, [fetchProjects]);
+
+  const toggleProject = (projectId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExpandedProjects((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
+    }));
+  };
+
+  const isActive = (href: string) => {
+    if (href === "/dashboard") {
+      return pathname === "/dashboard";
+    }
+    return pathname === href || pathname.startsWith(href + "/");
+  };
 
   return (
-    <aside className="sidebar">
+    <aside className={cn("sidebar", isOpen && "open")}>
       {/* Logo */}
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
         <SprintForgeLogo href="/dashboard" size="sm" />
       </div>
 
-      {/* Main Nav */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        <div className="mb-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">General</p>
-          {mainNav.map((item) => (
-            <NavLink key={item.href} item={item} isActive={isActive(item.href)} />
-          ))}
+      {/* Navigation Scroll Area */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-4 scrollbar-thin">
+        {/* ── GENERAL NAV ── */}
+        <div>
+          <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1 px-2">
+            General
+          </p>
+          <div className="space-y-0.5">
+            {mainNav.map((item) => (
+              <NavLink
+                key={item.href}
+                item={item}
+                isActive={isActive(item.href)}
+                onClick={onClose}
+              />
+            ))}
+          </div>
         </div>
 
-        {/* Projects */}
+        {/* ── PROJECTS SECTION ── */}
         <div>
-          <button
-            onClick={() => setProjectsOpen(!projectsOpen)}
-            className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            <span>Projects</span>
-            <div className="flex items-center gap-1">
-              <Link href="/dashboard/projects/new" onClick={(e) => e.stopPropagation()}
-                className="p-0.5 hover:bg-accent rounded transition-colors">
-                <Plus className="w-3 h-3" />
-              </Link>
-              <ChevronDown className={cn("w-3 h-3 transition-transform", !projectsOpen && "-rotate-90")} />
-            </div>
-          </button>
-          <AnimatePresence>
-            {projectsOpen && (
+          <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+            <button
+              onClick={() => setProjectsSectionOpen(!projectsSectionOpen)}
+              className="flex items-center gap-1.5 hover:text-slate-300 transition-colors cursor-pointer"
+            >
+              <span>Projects</span>
+              <ChevronDown
+                className={cn(
+                  "w-3 h-3 transition-transform duration-200",
+                  !projectsSectionOpen && "-rotate-90"
+                )}
+              />
+            </button>
+            <Link
+              href="/dashboard/projects/new"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose?.();
+              }}
+              className="p-1 hover:bg-white/[0.06] text-slate-400 hover:text-white rounded-lg transition-colors"
+              title="Create new project"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {projectsSectionOpen && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden space-y-0.5"
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden space-y-1 pt-1"
               >
                 {projects.map((project) => {
-                  const isProjectActive = currentProject?._id === project._id || isActive(`/dashboard/projects/${project._id}`);
+                  const isExpanded = !!expandedProjects[project._id];
+                  const isCurrentRouteInsideProject =
+                    activeProjectIdFromUrl === project._id ||
+                    currentProject?._id === project._id;
+
                   return (
-                    <div key={project._id}>
-                      <Link
-                        href={`/dashboard/projects/${project._id}/board`}
+                    <div key={project._id} className="space-y-0.5">
+                      {/* Project Header Row */}
+                      <div
                         className={cn(
-                          "flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm transition-all duration-150 group",
-                          isProjectActive
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          "group flex items-center justify-between px-2 py-1.5 rounded-xl transition-all text-xs font-semibold cursor-pointer",
+                          isCurrentRouteInsideProject
+                            ? "bg-violet-600/15 text-white"
+                            : "text-slate-300 hover:text-white hover:bg-white/[0.04]"
                         )}
+                        onClick={() => toggleProject(project._id)}
                       >
-                        <div
-                          className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                          style={{ backgroundColor: project.color || "#6366f1" }}
+                        <Link
+                          href={`/dashboard/projects/${project._id}/board`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedProjects((prev) => ({ ...prev, [project._id]: true }));
+                            onClose?.();
+                          }}
+                          className="flex items-center gap-2 min-w-0 flex-1"
                         >
-                          {project.key?.charAt(0) || "P"}
-                        </div>
-                        <span className="truncate">{project.name}</span>
-                      </Link>
-                      {/* Project sub-nav when active */}
-                      {isProjectActive && (
-                        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2">
-                          {projectNav(project._id).map((item) => (
-                            <NavLink key={item.href} item={item} isActive={isActive(item.href)} small />
-                          ))}
-                        </div>
-                      )}
+                          <div
+                            className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-mono font-bold text-white flex-shrink-0 shadow-sm"
+                            style={{ backgroundColor: project.color || "#6366f1" }}
+                          >
+                            {project.key?.charAt(0) || "P"}
+                          </div>
+                          <span className="truncate">{project.name}</span>
+                        </Link>
+
+                        {/* Expand / Collapse Chevron */}
+                        <button
+                          type="button"
+                          onClick={(e) => toggleProject(project._id, e)}
+                          className="p-1 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.06] transition-colors"
+                          title={isExpanded ? "Collapse project" : "Expand project"}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "w-3.5 h-3.5 transition-transform duration-200",
+                              !isExpanded && "-rotate-90"
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Project Sub-navigation when Expanded */}
+                      <AnimatePresence initial={false}>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                            className="overflow-hidden ml-3.5 pl-2.5 border-l border-white/[0.08] space-y-0.5 py-0.5"
+                          >
+                            {projectNav(project._id).map((item) => {
+                              const active = isActive(item.href);
+                              return (
+                                <NavLink
+                                  key={item.href}
+                                  item={item}
+                                  isActive={active}
+                                  small
+                                  onClick={onClose}
+                                />
+                              );
+                            })}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   );
                 })}
+
                 {projects.length === 0 && (
-                  <p className="text-xs text-muted-foreground px-2 py-2">No projects yet</p>
+                  <div className="p-3 text-center rounded-xl bg-white/[0.02] border border-dashed border-white/[0.06]">
+                    <p className="text-[11px] text-slate-500">No projects yet</p>
+                    <Link
+                      href="/dashboard/projects/new"
+                      onClick={onClose}
+                      className="text-xs text-violet-400 hover:underline font-bold mt-1 inline-block"
+                    >
+                      + Create one
+                    </Link>
+                  </div>
                 )}
               </motion.div>
             )}
@@ -126,48 +279,71 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* User */}
-      <div className="p-3 border-t border-border">
-        <Link href="/dashboard/settings" className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-muted transition-colors">
-          <img 
-            src={user?.avatar || `https://ui-avatars.com/api/?name=${user?.name || "U"}&background=random`} 
-            alt={user?.name} 
-            className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border"
+      {/* User Profile Footer */}
+      <div className="p-3 border-t border-white/[0.06] bg-[#070b1a]">
+        <Link
+          href="/dashboard/settings"
+          onClick={onClose}
+          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/[0.04] transition-colors group"
+        >
+          <img
+            src={user?.avatar || generateAvatar(user?.name || "U")}
+            alt=""
+            className="w-7 h-7 rounded-full object-cover flex-shrink-0 ring-1 ring-white/[0.1] group-hover:ring-violet-500/50 transition-all"
           />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-foreground truncate">{user?.name}</p>
-            <p className="text-[10px] text-muted-foreground truncate">{user?.role}</p>
+            <p className="text-xs font-bold text-white truncate">{user?.name || "Member"}</p>
+            <p className="text-[10px] font-mono text-slate-400 truncate capitalize">
+              {user?.role || "Developer"}
+            </p>
           </div>
-          <Settings className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <Settings className="w-3.5 h-3.5 text-slate-500 group-hover:text-white transition-colors flex-shrink-0" />
         </Link>
       </div>
     </aside>
   );
 }
 
-function NavLink({ item, isActive, small = false }: { item: NavItem; isActive: boolean; small?: boolean }) {
+function NavLink({
+  item,
+  isActive,
+  small = false,
+  onClick,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  small?: boolean;
+  onClick?: () => void;
+}) {
   const Icon = item.icon;
   return (
     <Link
       href={item.href}
+      onClick={onClick}
       className={cn(
-        "flex items-center gap-2.5 px-2 rounded-lg transition-all duration-150 group relative",
-        small ? "py-1.5 text-xs" : "py-2 text-sm",
+        "flex items-center gap-2.5 px-2.5 rounded-xl transition-all duration-150 group relative font-medium",
+        small ? "py-1.5 text-xs" : "py-2 text-xs sm:text-sm",
         isActive
-          ? "bg-primary/10 text-primary font-medium"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          ? "bg-violet-600/15 text-violet-300 font-bold border border-violet-500/30"
+          : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
       )}
     >
       {isActive && (
         <motion.div
-          layoutId="sidebar-active"
-          className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary rounded-full"
+          layoutId="sidebar-active-indicator"
+          className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-violet-500 rounded-r-full"
         />
       )}
-      <Icon className={cn("flex-shrink-0", small ? "w-3.5 h-3.5" : "w-4 h-4")} />
+      <Icon
+        className={cn(
+          "flex-shrink-0",
+          small ? "w-3.5 h-3.5" : "w-4 h-4",
+          isActive ? "text-violet-400" : "text-slate-500 group-hover:text-slate-300"
+        )}
+      />
       <span className="truncate">{item.label}</span>
       {item.badge !== undefined && item.badge > 0 && (
-        <span className="ml-auto bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+        <span className="ml-auto bg-violet-500 text-white text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
           {item.badge > 99 ? "99+" : item.badge}
         </span>
       )}
