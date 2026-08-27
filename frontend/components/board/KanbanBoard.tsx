@@ -6,22 +6,24 @@ import {
   Droppable,
   Draggable,
   DropResult,
+  DragStart,
 } from "@hello-pangea/dnd";
 import { motion, AnimatePresence } from "framer-motion";
 import { taskAPI } from "@/lib/api";
-import { Plus, MoreHorizontal, AlertTriangle, Layers, X, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, AlertTriangle, Layers, X, Loader2, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { STATUS_CONFIG, getStatusConfig } from "@/lib/statusConfig";
 import toast from "react-hot-toast";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDrawer } from "./TaskDetailDrawer";
 import { getSocket, joinProject, leaveProject } from "@/lib/socket";
 
 const COLUMNS = [
-  { id: "todo", label: "To Do", color: "#94a3b8", wipLimit: 8 },
-  { id: "in_progress", label: "In Progress", color: "#6366f1", wipLimit: 5 },
-  { id: "review", label: "In Review", color: "#8b5cf6", wipLimit: 4 },
-  { id: "done", label: "Done", color: "#22c55e" },
-  { id: "blocked", label: "Blocked", color: "#f43f5e", wipLimit: 3 },
+  { id: "todo", label: "To Do", wipLimit: 8 },
+  { id: "in_progress", label: "In Progress", wipLimit: 5 },
+  { id: "review", label: "In Review", wipLimit: 4 },
+  { id: "done", label: "Done" },
+  { id: "blocked", label: "Blocked", wipLimit: 3 },
 ];
 
 interface KanbanBoardProps {
@@ -60,6 +62,7 @@ export function KanbanBoard({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
 
   // Inline Quick Add per column
   const [quickAddColumn, setQuickAddColumn] = useState<string | null>(null);
@@ -175,8 +178,14 @@ export function KanbanBoard({
     };
   }, [projectId]);
 
-  // ── Drag and Drop Handler ──
+  // ── Drag Start Handler ──
+  const onDragStart = (start: DragStart) => {
+    setDraggingTaskId(start.draggableId);
+  };
+
+  // ── Drag End Handler with Optimistic Status Transformation ──
   const onDragEnd = async (result: DropResult) => {
+    setDraggingTaskId(null);
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (
@@ -195,7 +204,18 @@ export function KanbanBoard({
         : Array.from(columns[destination.droppableId] || []);
 
     const [moved] = srcCol.splice(source.index, 1);
-    dstCol.splice(destination.index, 0, moved);
+    if (!moved) return;
+
+    // ── Update moved task's status and column for immediate visual transformation ──
+    const targetStatus = destination.droppableId;
+    const updatedMovedTask = {
+      ...moved,
+      status: targetStatus,
+      boardColumn: targetStatus,
+      boardOrder: destination.index,
+    };
+
+    dstCol.splice(destination.index, 0, updatedMovedTask);
 
     setColumns((prev) => ({
       ...prev,
@@ -203,14 +223,21 @@ export function KanbanBoard({
       [destination.droppableId]: dstCol,
     }));
 
+    const destConfig = getStatusConfig(targetStatus);
+    const taskKey = `SFG-${moved._id?.slice(-4).toUpperCase()}`;
+
     try {
       await taskAPI.updateStatus(draggableId, {
-        status: destination.droppableId,
-        boardColumn: destination.droppableId,
+        status: targetStatus,
+        boardColumn: targetStatus,
         boardOrder: destination.index,
       });
+      toast.success(`${taskKey} moved to ${destConfig.label}`, {
+        icon: destConfig.isDone ? "✅" : "🎯",
+        duration: 2000,
+      });
     } catch {
-      toast.error("Failed to move task. Position reverted.");
+      toast.error("Failed to move task. Reverting position.");
       setColumns(previousColumns);
     }
   };
@@ -329,7 +356,7 @@ export function KanbanBoard({
         {COLUMNS.map((col) => (
           <div
             key={col.id}
-            className="w-[280px] sm:w-[300px] flex-shrink-0 p-4 rounded-3xl bg-[#090d1f] border border-white/[0.06] space-y-3"
+            className="w-[280px] sm:w-[310px] flex-shrink-0 p-4 rounded-3xl bg-[#090d1f] border border-white/[0.06] space-y-3"
           >
             <div className="h-6 w-24 bg-white/[0.04] rounded-lg animate-pulse" />
             <div className="space-y-2">
@@ -348,27 +375,29 @@ export function KanbanBoard({
 
   return (
     <>
-      <DragDropContext onDragEnd={onDragEnd}>
+      <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-6 pt-1 min-h-[600px] scrollbar-thin">
           {COLUMNS.map((col) => {
             const rawTasks = columns[col.id] || [];
             const tasks = filterAndSortTasks(rawTasks);
             const isOverWIP = col.wipLimit && rawTasks.length > col.wipLimit;
+            const statusConfig = getStatusConfig(col.id);
+            const StatusIcon = statusConfig.indicatorIcon;
 
             return (
               <div
                 key={col.id}
-                className="w-[280px] sm:w-[300px] flex-shrink-0 flex flex-col rounded-3xl bg-[#070b1a] border border-white/[0.08] shadow-lg p-3 space-y-3"
+                className="w-[280px] sm:w-[310px] flex-shrink-0 flex flex-col rounded-3xl bg-[#070b1a] border border-white/[0.08] shadow-lg p-3 space-y-3"
               >
                 {/* ── Column Header ── */}
                 <div className="flex items-center justify-between px-1.5 pt-1">
                   <div className="flex items-center gap-2">
                     <div
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: col.color }}
+                      className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", statusConfig.dotColor)}
+                      style={{ backgroundColor: statusConfig.color }}
                     />
                     <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                      {col.label}
+                      {statusConfig.label}
                     </h3>
                     <span className="text-[11px] font-mono font-bold text-slate-400 bg-white/[0.06] px-2 py-0.2 rounded-full">
                       {tasks.length}
@@ -444,14 +473,22 @@ export function KanbanBoard({
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       className={cn(
-                        "flex-1 min-h-[140px] space-y-2.5 rounded-2xl transition-all p-1",
+                        "flex-1 min-h-[160px] space-y-2.5 rounded-2xl transition-all duration-200 p-1 relative",
                         snapshot.isDraggingOver &&
-                          "bg-violet-500/10 border border-dashed border-violet-500/40"
+                          cn(statusConfig.dropZoneBg, "border border-dashed", statusConfig.dropZoneBorder)
                       )}
                     >
+                      {/* Drag Over Hint Badge */}
+                      {snapshot.isDraggingOver && (
+                        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-white/[0.04] border border-white/[0.1] text-[10px] font-mono font-bold text-white mb-2 shadow-sm animate-pulse">
+                          <ArrowDown className="w-3 h-3 text-violet-400" />
+                          <span>Drop to set {statusConfig.label}</span>
+                        </div>
+                      )}
+
                       {tasks.length === 0 && !snapshot.isDraggingOver ? (
-                        <div className="h-28 flex flex-col items-center justify-center text-center p-3 border border-dashed border-white/[0.04] rounded-2xl text-[11px] font-mono text-slate-600">
-                          <span>No tasks in {col.label}</span>
+                        <div className="h-32 flex flex-col items-center justify-center text-center p-3 border border-dashed border-white/[0.04] rounded-2xl text-[11px] font-mono text-slate-600">
+                          <span>No tasks in {statusConfig.label}</span>
                           <button
                             onClick={() => setQuickAddColumn(col.id)}
                             className="text-violet-400 hover:underline mt-1 font-sans text-xs cursor-pointer"
@@ -471,15 +508,12 @@ export function KanbanBoard({
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                className={cn(
-                                  "transition-shadow",
-                                  snapshot.isDragging &&
-                                    "shadow-[0_15px_35px_rgba(0,0,0,0.8)] scale-[1.02] opacity-95 z-50"
-                                )}
+                                className="outline-none"
                               >
                                 <TaskCard
                                   task={task}
                                   density={density}
+                                  isDragging={snapshot.isDragging}
                                   onClick={() => setSelectedTaskId(task._id)}
                                 />
                               </div>

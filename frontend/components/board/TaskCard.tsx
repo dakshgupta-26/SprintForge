@@ -1,27 +1,31 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion } from "framer-motion";
 import {
   MessageSquare,
   Clock,
-  Flag,
   Sparkles,
   Layers,
   Bug,
   Flame,
   Check,
-  Copy,
-  AlertTriangle,
-  ChevronRight,
   MoreHorizontal,
+  ArrowRight,
+  Trash2,
+  ExternalLink,
+  Copy,
 } from "lucide-react";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { getStatusConfig } from "@/lib/statusConfig";
 import toast from "react-hot-toast";
 
 interface TaskCardProps {
   task: any;
   density?: "comfortable" | "compact";
+  isDragging?: boolean;
   onClick: () => void;
+  onStatusChange?: (taskId: string, newStatus: string) => void;
 }
 
 const TYPE_CONFIG = {
@@ -38,11 +42,25 @@ const SEVERITY_BADGES: Record<string, string> = {
   low: "bg-slate-500/15 text-slate-400 border-slate-500/30",
 };
 
-export function TaskCard({ task, density = "comfortable", onClick }: TaskCardProps) {
+export function TaskCard({
+  task,
+  density = "comfortable",
+  isDragging = false,
+  onClick,
+  onStatusChange,
+}: TaskCardProps) {
   const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const taskKey = `SFG-${task._id?.slice(-4).toUpperCase()}`;
   const typeInfo = TYPE_CONFIG[task.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.task;
   const TypeIcon = typeInfo.icon;
+
+  // ── Centralized Status Visual Derivation ──
+  const statusKey = task.boardColumn || task.status || "todo";
+  const statusConfig = getStatusConfig(statusKey);
+  const StatusIcon = statusConfig.indicatorIcon;
+  const isDone = statusConfig.isDone;
 
   const copyId = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -53,23 +71,43 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
   };
 
   const isOverdue =
-    task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done";
+    task.dueDate &&
+    new Date(task.dueDate).getTime() < Date.now() - 24 * 60 * 60 * 1000 &&
+    !isDone;
 
   return (
-    <div
+    <motion.div
+      layout
+      transition={{ duration: 0.18, ease: "easeOut" }}
       onClick={onClick}
       className={cn(
-        "p-3.5 rounded-2xl bg-[#090d1f] border border-white/[0.08] hover:border-violet-500/40 hover:bg-[#0c1228] transition-all shadow-sm group cursor-pointer space-y-2.5",
-        density === "compact" && "p-2.5 space-y-1.5"
+        "relative rounded-2xl border transition-all duration-200 shadow-sm group cursor-pointer space-y-2.5 overflow-hidden",
+        statusConfig.cardBg,
+        statusConfig.borderClass,
+        density === "compact" ? "p-2.5 space-y-1.5" : "p-3.5",
+        isDragging &&
+          "scale-[1.02] shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 ring-2 ring-violet-500/50 opacity-95",
+        isDone && "border-emerald-500/30 bg-[#08171d]/90 hover:border-emerald-500/50"
       )}
+      style={{
+        boxShadow: isDragging
+          ? `0 20px 40px -10px ${statusConfig.cardGlow || "rgba(0,0,0,0.8)"}`
+          : undefined,
+      }}
     >
-      {/* ── Top Row: Key & Type & Menu ── */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
+      {/* ── Status Accent Line (Left edge highlight) ── */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 transition-colors duration-200"
+        style={{ backgroundColor: statusConfig.color }}
+      />
+
+      {/* ── Top Row: Key, Type, Status Pill, Priority ── */}
+      <div className="flex items-center justify-between gap-1.5 pl-1">
+        <div className="flex items-center gap-1.5 min-w-0">
           {/* Key with copy */}
           <button
             onClick={copyId}
-            className="text-[10px] font-mono font-bold text-slate-400 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+            className="text-[10px] font-mono font-bold text-slate-400 hover:text-white transition-colors flex items-center gap-1 cursor-pointer flex-shrink-0"
             title="Click to copy ID"
           >
             {copied ? (
@@ -82,19 +120,31 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
           {/* Type Badge */}
           <span
             className={cn(
-              "text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border flex items-center gap-1",
+              "text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border flex items-center gap-1 flex-shrink-0",
               typeInfo.color
             )}
           >
             <TypeIcon className="w-2.5 h-2.5" />
             <span>{typeInfo.label}</span>
           </span>
+
+          {/* Status Indicator Dot/Badge */}
+          <span
+            className={cn(
+              "text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border flex items-center gap-1 transition-colors duration-200",
+              statusConfig.badgeStyle
+            )}
+            title={`Current status: ${statusConfig.label}`}
+          >
+            <StatusIcon className="w-2.5 h-2.5" />
+            <span className="hidden sm:inline">{statusConfig.shortLabel}</span>
+          </span>
         </div>
 
-        {/* Priority Badge */}
+        {/* Priority Badge (Independent of status) */}
         <span
           className={cn(
-            "text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border",
+            "text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border flex-shrink-0",
             SEVERITY_BADGES[task.priority] || SEVERITY_BADGES.medium
           )}
         >
@@ -103,20 +153,29 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
       </div>
 
       {/* ── Title ── */}
-      <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-violet-200 transition-colors leading-snug">
-        {task.title}
-      </h3>
+      <div className="pl-1">
+        <h3
+          className={cn(
+            "text-xs sm:text-sm font-bold text-white transition-colors leading-snug",
+            isDone
+              ? "text-slate-300 group-hover:text-emerald-300"
+              : "group-hover:text-violet-200"
+          )}
+        >
+          {task.title}
+        </h3>
+      </div>
 
       {/* ── Description Preview (Comfortable mode only) ── */}
       {density === "comfortable" && task.description && (
-        <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed font-sans">
+        <p className="pl-1 text-[11px] text-slate-400 line-clamp-2 leading-relaxed font-sans">
           {task.description.replace(/###.*/g, "")}
         </p>
       )}
 
       {/* ── Labels (if any) ── */}
       {task.labels?.length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap pt-0.5">
+        <div className="flex items-center gap-1 flex-wrap pl-1 pt-0.5">
           {task.labels.slice(0, 2).map((label: string) => (
             <span
               key={label}
@@ -129,7 +188,7 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
       )}
 
       {/* ── Bottom Row: Assignee, Estimate, Comments, Due Date ── */}
-      <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/[0.04] text-[11px] font-mono text-slate-400">
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/[0.04] text-[11px] font-mono text-slate-400 pl-1">
         <div className="flex items-center gap-2">
           {/* Assignee Avatar */}
           {task.assignees?.length > 0 ? (
@@ -159,13 +218,15 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {/* Due date */}
           {task.dueDate && (
             <span
               className={cn(
                 "flex items-center gap-1 text-[10px]",
-                isOverdue ? "text-rose-400 font-bold" : "text-slate-500"
+                isOverdue
+                  ? "text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 px-1 rounded"
+                  : "text-slate-500"
               )}
               title={`Due: ${formatDate(task.dueDate, "short")}`}
             >
@@ -183,6 +244,6 @@ export function TaskCard({ task, density = "comfortable", onClick }: TaskCardPro
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
