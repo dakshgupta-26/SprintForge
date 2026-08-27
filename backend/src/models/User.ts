@@ -11,6 +11,10 @@ export interface IUser extends Document {
   providerId?: string;
   bio?: string;
   title?: string;
+  location?: string;
+  website?: string;
+  timezone?: string;
+  language?: string;
   projects: mongoose.Types.ObjectId[];
   notifications: mongoose.Types.ObjectId[];
   isActive: boolean;
@@ -31,6 +35,10 @@ const userSchema = new Schema<IUser>(
     providerId: { type: String },
     bio:      { type: String, maxlength: 500 },
     title:    { type: String },
+    location: { type: String },
+    website:  { type: String },
+    timezone: { type: String, default: 'UTC' },
+    language: { type: String, default: 'English (US)' },
     projects:      [{ type: Schema.Types.ObjectId, ref: 'Project' }],
     notifications: [{ type: Schema.Types.ObjectId, ref: 'Notification' }],
     isActive: { type: Boolean, default: true },

@@ -65,10 +65,10 @@ export const getMe = async (req: any, res: Response) => {
 
 export const updateProfile = async (req: any, res: Response) => {
   try {
-    const { name, bio, title, avatar } = req.body;
+    const { name, bio, title, avatar, location, website, timezone, language } = req.body;
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { name, bio, title, avatar },
+      { name, bio, title, avatar, location, website, timezone, language },
       { new: true, runValidators: true }
     );
     res.json(user);

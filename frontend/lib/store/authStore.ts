@@ -11,6 +11,12 @@ interface User {
   role: string;
   bio?: string;
   title?: string;
+  provider?: string;
+  location?: string;
+  website?: string;
+  timezone?: string;
+  language?: string;
+  createdAt?: string;
 }
 
 interface AuthState {
