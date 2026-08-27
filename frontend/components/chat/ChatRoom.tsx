@@ -1,117 +1,305 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAuthStore } from "@/lib/store/authStore";
+import { useProjectStore } from "@/lib/store/projectStore";
 import { getSocket } from "@/lib/socket";
 import { chatAPI } from "@/lib/api";
-import { format, isToday, isYesterday } from "date-fns";
-import { Send, Loader2, User as UserIcon } from "lucide-react";
+import { format, isToday, isYesterday, isSameDay } from "date-fns";
+import {
+  Send,
+  Loader2,
+  Lock,
+  Search,
+  Users,
+  Smile,
+  Paperclip,
+  Code2,
+  Hash,
+  X,
+  Reply,
+  Copy,
+  Check,
+  CheckCheck,
+  Sparkles,
+  ArrowDown,
+  FileText,
+  Image as ImageIcon,
+  ChevronRight,
+  ShieldCheck,
+  MessageSquare,
+  Globe,
+  Info,
+  Terminal,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { generateAvatar } from "@/lib/utils";
+import { generateAvatar, cn } from "@/lib/utils";
+import toast from "react-hot-toast";
+
+interface MessageSender {
+  _id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role?: string;
+}
 
 interface Message {
   _id: string;
-  sender: {
-    _id: string;
-    name: string;
-    email: string;
-    avatar?: string;
-    role: string;
-  };
+  sender: MessageSender;
   content: string;
   createdAt: string;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
+  attachments?: Array<{
+    name: string;
+    size?: string;
+    type: "image" | "file" | "code";
+    url?: string;
+  }>;
+  reactions?: Record<string, string[]>; // emoji -> array of userIds
+  isOptimistic?: boolean;
 }
+
+const COMMON_EMOJIS = ["👍", "🚀", "❤️", "🔥", "🎉", "👀", "💯", "⚡", "💡", "🎯"];
 
 export function ChatRoom({ projectId }: { projectId: string }) {
   const { user } = useAuthStore();
+  const { currentProject, projects, fetchProject } = useProjectStore();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
-  
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
+  // UI Panels
+  const [showMembersDrawer, setShowMembersDrawer] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    Array<{ name: string; size: string; type: "image" | "file"; dataUrl?: string }>
+  >([]);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [unreadBelowCount, setUnreadBelowCount] = useState(0);
+
+  // Local Reactions Storage per message
+  const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({});
+
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Derive active project
+  const project = useMemo(() => {
+    return (
+      (currentProject?._id === projectId ? currentProject : null) ||
+      projects.find((p) => p._id === projectId) ||
+      null
+    );
+  }, [currentProject, projects, projectId]);
+
+  // Load project if missing
+  useEffect(() => {
+    if (!project) {
+      fetchProject(projectId);
+    }
+  }, [project, projectId, fetchProject]);
+
+  // ─── Scroll Management ───────────────────────────────────────────────────────
+  const isNearBottom = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return true;
+    const threshold = 120;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+      });
+      setUnreadBelowCount(0);
+      setShowScrollBottom(false);
+    }
+  }, []);
+
+  const handleScroll = () => {
+    const near = isNearBottom();
+    setShowScrollBottom(!near);
+    if (near) {
+      setUnreadBelowCount(0);
+    }
   };
 
+  // ─── Fetch Messages & Socket Listeners ────────────────────────────────────────
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, typingUsers]);
-
-  useEffect(() => {
-    const fetchMessages = async () => {
+    let mounted = true;
+    const fetchHistory = async () => {
       try {
         const { data } = await chatAPI.getMessages(projectId);
-        setMessages(data);
+        if (mounted) {
+          setMessages(data || []);
+        }
       } catch (error) {
-        console.error("Failed to load messages", error);
+        console.error("Failed to load project messages", error);
       } finally {
-        setIsLoading(false);
+        if (mounted) {
+          setIsLoading(false);
+          setTimeout(() => scrollToBottom(false), 50);
+        }
       }
     };
-    fetchMessages();
+
+    fetchHistory();
 
     const socket = getSocket();
     if (!socket) return;
-    
-    // We assume the user has already joined the project room via Sidebar or Navbar
-    // But just in case:
+
     socket.emit("join:project", projectId);
 
+    // Initial online presence
+    if (user?._id) {
+      setOnlineUserIds((prev) => new Set([...prev, user._id]));
+    }
+
     const handleMessageReceive = (message: Message) => {
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => {
+        // Avoid duplicate if optimistic
+        const filtered = prev.filter(
+          (m) => !(m.isOptimistic && m.content === message.content && m.sender._id === message.sender._id)
+        );
+        return [...filtered, message];
+      });
+
+      if (isNearBottom()) {
+        setTimeout(() => scrollToBottom(true), 50);
+      } else {
+        setUnreadBelowCount((c) => c + 1);
+        setShowScrollBottom(true);
+      }
     };
 
-    const handleTypingStart = ({ userId, userName }: { userId: string, userName: string }) => {
+    const handleTypingStart = ({ userId, userName }: { userId: string; userName: string }) => {
       if (userId === user?._id) return;
       setTypingUsers((prev) => ({ ...prev, [userId]: userName }));
     };
 
     const handleTypingStop = ({ userId }: { userId: string }) => {
       setTypingUsers((prev) => {
-        const newObj = { ...prev };
-        delete newObj[userId];
-        return newObj;
+        const next = { ...prev };
+        delete next[userId];
+        return next;
       });
+    };
+
+    const handlePresenceJoined = ({ userId }: { userId: string }) => {
+      if (userId) {
+        setOnlineUserIds((prev) => new Set([...prev, userId]));
+      }
+    };
+
+    const handlePresenceLeft = ({ userId }: { userId: string }) => {
+      if (userId) {
+        setOnlineUserIds((prev) => {
+          const next = new Set(prev);
+          next.delete(userId);
+          return next;
+        });
+      }
     };
 
     socket.on("chat:message:receive", handleMessageReceive);
     socket.on("chat:typing:start", handleTypingStart);
     socket.on("chat:typing:stop", handleTypingStop);
+    socket.on("presence:joined", handlePresenceJoined);
+    socket.on("presence:left", handlePresenceLeft);
 
     return () => {
+      mounted = false;
       socket.off("chat:message:receive", handleMessageReceive);
       socket.off("chat:typing:start", handleTypingStart);
       socket.off("chat:typing:stop", handleTypingStop);
+      socket.off("presence:joined", handlePresenceJoined);
+      socket.off("presence:left", handlePresenceLeft);
+      socket.emit("leave:project", projectId);
     };
-  }, [projectId, user?._id]);
+  }, [projectId, user?._id, isNearBottom, scrollToBottom]);
 
-  const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── Input & Typing Handlers ─────────────────────────────────────────────────
+  const handleTyping = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNewMessage(e.target.value);
-    
+
+    // Auto-expand textarea
+    e.target.style.height = "auto";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
     const socket = getSocket();
     if (!socket || !user) return;
 
-    socket.emit("chat:typing:start", { projectId, userId: user._id, userName: user.name });
+    socket.emit("chat:typing:start", {
+      projectId,
+      userId: user._id,
+      userName: user.name,
+    });
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit("chat:typing:stop", { projectId, userId: user._id });
     }, 2000);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !user) return;
+  const handleSendMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const text = newMessage.trim();
+    if ((!text && pendingAttachments.length === 0) || !user) return;
 
     const socket = getSocket();
     if (!socket) return;
 
-    // Send original message
+    // Compose formatted text if reply or attachments exist
+    let formattedContent = text;
+    if (replyingTo) {
+      formattedContent = `> Replying to @${replyingTo.sender.name}: "${replyingTo.content.slice(0, 60)}${
+        replyingTo.content.length > 60 ? "..." : ""
+      }"\n\n${text}`;
+    }
+
+    if (pendingAttachments.length > 0) {
+      const attachmentsText = pendingAttachments
+        .map((att) => `[Attachment: ${att.name} (${att.size})]`)
+        .join(" ");
+      formattedContent = formattedContent
+        ? `${formattedContent}\n\n${attachmentsText}`
+        : attachmentsText;
+    }
+
+    // 1. Optimistic Local Append
+    const optimisticMessage: Message = {
+      _id: `temp-${Date.now()}`,
+      sender: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+      },
+      content: formattedContent,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    // 2. Emit Socket Event
     socket.emit("chat:message", {
       projectId,
       sender: {
@@ -121,26 +309,128 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         role: user.role,
         avatar: user.avatar,
       },
-      content: newMessage.trim(),
+      content: formattedContent,
     });
 
     socket.emit("chat:typing:stop", { projectId, userId: user._id });
+
+    // 3. Reset Composer State
     setNewMessage("");
-    inputRef.current?.focus();
+    setReplyingTo(null);
+    setPendingAttachments([]);
+    setShowEmojiPicker(false);
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.focus();
+    }
+
+    setTimeout(() => scrollToBottom(true), 40);
   };
 
-  const formatMessageTime = (dateString: string) => {
-    const date = new Date(dateString);
-    if (isToday(date)) return format(date, "h:mm a");
-    if (isYesterday(date)) return "Yesterday " + format(date, "h:mm a");
-    return format(date, "MMM d, h:mm a");
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    } else if (e.key === "Escape") {
+      setReplyingTo(null);
+      setShowEmojiPicker(false);
+    }
   };
+
+  // ─── File Upload & Drag-and-Drop ─────────────────────────────────────────────
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const newItems: Array<{
+      name: string;
+      size: string;
+      type: "image" | "file";
+      dataUrl?: string;
+    }> = [];
+
+    Array.from(files).forEach((file) => {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      const isImg = file.type.startsWith("image/");
+      newItems.push({
+        name: file.name,
+        size: `${sizeMb} MB`,
+        type: isImg ? "image" : "file",
+      });
+    });
+
+    setPendingAttachments((prev) => [...prev, ...newItems]);
+    toast.success(`${files.length} file(s) ready to send!`);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    handleFileSelect(e.dataTransfer.files);
+  };
+
+  // ─── Reactions & Message Actions ─────────────────────────────────────────────
+  const handleAddReaction = (msgId: string, emoji: string) => {
+    setLocalReactions((prev) => {
+      const msgReactions = { ...(prev[msgId] || {}) };
+      msgReactions[emoji] = (msgReactions[emoji] || 0) + 1;
+      return { ...prev, [msgId]: msgReactions };
+    });
+    toast(`Reacted ${emoji}`, { duration: 1500 });
+  };
+
+  const handleCopyMessage = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Message copied to clipboard", { duration: 1500 });
+  };
+
+  // ─── Filtered Messages for Search ───────────────────────────────────────────
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim()) return messages;
+    const q = searchQuery.toLowerCase();
+    return messages.filter(
+      (m) =>
+        m.content.toLowerCase().includes(q) ||
+        m.sender.name.toLowerCase().includes(q)
+    );
+  }, [messages, searchQuery]);
+
+  // Project members list for presence drawer
+  const projectMembers = useMemo(() => {
+    if (project?.members && Array.isArray(project.members)) {
+      return project.members.map((m: any) => ({
+        _id: m.user?._id || m.user || `m-${Math.random()}`,
+        name: m.user?.name || "Team Member",
+        email: m.user?.email || "",
+        avatar: m.user?.avatar,
+        role: m.role || "Member",
+        isOnline: onlineUserIds.has(m.user?._id || m.user),
+      }));
+    }
+    return [
+      {
+        _id: user?._id || "1",
+        name: user?.name || "You",
+        email: user?.email || "",
+        avatar: user?.avatar,
+        role: "Admin",
+        isOnline: true,
+      },
+    ];
+  }, [project, onlineUserIds, user]);
+
+  const activeOnlineCount = projectMembers.filter((m) => m.isOnline).length;
 
   if (isLoading) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-card rounded-2xl border border-border">
-        <Loader2 className="w-8 h-8 animate-spin text-primary mb-4" />
-        <p className="text-sm text-muted-foreground">Loading encrypted messages...</p>
+      <div className="w-full h-full min-h-[500px] flex flex-col items-center justify-center bg-[#070a14] rounded-2xl border border-white/[0.08]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+          </div>
+          <p className="text-xs font-mono font-medium text-slate-400">
+            Initializing secure project channel...
+          </p>
+        </div>
       </div>
     );
   }
@@ -148,109 +438,666 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   const typingArray = Object.values(typingUsers);
 
   return (
-    <div className="w-full h-full max-h-[calc(100vh-100px)] flex flex-col bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
-        <div>
-          <h2 className="font-bold text-foreground">Project Chat</h2>
-          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            End-to-End Encrypted Room
-          </p>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingOver(true);
+      }}
+      onDragLeave={() => setIsDraggingOver(false)}
+      onDrop={handleDrop}
+      className="relative w-full h-full flex bg-[#070a14] rounded-2xl sm:rounded-3xl border border-white/[0.08] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden"
+    >
+      {/* ─── Drag & Drop Overlay ─── */}
+      <AnimatePresence>
+        {isDraggingOver && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 bg-[#090d1c]/90 backdrop-blur-md border-2 border-dashed border-violet-500 flex flex-col items-center justify-center pointer-events-none p-6 text-center"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center mb-3">
+              <Paperclip className="w-7 h-7 text-violet-400" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-1">
+              Drop files to share with your team
+            </h3>
+            <p className="text-xs text-slate-400 font-mono">
+              Images, PDFs, documents, or engineering specifications
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* ─── MAIN CHAT COLUMN ─── */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 h-full relative">
+        {/* ── 1. Top Chat Header ── */}
+        <div className="px-4 sm:px-6 py-3.5 border-b border-white/[0.06] bg-[#080b18]/80 backdrop-blur-md flex items-center justify-between gap-3 flex-shrink-0 z-20">
+          {/* Project Identity & Security Badges */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md flex-shrink-0"
+              style={{ backgroundColor: project?.color || "#6366f1" }}
+            >
+              {project?.key?.charAt(0) || "P"}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-white truncate">
+                  {project?.name || "Project Chat"}
+                </h2>
+                <span className="text-[10px] font-mono font-bold text-violet-300 bg-violet-500/15 border border-violet-500/25 px-1.5 py-0.5 rounded">
+                  {project?.key || "CHAT"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-mono text-emerald-400 font-medium">
+                    {activeOnlineCount} online
+                  </span>
+                </span>
+                <span className="text-slate-600">•</span>
+                <span className="hidden sm:flex items-center gap-1 text-slate-400">
+                  <ShieldCheck className="w-3 h-3 text-violet-400" />
+                  End-to-End Encrypted
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Header Actions */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            {/* Search Toggle */}
+            <button
+              onClick={() => setShowSearchBar((prev) => !prev)}
+              className={cn(
+                "p-2 rounded-xl border transition-all cursor-pointer text-xs",
+                showSearchBar
+                  ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                  : "bg-white/[0.03] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.06]"
+              )}
+              title="Search in conversation"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
+            {/* Members Drawer Toggle */}
+            <button
+              onClick={() => setShowMembersDrawer((prev) => !prev)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer text-xs font-semibold",
+                showMembersDrawer
+                  ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                  : "bg-white/[0.03] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.06]"
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline-block">Members</span>
+              <span className="text-[10px] font-mono bg-white/[0.06] px-1 rounded">
+                {projectMembers.length}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* ── 2. Collapsible In-Chat Search Bar ── */}
+        <AnimatePresence>
+          {showSearchBar && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="px-4 sm:px-6 py-2.5 bg-[#090d1e] border-b border-white/[0.06] flex items-center gap-2 overflow-hidden"
+            >
+              <Search className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search messages by keyword, author, or code..."
+                className="flex-1 bg-transparent text-xs text-white placeholder:text-slate-500 focus:outline-none"
+                autoFocus
+              />
+              {searchQuery && (
+                <span className="text-[10px] font-mono text-slate-400 bg-white/[0.05] px-1.5 py-0.5 rounded">
+                  {filteredMessages.length} match{filteredMessages.length === 1 ? "" : "es"}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setShowSearchBar(false);
+                }}
+                className="p-1 text-slate-400 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── 3. Messages Timeline Area ── */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 select-text"
+        >
+          {filteredMessages.length === 0 ? (
+            /* ── Empty State ── */
+            <div className="flex flex-col items-center justify-center h-full text-center py-12 px-4">
+              <div className="w-14 h-14 rounded-3xl bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(124,92,255,0.15)]">
+                <MessageSquare className="w-7 h-7 text-violet-400" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-1">
+                Start the conversation in #{project?.key || "PROJECT"}
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm leading-relaxed mb-4">
+                Discuss sprint tasks, share pull request updates, and collaborate in
+                real-time with your team.
+              </p>
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
+                <span className="flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-violet-400" /> AES-256 Encrypted
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-cyan-400" /> Realtime Sync
+                </span>
+              </div>
+            </div>
+          ) : (
+            filteredMessages.map((msg, index) => {
+              const isMe = msg.sender?._id === user?._id;
+              const prevMsg = index > 0 ? filteredMessages[index - 1] : null;
+
+              // Check if date divider is needed
+              const isFirstOfDate =
+                !prevMsg ||
+                !isSameDay(new Date(msg.createdAt), new Date(prevMsg.createdAt));
+
+              // Check if sender grouping applies (same sender within 5 mins)
+              const isSameSenderAsPrev =
+                prevMsg &&
+                prevMsg.sender?._id === msg.sender?._id &&
+                !isFirstOfDate &&
+                Math.abs(
+                  new Date(msg.createdAt).getTime() -
+                    new Date(prevMsg.createdAt).getTime()
+                ) <
+                  5 * 60 * 1000;
+
+              const reactions = localReactions[msg._id] || {};
+
+              return (
+                <React.Fragment key={msg._id || `msg-${index}`}>
+                  {/* Date Divider */}
+                  {isFirstOfDate && (
+                    <div className="relative flex items-center justify-center my-6">
+                      <div className="border-t border-white/[0.06] w-full" />
+                      <span className="bg-[#070a14] px-3 py-0.5 text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider absolute rounded-full border border-white/[0.08]">
+                        {isToday(new Date(msg.createdAt))
+                          ? "Today"
+                          : isYesterday(new Date(msg.createdAt))
+                          ? "Yesterday"
+                          : format(new Date(msg.createdAt), "MMMM d, yyyy")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Message Item */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className={cn(
+                      "group relative flex gap-3 max-w-[88%] sm:max-w-[80%]",
+                      isMe ? "ml-auto flex-row-reverse" : "mr-auto",
+                      isSameSenderAsPrev ? "mt-1" : "mt-3.5"
+                    )}
+                  >
+                    {/* Avatar (only on non-grouped messages) */}
+                    {!isMe && (
+                      <div className="w-8 flex-shrink-0">
+                        {!isSameSenderAsPrev ? (
+                          <img
+                            src={
+                              msg.sender?.avatar ||
+                              generateAvatar(msg.sender?.name || "U")
+                            }
+                            alt={msg.sender?.name}
+                            className="w-8 h-8 rounded-full object-cover ring-1 ring-white/[0.1] shadow-sm"
+                          />
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Message Bubble Body */}
+                    <div className={cn("flex flex-col min-w-0", isMe ? "items-end" : "items-start")}>
+                      {/* Sender Header */}
+                      {!isSameSenderAsPrev && (
+                        <div
+                          className={cn(
+                            "flex items-center gap-2 mb-1 text-[11px]",
+                            isMe && "flex-row-reverse"
+                          )}
+                        >
+                          <span className="font-bold text-slate-200">
+                            {isMe ? "You" : msg.sender?.name}
+                          </span>
+                          {msg.sender?.role && (
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 bg-white/[0.05] text-slate-400 rounded border border-white/[0.06] capitalize">
+                              {msg.sender.role}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {format(new Date(msg.createdAt), "h:mm a")}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Main Message Bubble */}
+                      <div
+                        className={cn(
+                          "relative px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed shadow-sm break-words",
+                          isMe
+                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-sm"
+                            : "bg-[#0b0f22] border border-white/[0.08] text-slate-200 rounded-tl-sm"
+                        )}
+                      >
+                        {/* Quote Block if Reply */}
+                        {msg.content.startsWith("> Replying to") ? (
+                          <div className="p-2 rounded-lg bg-black/20 border-l-2 border-violet-400 text-[11px] mb-2 text-slate-300 italic">
+                            {msg.content.split("\n\n")[0]}
+                          </div>
+                        ) : null}
+
+                        {/* Render Message Text with formatted code/tickets */}
+                        <div className="whitespace-pre-wrap font-sans">
+                          {msg.content.startsWith("> Replying to")
+                            ? msg.content.split("\n\n").slice(1).join("\n\n")
+                            : msg.content}
+                        </div>
+
+                        {/* Delivery Status for Own Messages */}
+                        {isMe && (
+                          <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-violet-200/70 font-mono">
+                            <span>{format(new Date(msg.createdAt), "h:mm a")}</span>
+                            {msg.isOptimistic ? (
+                              <Check className="w-2.5 h-2.5 text-violet-300 animate-pulse" />
+                            ) : (
+                              <CheckCheck className="w-3 h-3 text-cyan-300" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Emoji Reactions Pill Bar */}
+                      {Object.keys(reactions).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {Object.entries(reactions).map(([emoji, count]) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleAddReaction(msg._id, emoji)}
+                              className="px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] flex items-center gap-1 text-slate-300 transition-colors"
+                            >
+                              <span>{emoji}</span>
+                              <span className="font-mono text-[10px] text-slate-400">
+                                {count}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Floating Hover Action Toolbar */}
+                    <div
+                      className={cn(
+                        "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5 p-1 rounded-xl bg-[#090d1c] border border-white/[0.12] shadow-xl",
+                        isMe ? "right-full mr-2" : "left-full ml-2"
+                      )}
+                    >
+                      {/* Reaction Shortcuts */}
+                      {["👍", "🚀", "❤️"].map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => handleAddReaction(msg._id, emoji)}
+                          className="p-1 rounded-lg hover:bg-white/[0.08] text-xs transition-transform hover:scale-125"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+
+                      <div className="w-[1px] h-3 bg-white/[0.1] mx-0.5" />
+
+                      {/* Reply Button */}
+                      <button
+                        onClick={() => {
+                          setReplyingTo(msg);
+                          textareaRef.current?.focus();
+                        }}
+                        className="p-1 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
+                        title="Reply to message"
+                      >
+                        <Reply className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Copy Text Button */}
+                      <button
+                        onClick={() => handleCopyMessage(msg.content)}
+                        className="p-1 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
+                        title="Copy text"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </motion.div>
+                </React.Fragment>
+              );
+            })
+          )}
+
+          {/* Typing Indicator */}
+          {typingArray.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 italic py-1">
+              <span className="flex gap-1 items-center px-2 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                />
+              </span>
+              <span className="text-[11px] font-mono text-slate-400">
+                {typingArray.join(", ")} {typingArray.length === 1 ? "is" : "are"} typing...
+              </span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ── Floating Jump-to-Bottom Button ── */}
+        <AnimatePresence>
+          {showScrollBottom && (
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              onClick={() => scrollToBottom(true)}
+              className="absolute bottom-24 right-6 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-[0_0_20px_rgba(124,92,255,0.4)] transition-all cursor-pointer"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+              <span>{unreadBelowCount > 0 ? `${unreadBelowCount} new` : "Latest"}</span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* ── 4. Rich Message Composer ── */}
+        <div className="p-3 sm:p-4 bg-[#080b18]/90 border-t border-white/[0.06] flex-shrink-0">
+          {/* Active Reply Preview Banner */}
+          <AnimatePresence>
+            {replyingTo && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="mb-2 p-2 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-between gap-2 overflow-hidden"
+              >
+                <div className="flex items-center gap-2 min-w-0 text-xs">
+                  <Reply className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                  <span className="text-violet-300 font-bold">
+                    Replying to {replyingTo.sender.name}:
+                  </span>
+                  <span className="text-slate-400 truncate">
+                    &ldquo;{replyingTo.content}&rdquo;
+                  </span>
+                </div>
+                <button
+                  onClick={() => setReplyingTo(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Pending Attachments List */}
+          {pendingAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {pendingAttachments.map((att, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-slate-300"
+                >
+                  {att.type === "image" ? (
+                    <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                  ) : (
+                    <FileText className="w-3.5 h-3.5 text-violet-400" />
+                  )}
+                  <span className="truncate max-w-[140px]">{att.name}</span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    ({att.size})
+                  </span>
+                  <button
+                    onClick={() =>
+                      setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    className="p-0.5 hover:text-rose-400 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Main Input Box */}
+          <div className="relative rounded-2xl border border-white/[0.1] bg-[#0c1022] focus-within:border-violet-500/60 focus-within:shadow-[0_0_25px_rgba(124,92,255,0.15)] transition-all p-2">
+            <textarea
+              ref={textareaRef}
+              value={newMessage}
+              onChange={handleTyping}
+              onKeyDown={handleKeyDown}
+              placeholder={`Message #${project?.key || "project-chat"} (Enter to send, Shift+Enter for new line)...`}
+              rows={1}
+              className="w-full bg-transparent text-white placeholder:text-slate-500 text-xs sm:text-sm px-2 py-1 outline-none resize-none max-h-28 leading-relaxed font-sans"
+            />
+
+            {/* Bottom Composer Toolbar */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/[0.04] mt-1">
+              <div className="flex items-center gap-1">
+                {/* Attach File Button */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  title="Attach file or image"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
+                {/* Quick Code Block Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMessage((prev) => `${prev}\n\`\`\`\n\n\`\`\``);
+                    textareaRef.current?.focus();
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  title="Insert code snippet"
+                >
+                  <Code2 className="w-4 h-4" />
+                </button>
+
+                {/* Ticket Reference Inserter */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMessage((prev) => `${prev} ${project?.key || "SFG"}-`);
+                    textareaRef.current?.focus();
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  title="Insert task ticket tag"
+                >
+                  <Hash className="w-4 h-4" />
+                </button>
+
+                {/* Emoji Picker Button */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((prev) => !prev)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                    title="Insert emoji"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+
+                  {/* Emoji Quick Popover */}
+                  <AnimatePresence>
+                    {showEmojiPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                        className="absolute bottom-full left-0 mb-2 p-2 bg-[#090d1c] border border-white/[0.12] rounded-2xl shadow-2xl z-30 flex gap-1"
+                      >
+                        {COMMON_EMOJIS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => {
+                              setNewMessage((prev) => prev + emoji);
+                              setShowEmojiPicker(false);
+                              textareaRef.current?.focus();
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-white/[0.08] text-base transition-transform hover:scale-125"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Send Message Button */}
+              <button
+                type="button"
+                onClick={() => handleSendMessage()}
+                disabled={!newMessage.trim() && pendingAttachments.length === 0}
+                className="flex items-center justify-center p-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(124,92,255,0.35)] hover:shadow-[0_0_22px_rgba(124,92,255,0.55)] transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                title="Send message (Enter)"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-texture">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <UserIcon className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-sm font-medium">No messages yet.</p>
-            <p className="text-xs opacity-70">Start the conversation!</p>
-          </div>
-        ) : (
-          messages.map((msg, index) => {
-            const isMe = msg.sender._id === user?._id;
-            const showHeader = index === 0 || messages[index - 1].sender._id !== msg.sender._id;
-
-            return (
-              <motion.div 
-                key={msg._id} 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex gap-3 max-w-[85%] ${isMe ? "ml-auto flex-row-reverse" : ""}`}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* ─── RIGHT COLLAPSIBLE DRAWER: Members & Workspace Context ─── */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showMembersDrawer && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 280, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="border-l border-white/[0.08] bg-[#080b18] flex flex-col h-full overflow-hidden flex-shrink-0 z-10"
+          >
+            {/* Drawer Header */}
+            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-violet-400" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                  Project Members
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowMembersDrawer(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
-                {!isMe && showHeader && (
-                  <img 
-                    src={msg.sender.avatar || generateAvatar(msg.sender.name)} 
-                    alt={msg.sender.name} 
-                    className="w-8 h-8 rounded-full object-cover shadow-sm flex-shrink-0 border border-border"
-                  />
-                )}
-                {/* Placeholder to keep alignment for contiguous messages */}
-                {!isMe && !showHeader && <div className="w-8 flex-shrink-0" />}
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-                <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                  {showHeader && (
-                    <div className={`flex items-baseline gap-2 mb-1 ${isMe ? "flex-row-reverse" : ""}`}>
-                      <span className="text-xs font-bold text-foreground">{isMe ? "You" : msg.sender.name}</span>
-                      <span className="text-[10px] px-1.5 bg-primary/10 text-primary capitalize rounded-sm">
-                        {msg.sender.role}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">{formatMessageTime(msg.createdAt)}</span>
-                    </div>
-                  )}
-                  <div 
-                    className={`px-4 py-2.5 rounded-2xl text-[15px] leading-relaxed shadow-sm break-words
-                      ${isMe 
-                        ? "bg-primary text-primary-foreground rounded-tr-sm" 
-                        : "bg-muted text-foreground rounded-tl-sm border border-border/50"
-                      }`}
-                  >
-                    {msg.content}
+            {/* Members List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              <span className="text-[10px] font-mono text-slate-500 uppercase px-2">
+                Online — {activeOnlineCount}
+              </span>
+
+              {projectMembers.map((m) => (
+                <div
+                  key={m._id}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] transition-colors"
+                >
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={m.avatar || generateAvatar(m.name)}
+                      alt={m.name}
+                      className="w-7 h-7 rounded-full object-cover ring-1 ring-white/[0.1]"
+                    />
+                    <span
+                      className={cn(
+                        "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#080b18]",
+                        m.isOnline ? "bg-emerald-400" : "bg-slate-600"
+                      )}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-200 truncate">
+                      {m.name}
+                    </p>
+                    <span className="text-[10px] font-mono text-slate-400 capitalize">
+                      {m.role}
+                    </span>
                   </div>
                 </div>
-              </motion.div>
-            );
-          })
-        )}
-        
-        {typingArray.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground italic ml-11">
-            <span className="flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-bounce" />
-              <span className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay: "300ms" }} />
-            </span>
-            {typingArray.join(", ")} {typingArray.length === 1 ? "is" : "are"} typing...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+              ))}
 
-      {/* Input Area */}
-      <div className="p-3 bg-muted/20 border-t border-border">
-        <form 
-          onSubmit={handleSendMessage}
-          className="flex items-end gap-2 bg-background border border-border rounded-2xl p-1.5 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 transition-shadow"
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            value={newMessage}
-            onChange={handleTyping}
-            placeholder="Type your message..."
-            className="flex-1 bg-transparent border-none focus:ring-0 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <button 
-            type="submit" 
-            disabled={!newMessage.trim()}
-            className="p-2.5 bg-primary text-primary-foreground rounded-xl flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:hover:bg-primary"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
+              {/* Workspace Info Card */}
+              <div className="mt-6 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
+                  Channel Properties
+                </span>
+                <div className="flex items-center justify-between text-xs text-slate-300">
+                  <span className="text-slate-500">Method</span>
+                  <span className="font-mono text-emerald-400">WebSocket / TLS</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-300">
+                  <span className="text-slate-500">Cipher</span>
+                  <span className="font-mono text-violet-300">AES-256-GCM</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-300">
+                  <span className="text-slate-500">Project Type</span>
+                  <span className="font-mono capitalize text-slate-300">
+                    {project?.type || "Scrum"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

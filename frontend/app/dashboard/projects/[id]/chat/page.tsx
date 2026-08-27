@@ -19,7 +19,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
-      className="h-[calc(100vh-100px)] w-full max-w-6xl mx-auto"
+      className="h-[calc(100vh-88px)] w-full"
     >
       <ChatRoom projectId={id} />
     </motion.div>
