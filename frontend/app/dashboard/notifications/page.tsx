@@ -1,291 +1,477 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
+import {
+  Bell,
+  CheckCheck,
+  Trash2,
+  Filter,
+  Search,
+  Settings,
+  Sparkles,
+  Calendar,
+  Layers,
+  ArrowRight,
+  ShieldCheck,
+  FolderKanban,
+  X,
+} from "lucide-react";
 import { notificationAPI } from "@/lib/api";
 import { getSocket, connectSocket } from "@/lib/socket";
 import { useAuthStore } from "@/lib/store/authStore";
-import {
-  Bell, Check, CheckCheck, Trash2, BellOff, UserPlus, Zap,
-  MessageCircle, GitPullRequest, AlertCircle, Users, BellRing, Filter,
-} from "lucide-react";
+import { useProjectStore } from "@/lib/store/projectStore";
 import { cn } from "@/lib/utils";
+import { NotificationCard, NotificationItem } from "@/components/notifications/NotificationCard";
+import { NotificationActivitySummary } from "@/components/notifications/NotificationActivitySummary";
+import { NotificationContextSidebar } from "@/components/notifications/NotificationContextSidebar";
+import { NotificationEmptyState } from "@/components/notifications/NotificationEmptyState";
+import { NotificationSettingsModal } from "@/components/notifications/NotificationSettingsModal";
 import toast from "react-hot-toast";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "unread", label: "Unread" },
+  { id: "mentions", label: "Mentions" },
+  { id: "tasks", label: "Tasks" },
+  { id: "projects", label: "Projects & Invites" },
+  { id: "issues", label: "Issues" },
+  { id: "comments", label: "Comments" },
+  { id: "sprints", label: "Sprints" },
+] as const;
 
-function timeAgo(date: string | Date) {
-  const now = Date.now();
-  const diff = Math.floor((now - new Date(date).getTime()) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-const TYPE_CONFIG: Record<string, { icon: any; label: string; color: string; bg: string; border: string }> = {
-  project_invite: { icon: UserPlus,       label: "Invite",   color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/20" },
-  user_joined:    { icon: Users,          label: "Joined",   color: "text-green-400",  bg: "bg-green-500/10",  border: "border-green-500/20"  },
-  task_assigned:  { icon: Zap,            label: "Task",     color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20" },
-  task_updated:   { icon: Zap,            label: "Task",     color: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/20"   },
-  comment_added:  { icon: MessageCircle,  label: "Comment",  color: "text-sky-400",    bg: "bg-sky-500/10",    border: "border-sky-500/20"    },
-  sprint_started: { icon: BellRing,       label: "Sprint",   color: "text-primary",    bg: "bg-primary/10",    border: "border-primary/20"    },
-  pr_linked:      { icon: GitPullRequest, label: "PR",       color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-  mention:        { icon: AlertCircle,    label: "Mention",  color: "text-pink-400",   bg: "bg-pink-500/10",   border: "border-pink-500/20"   },
-};
-
-const getConfig = (type: string) =>
-  TYPE_CONFIG[type] || { icon: Bell, label: "System", color: "text-muted-foreground", bg: "bg-muted", border: "border-border" };
-
-const FILTERS = ["all", "unread", "project_invite", "user_joined", "task_assigned", "comment_added"] as const;
-type Filter = (typeof FILTERS)[number];
+type FilterType = (typeof FILTERS)[number]["id"];
 
 export default function NotificationsPage() {
   const { user } = useAuthStore();
-  const router = useRouter();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const { fetchProjects } = useProjectStore();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const load = useCallback(async () => {
+  // ── Load Notifications from API ──
+  const loadNotifications = useCallback(async () => {
     try {
+      setIsLoading(true);
       const { data } = await notificationAPI.getAll();
-      const list = Array.isArray(data.notifications) ? data.notifications : Array.isArray(data) ? data : [];
+      const list = Array.isArray(data.notifications)
+        ? data.notifications
+        : Array.isArray(data)
+        ? data
+        : [];
       setNotifications(list);
-    } catch {}
-    finally { setIsLoading(false); }
+    } catch {
+      toast.error("Failed to load notifications");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
 
-  // ── Real-time ──────────────────────────────────────────────────────────────
+  // ── Real-Time Socket.IO Synchronization ──
   useEffect(() => {
     if (!user) return;
     connectSocket(user._id);
-    const s = getSocket();
-    const handler = (notif: any) => {
-      setNotifications((prev) => prev.some((n) => n._id === notif._id) ? prev : [notif, ...prev]);
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNewNotification = (newNotif: NotificationItem) => {
+      setNotifications((prev) => {
+        if (prev.some((n) => n._id === newNotif._id)) return prev;
+        return [newNotif, ...prev];
+      });
+      toast(`New notification: ${newNotif.title}`, {
+        icon: "🔔",
+        duration: 3000,
+      });
     };
-    s.on("notification:new", handler);
-    return () => { s.off("notification:new", handler); };
+
+    socket.on("notification:new", handleNewNotification);
+    socket.on("notification", handleNewNotification);
+
+    return () => {
+      socket.off("notification:new", handleNewNotification);
+      socket.off("notification", handleNewNotification);
+    };
   }, [user]);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const filtered = notifications.filter((n) => {
-    if (filter === "all") return true;
-    if (filter === "unread") return !n.isRead;
-    return n.type === filter;
-  });
+  // ── Unread Counts and Metrics ──
+  const unreadCount = useMemo(() => {
+    return notifications.filter((n) => !n.isRead).length;
+  }, [notifications]);
 
-  // ── Actions ────────────────────────────────────────────────────────────────
-  const markRead = async (id: string) => {
-    await notificationAPI.markRead(id).catch(() => {});
-    setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+  const taskCount = useMemo(() => {
+    return notifications.filter(
+      (n) => n.type.startsWith("task_") || n.type.startsWith("sprint_")
+    ).length;
+  }, [notifications]);
+
+  const mentionCount = useMemo(() => {
+    return notifications.filter((n) => n.type === "mention").length;
+  }, [notifications]);
+
+  const inviteCount = useMemo(() => {
+    return notifications.filter(
+      (n) => n.type === "project_invite" || n.type === "user_joined"
+    ).length;
+  }, [notifications]);
+
+  const issueCount = useMemo(() => {
+    return notifications.filter(
+      (n) => n.type === "issue_created" || n.type === "bug"
+    ).length;
+  }, [notifications]);
+
+  const commentCount = useMemo(() => {
+    return notifications.filter((n) => n.type === "comment_added").length;
+  }, [notifications]);
+
+  const sprintCount = useMemo(() => {
+    return notifications.filter((n) => n.type.startsWith("sprint_")).length;
+  }, [notifications]);
+
+  // ── Filtered & Searched Notifications ──
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((notif) => {
+      // 1. Search query filter
+      const q = searchQuery.toLowerCase().trim();
+      if (q) {
+        const titleMatch = notif.title?.toLowerCase().includes(q);
+        const msgMatch = notif.message?.toLowerCase().includes(q);
+        const senderMatch = notif.sender?.name?.toLowerCase().includes(q);
+        const projMatch = notif.data?.projectName?.toLowerCase().includes(q);
+        const taskKeyMatch = notif.data?.taskKey?.toLowerCase().includes(q);
+        if (!titleMatch && !msgMatch && !senderMatch && !projMatch && !taskKeyMatch) {
+          return false;
+        }
+      }
+
+      // 2. Filter Category
+      if (activeFilter === "all") return true;
+      if (activeFilter === "unread") return !notif.isRead;
+      if (activeFilter === "mentions") return notif.type === "mention";
+      if (activeFilter === "tasks")
+        return notif.type.startsWith("task_") || notif.type === "task_status_changed";
+      if (activeFilter === "projects")
+        return notif.type === "project_invite" || notif.type === "user_joined";
+      if (activeFilter === "issues") return notif.type.startsWith("issue_");
+      if (activeFilter === "comments") return notif.type === "comment_added";
+      if (activeFilter === "sprints") return notif.type.startsWith("sprint_");
+
+      return true;
+    });
+  }, [notifications, activeFilter, searchQuery]);
+
+  // ── Time Grouping (Today, Yesterday, This Week, Earlier) ──
+  const groupedNotifications = useMemo(() => {
+    const groups: Record<string, NotificationItem[]> = {
+      TODAY: [],
+      YESTERDAY: [],
+      "THIS WEEK": [],
+      EARLIER: [],
+    };
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+    const weekStart = todayStart - 7 * 24 * 60 * 60 * 1000;
+
+    filteredNotifications.forEach((notif) => {
+      const time = new Date(notif.createdAt).getTime();
+      if (time >= todayStart) {
+        groups.TODAY.push(notif);
+      } else if (time >= yesterdayStart) {
+        groups.YESTERDAY.push(notif);
+      } else if (time >= weekStart) {
+        groups["THIS WEEK"].push(notif);
+      } else {
+        groups.EARLIER.push(notif);
+      }
+    });
+
+    return groups;
+  }, [filteredNotifications]);
+
+  // ── Actions ──
+  const handleMarkRead = async (id: string) => {
+    try {
+      await notificationAPI.markRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
+      );
+    } catch {
+      toast.error("Failed to update notification");
+    }
   };
 
-  const markAllRead = async () => {
-    await notificationAPI.markAllRead().catch(() => {});
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    toast.success("All marked as read");
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0) return;
+    try {
+      await notificationAPI.markAllRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      toast.success("All notifications marked as read! ✨");
+    } catch {
+      toast.error("Failed to mark notifications read");
+    }
   };
 
-  const deleteOne = async (id: string) => {
-    await notificationAPI.delete(id).catch(() => {});
-    setNotifications((prev) => prev.filter((n) => n._id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      await notificationAPI.delete(id);
+      setNotifications((prev) => prev.filter((n) => n._id !== id));
+      toast.success("Notification removed");
+    } catch {
+      toast.error("Failed to remove notification");
+    }
   };
 
-  const clearAll = async () => {
-    if (!confirm("Clear all notifications? This cannot be undone.")) return;
-    await Promise.all(notifications.map((n) => notificationAPI.delete(n._id).catch(() => {})));
-    setNotifications([]);
-    toast.success("All notifications cleared");
-  };
-
-  const handleClick = async (notif: any) => {
-    if (!notif.isRead) await markRead(notif._id);
-    if (notif.link) router.push(notif.link);
+  const handleClearRead = async () => {
+    const readItems = notifications.filter((n) => n.isRead);
+    if (readItems.length === 0) {
+      toast("No read notifications to clear", { icon: "ℹ️" });
+      return;
+    }
+    try {
+      await Promise.all(readItems.map((n) => notificationAPI.delete(n._id)));
+      setNotifications((prev) => prev.filter((n) => !n.isRead));
+      toast.success("Cleared all read notifications");
+    } catch {
+      toast.error("Failed to clear notifications");
+    }
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black flex items-center gap-2.5">
-            <Bell className="w-6 h-6 text-primary" />
-            Notifications
-            {unreadCount > 0 && (
-              <motion.span
-                initial={{ scale: 0 }} animate={{ scale: 1 }}
-                className="text-sm bg-primary text-primary-foreground px-2.5 py-0.5 rounded-full font-bold"
-              >
-                {unreadCount} new
-              </motion.span>
-            )}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Stay updated on invites, tasks, and project activity
-          </p>
+    <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 space-y-6 pb-16">
+      {/* ── 1. Full-Width Header ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full flex flex-col md:flex-row md:items-center justify-between gap-4 pt-1"
+      >
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600/20 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-md flex-shrink-0">
+            <Bell className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Notifications
+              </h1>
+              {unreadCount > 0 ? (
+                <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-violet-600/20 text-violet-300 border border-violet-500/30 animate-pulse">
+                  {unreadCount} unread
+                </span>
+              ) : (
+                <span className="text-xs font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full">
+                  All caught up
+                </span>
+              )}
+            </div>
+            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+              Stay on top of tasks, projects, mentions, and team activity across your workspace
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           {unreadCount > 0 && (
-            <button onClick={markAllRead}
-              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-xl text-sm hover:bg-muted transition-colors font-medium">
-              <CheckCheck className="w-4 h-4" /> Mark all read
+            <button
+              onClick={handleMarkAllRead}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-violet-300 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              <span>Mark all as read</span>
             </button>
           )}
-          {notifications.length > 0 && (
-            <button onClick={clearAll}
-              className="flex items-center gap-1.5 px-3 py-2 border border-red-500/30 rounded-xl text-sm hover:bg-red-500/10 text-red-500 transition-colors font-medium">
-              <Trash2 className="w-4 h-4" /> Clear all
+
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-white/[0.16] text-slate-200 text-xs font-semibold transition-all cursor-pointer"
+            title="Notification Preferences"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-400" />
+            <span>Preferences</span>
+          </button>
+
+          {notifications.some((n) => n.isRead) && (
+            <button
+              onClick={handleClearRead}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.02] hover:bg-rose-500/10 border border-white/[0.06] hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-medium transition-all cursor-pointer"
+              title="Clear all read items"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear read</span>
             </button>
           )}
         </div>
       </motion.div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <Filter className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        {FILTERS.map((f) => {
-          const count = f === "all"
-            ? notifications.length
-            : f === "unread"
-            ? unreadCount
-            : notifications.filter((n) => n.type === f).length;
-          return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                "flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all",
-                filter === f
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-              )}
-            >
-              {f.replace(/_/g, " ")} {count > 0 && `(${count})`}
-            </button>
-          );
-        })}
-      </div>
+      {/* ── 2. Full-Width Activity Metric Strip ── */}
+      <NotificationActivitySummary
+        total={notifications.length}
+        unread={unreadCount}
+        taskCount={taskCount}
+        mentionCount={mentionCount}
+        inviteCount={inviteCount}
+      />
 
-      {/* Notification list */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-20 skeleton rounded-2xl" />
-          ))}
+      {/* ── 3. Search Bar + Smart Filter Chips (Full Width) ── */}
+      <div className="w-full space-y-3">
+        {/* Search Bar */}
+        <div className="relative w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search notifications by person, work item, project, or keyword..."
+            className="w-full pl-11 pr-10 py-3 rounded-2xl bg-[#090d1f] border border-white/[0.08] text-white text-xs sm:text-sm focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20 transition-all placeholder:text-slate-500 shadow-sm"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-      ) : filtered.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-24 border border-dashed border-border rounded-2xl"
-        >
-          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-            <BellOff className="w-7 h-7 text-muted-foreground opacity-40" />
-          </div>
-          <h3 className="font-semibold text-foreground mb-1">
-            {filter === "all" ? "You're all caught up!" : `No ${filter.replace(/_/g, " ")} notifications`}
-          </h3>
-          <p className="text-sm text-muted-foreground text-center max-w-xs">
-            {filter === "all"
-              ? "Notifications about invites, tasks, and project updates will appear here."
-              : "Try switching to a different filter."}
-          </p>
-        </motion.div>
-      ) : (
-        <AnimatePresence initial={false}>
-          <div className="space-y-2">
-            {filtered.map((notif, i) => {
-              const cfg = getConfig(notif.type);
-              const Icon = cfg.icon;
-              return (
-                <motion.div
-                  key={notif._id}
-                  layout
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 16, height: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  onClick={() => handleClick(notif)}
+
+        {/* Filter Chips Bar */}
+        <div className="w-full flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
+          {FILTERS.map((f) => {
+            const count =
+              f.id === "all"
+                ? notifications.length
+                : f.id === "unread"
+                ? unreadCount
+                : f.id === "mentions"
+                ? mentionCount
+                : f.id === "tasks"
+                ? taskCount
+                : f.id === "projects"
+                ? inviteCount
+                : f.id === "issues"
+                ? issueCount
+                : f.id === "comments"
+                ? commentCount
+                : sprintCount;
+
+            const isSelected = activeFilter === f.id;
+
+            return (
+              <button
+                key={f.id}
+                onClick={() => setActiveFilter(f.id)}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+                  isSelected
+                    ? "bg-violet-600 text-white shadow-[0_0_16px_rgba(124,92,255,0.4)] font-bold"
+                    : "bg-[#090d1f] border border-white/[0.06] text-slate-300 hover:text-white hover:bg-white/[0.04]"
+                )}
+              >
+                <span>{f.label}</span>
+                <span
                   className={cn(
-                    "flex items-start gap-4 p-4 rounded-2xl border transition-all cursor-pointer group",
-                    notif.isRead
-                      ? "border-border bg-card hover:bg-muted/30"
-                      : `border-primary/20 bg-primary/5 hover:bg-primary/8`
+                    "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full",
+                    isSelected
+                      ? "bg-white/20 text-white"
+                      : "bg-white/[0.04] text-slate-400"
                   )}
                 >
-                  {/* Icon */}
-                  <div className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5",
-                    cfg.bg
-                  )}>
-                    <Icon className={cn("w-5 h-5", cfg.color)} />
-                  </div>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={cn(
-                        "text-sm font-semibold leading-snug",
-                        notif.isRead ? "text-muted-foreground" : "text-foreground"
-                      )}>
-                        {notif.title}
-                      </p>
-                      <span className="text-[10px] text-muted-foreground/60 flex-shrink-0 mt-0.5">
-                        {timeAgo(notif.createdAt)}
+      {/* ── 4. Main 2-Column Responsive Workspace Grid ── */}
+      <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Left Column: Notification Feed (8 columns on desktop) */}
+        <div className="lg:col-span-8 space-y-6">
+          {isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="h-24 rounded-2xl bg-[#090d1f] border border-white/[0.06] animate-pulse p-4 flex items-start gap-4"
+                >
+                  <div className="w-10 h-10 rounded-full bg-white/[0.04]" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-48 bg-white/[0.04] rounded" />
+                    <div className="h-3 w-72 bg-white/[0.02] rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredNotifications.length === 0 ? (
+            <NotificationEmptyState filter={activeFilter} />
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(groupedNotifications).map(([timeGroup, items]) => {
+                if (items.length === 0) return null;
+
+                return (
+                  <div key={timeGroup} className="space-y-3">
+                    {/* Time Group Header */}
+                    <div className="flex items-center gap-2.5 px-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                        {timeGroup}
+                      </span>
+                      <div className="flex-1 h-px bg-white/[0.06]" />
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {items.length} {items.length === 1 ? "item" : "items"}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{notif.message}</p>
 
-                    {/* Type badge */}
-                    <div className="mt-2">
-                      <span className={cn(
-                        "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border",
-                        cfg.bg, cfg.color, cfg.border
-                      )}>
-                        <Icon className="w-2.5 h-2.5" />
-                        {cfg.label}
-                      </span>
+                    {/* Notification Cards */}
+                    <div className="space-y-2.5">
+                      <AnimatePresence initial={false}>
+                        {items.map((notif) => (
+                          <NotificationCard
+                            key={notif._id}
+                            notification={notif}
+                            onMarkRead={handleMarkRead}
+                            onDelete={handleDelete}
+                          />
+                        ))}
+                      </AnimatePresence>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                  {/* Action buttons */}
-                  <div className="flex flex-col items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!notif.isRead && (
-                      <button
-                        title="Mark as read"
-                        onClick={(e) => { e.stopPropagation(); markRead(notif._id); }}
-                        className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <button
-                      title="Delete"
-                      onClick={(e) => { e.stopPropagation(); deleteOne(notif._id); }}
-                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+        {/* Right Column: Workspace Context Sidebar (4 columns on desktop) */}
+        <div className="lg:col-span-4 sticky top-20">
+          <NotificationContextSidebar
+            total={notifications.length}
+            unread={unreadCount}
+            taskCount={taskCount}
+            mentionCount={mentionCount}
+            inviteCount={inviteCount}
+            issueCount={issueCount}
+            onOpenPreferences={() => setIsSettingsOpen(true)}
+            onMarkAllRead={handleMarkAllRead}
+          />
+        </div>
+      </div>
 
-                  {/* Unread dot */}
-                  {!notif.isRead && (
-                    <div className="absolute right-4 top-4 w-2 h-2 rounded-full bg-primary" />
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
-        </AnimatePresence>
-      )}
+      {/* ── 5. Notification Preferences Modal ── */}
+      <NotificationSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }
