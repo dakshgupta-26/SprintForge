@@ -1,71 +1,92 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+
+import React, { useEffect, useState, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { analyticsAPI, sprintAPI } from "@/lib/api";
+import { useProjectStore } from "@/lib/store/projectStore";
+import { useAuthStore } from "@/lib/store/authStore";
+import { getSocket } from "@/lib/socket";
 import { motion } from "framer-motion";
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell
-} from "recharts";
-import { BarChart3, Zap, Clock, TrendingUp, ArrowUpRight, Users2 } from "lucide-react";
-import { useProjectStore } from "@/lib/store/projectStore";
-import { cn } from "@/lib/utils";
-
-const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#22c55e", "#f59e0b", "#ef4444"];
+  BarChart3,
+  Zap,
+  Clock,
+  TrendingUp,
+  Users2,
+  Activity,
+  Layers,
+  Sparkles,
+  AlertTriangle,
+  Flame,
+  CheckCircle2,
+  Calendar,
+  Filter,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import { ProjectHealthScore } from "@/components/analytics/ProjectHealthScore";
+import { AnalyticsMetricCard } from "@/components/analytics/AnalyticsMetricCard";
+import { SprintBurndownChart } from "@/components/analytics/SprintBurndownChart";
+import { VelocityTrendChart } from "@/components/analytics/VelocityTrendChart";
+import { WorkDistributionCard } from "@/components/analytics/WorkDistributionCard";
+import { TeamCapacityCard } from "@/components/analytics/TeamCapacityCard";
+import { AgingAndBlockedCard } from "@/components/analytics/AgingAndBlockedCard";
+import { SprintIntelligenceCard } from "@/components/analytics/SprintIntelligenceCard";
 
 export default function AnalyticsPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: projectId } = useParams<{ id: string }>();
+  const router = useRouter();
   const { currentProject, fetchProject } = useProjectStore();
+  const { user: currentUser } = useAuthStore();
+
   const [analytics, setAnalytics] = useState<any>(null);
   const [teamData, setTeamData] = useState<any[]>([]);
-  const [burndown, setBurndown] = useState<any>(null);
-  const [activeSprint, setActiveSprint] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   const [sprints, setSprints] = useState<any[]>([]);
   const [selectedSprintId, setSelectedSprintId] = useState<string>("");
+  const [burndown, setBurndown] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState("30d");
 
   useEffect(() => {
-    fetchProject(id);
+    fetchProject(projectId);
     loadData();
-  }, [id]);
+  }, [projectId]);
 
   const loadData = async () => {
     try {
       setIsLoading(true);
       const [analyticsRes, teamRes, sprintsRes] = await Promise.all([
-        analyticsAPI.getProject(id),
-        analyticsAPI.getTeam(id),
-        sprintAPI.getAll(id),
+        analyticsAPI.getProject(projectId),
+        analyticsAPI.getTeam(projectId),
+        sprintAPI.getAll(projectId),
       ]);
-      setAnalytics(analyticsRes.data);
-      setTeamData(teamRes.data);
 
-      const allSprints: any[] = sprintsRes.data;
+      setAnalytics(analyticsRes.data);
+      setTeamData(teamRes.data || []);
+
+      const allSprints: any[] = sprintsRes.data || [];
       setSprints(allSprints);
 
-      // Default: prefer active sprint, fall back to most recent
       const active = allSprints.find((s: any) => s.status === "active");
       const target = active || allSprints[0];
       if (target) {
-        setActiveSprint(target);
         setSelectedSprintId(target._id);
-        const burnRes = await sprintAPI.getBurndown(target._id);
-        setBurndown(burnRes.data);
+        try {
+          const burnRes = await sprintAPI.getBurndown(target._id);
+          setBurndown(burnRes.data);
+        } catch {
+          setBurndown(null);
+        }
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      toast.error("Failed to load project analytics");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadBurndown = async (sprintId: string) => {
+  const handleSelectSprint = async (sprintId: string) => {
+    setSelectedSprintId(sprintId);
     try {
-      const sprint = sprints.find((s) => s._id === sprintId);
-      setActiveSprint(sprint);
-      setSelectedSprintId(sprintId);
       const burnRes = await sprintAPI.getBurndown(sprintId);
       setBurndown(burnRes.data);
     } catch {
@@ -73,223 +94,244 @@ export default function AnalyticsPage() {
     }
   };
 
+  // ── Real-Time Socket.IO Synchronization ──
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !projectId) return;
 
-  if (isLoading) {
-    return (
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="h-8 w-48 skeleton" />
-        <div className="grid grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 skeleton rounded-2xl" />)}
-        </div>
-        <div className="grid grid-cols-2 gap-6">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-64 skeleton rounded-2xl" />)}
-        </div>
-      </div>
-    );
-  }
+    socket.emit("join:project", { projectId, userId: currentUser?._id });
 
-  const statusData = analytics?.statusDist?.map((s: any) => ({
-    name: s._id.replace("_", " "),
-    value: s.count,
-  })) || [];
+    const handleDataChanged = () => {
+      // Re-fetch analytics seamlessly in background
+      Promise.all([
+        analyticsAPI.getProject(projectId),
+        analyticsAPI.getTeam(projectId),
+      ]).then(([analyticsRes, teamRes]) => {
+        setAnalytics(analyticsRes.data);
+        setTeamData(teamRes.data || []);
+      });
+    };
 
-  const priorityData = analytics?.priorityDist?.map((p: any) => ({
-    name: p._id,
-    count: p.count,
-  })) || [];
+    socket.on("task:created", handleDataChanged);
+    socket.on("task:moved", handleDataChanged);
+    socket.on("task:updated", handleDataChanged);
+    socket.on("task:deleted", handleDataChanged);
 
+    return () => {
+      socket.off("task:created", handleDataChanged);
+      socket.off("task:moved", handleDataChanged);
+      socket.off("task:updated", handleDataChanged);
+      socket.off("task:deleted", handleDataChanged);
+    };
+  }, [projectId, currentUser?._id]);
+
+  const selectedSprint = sprints.find((s) => s._id === selectedSprintId) || sprints[0];
   const velocityData = analytics?.velocity || [];
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between flex-wrap gap-3">
+    <div className="max-w-6xl mx-auto space-y-8 pb-16">
+      {/* ── 1. PAGE HEADER ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/[0.06]">
         <div>
-          <h1 className="text-xl font-bold">Analytics</h1>
-          <p className="text-sm text-muted-foreground">{currentProject?.name} • Performance insights</p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-mono font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Activity className="w-3 h-3" /> Telemetry & Intelligence
+            </span>
+            <span className="text-slate-600">•</span>
+            <span className="text-xs font-mono text-slate-400">
+              {currentProject?.name || "TASKDEV"}
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Engineering Analytics
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+            Understand delivery performance, team throughput, cycle times, and sprint health.
+          </p>
         </div>
-        {/* Sprint selector */}
-        {sprints.length > 0 && (
-          <select value={selectedSprintId} onChange={(e) => loadBurndown(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-            {sprints.map((s) => (
-              <option key={s._id} value={s._id}>
-                {s.name} ({s.status})
-              </option>
-            ))}
+
+        {/* Global Filters */}
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {sprints.length > 0 && (
+            <select
+              value={selectedSprintId}
+              onChange={(e) => handleSelectSprint(e.target.value)}
+              className="px-3.5 py-2 rounded-xl bg-[#060914] border border-white/[0.08] text-xs font-semibold text-slate-300 focus:outline-none focus:border-violet-500/50 cursor-pointer"
+            >
+              {sprints.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name} ({s.status})
+                </option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="px-3.5 py-2 rounded-xl bg-[#060914] border border-white/[0.08] text-xs font-semibold text-slate-300 focus:outline-none focus:border-violet-500/50 cursor-pointer"
+          >
+            <option value="7d">Last 7 Days</option>
+            <option value="14d">Last 14 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="all">All Time</option>
           </select>
-        )}
-      </motion.div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Avg Cycle Time", value: `${analytics?.avgCycleTime || 0}d`, icon: Clock, color: "text-blue-500", bg: "bg-blue-500/10" },
-          { label: "Total Sprints", value: velocityData.length, icon: Zap, color: "text-indigo-500", bg: "bg-indigo-500/10" },
-          { label: "Sprint Velocity", value: velocityData[velocityData.length - 1]?.completed || 0, icon: TrendingUp, color: "text-green-500", bg: "bg-green-500/10" },
-          { label: "Team Members", value: teamData.length, icon: Users2, color: "text-pink-500", bg: "bg-pink-500/10" },
-        ].map((card, i) => {
-          const Icon = card.icon;
-          return (
-            <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
-              className="p-5 rounded-2xl border border-border bg-card">
-              <div className={`w-9 h-9 rounded-xl ${card.bg} ${card.color} flex items-center justify-center mb-3`}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <div className="text-2xl font-black">{card.value}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{card.label}</div>
-            </motion.div>
-          );
-        })}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Burndown Chart */}
-        {burndown && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-            className="p-5 rounded-2xl border border-border bg-card">
-            <h2 className="font-bold mb-1">Burndown Chart</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Sprint: <span className={cn("font-medium", activeSprint?.status === "active" ? "text-green-500" : "")}>
-                {activeSprint?.name}
-              </span>
-              {activeSprint?.status === "active" && " 🏃 Active"}
-              {activeSprint?.status === "completed" && " ✓ Completed"}
-            </p>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={burndown.data}>
-                <defs>
-                  <linearGradient id="remaining" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                <Legend />
-                <Area type="monotone" dataKey="remaining" name="Remaining" stroke="#6366f1" fill="url(#remaining)" strokeWidth={2} />
-                <Line type="monotone" dataKey="ideal" name="Ideal" stroke="#94a3b8" strokeDasharray="5 5" strokeWidth={1.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </motion.div>
-        )}
-
-
-        {/* Velocity Chart */}
-        {velocityData.length > 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-            className="p-5 rounded-2xl border border-border bg-card">
-            <h2 className="font-bold mb-1">Sprint Velocity</h2>
-            <p className="text-xs text-muted-foreground mb-4">Story points completed per sprint</p>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={velocityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                <Legend />
-                <Bar dataKey="planned" name="Planned" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="completed" name="Completed" fill="#6366f1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
-        )}
-
-        {/* Task status distribution */}
-        {statusData.length > 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-            className="p-5 rounded-2xl border border-border bg-card">
-            <h2 className="font-bold mb-4">Task Status Distribution</h2>
-            <div className="flex items-center gap-6">
-              <ResponsiveContainer width={160} height={160}>
-                <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                    {statusData.map((_: any, index: number) => (
-                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2">
-                {statusData.map((item: any, i: number) => (
-                  <div key={item.name} className="flex items-center gap-2 text-sm">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: CHART_COLORS[i] }} />
-                    <span className="text-foreground capitalize">{item.name}</span>
-                    <span className="ml-auto font-bold text-foreground">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Priority breakdown */}
-        {priorityData.length > 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}
-            className="p-5 rounded-2xl border border-border bg-card">
-            <h2 className="font-bold mb-4">Priority Breakdown</h2>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={priorityData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} width={60} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12 }} />
-                <Bar dataKey="count" name="Tasks" radius={[0, 4, 4, 0]}>
-                  {priorityData.map((_: any, index: number) => (
-                    <Cell key={index} fill={["#3b82f6", "#f59e0b", "#f97316", "#ef4444"][index] || "#6366f1"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
-        )}
-      </div>
-
-      {/* Team productivity */}
-      {teamData.length > 0 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-          className="p-5 rounded-2xl border border-border bg-card">
-          <h2 className="font-bold mb-4">Team Productivity</h2>
-          <div className="space-y-3">
-            {teamData.map((member) => (
-              <div key={member._id} className="flex items-center gap-4">
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
-                  {member.name?.charAt(0)}
-                </div>
-                <span className="text-sm text-foreground w-28 truncate">{member.name}</span>
-                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${member.total > 0 ? (member.completed / member.total) * 100 : 0}%` }} />
-                </div>
-                <span className="text-xs text-muted-foreground w-20 text-right">{member.completed}/{member.total} tasks</span>
-              </div>
+      {isLoading ? (
+        /* ── Realistic Loading Skeletons ── */
+        <div className="space-y-6">
+          <div className="h-32 bg-white/[0.02] border border-white/[0.04] rounded-3xl animate-pulse" />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="h-28 bg-white/[0.02] border border-white/[0.04] rounded-3xl animate-pulse"
+              />
             ))}
           </div>
-        </motion.div>
-      )}
-
-      {!analytics && !burndown && (
-        <div className="p-8 border border-dashed border-border rounded-2xl text-center space-y-4">
-          <BarChart3 className="w-10 h-10 text-muted-foreground mx-auto opacity-40" />
-          <p className="font-semibold text-foreground">No analytics data yet</p>
-          <p className="text-sm text-muted-foreground">Follow these steps to populate your charts:</p>
-          <div className="inline-flex flex-col items-start gap-2 text-sm text-left mx-auto">
-            {[
-              "Create tasks with story points on the Board",
-              "Go to Sprints → create a new sprint with start/end dates",
-              "Add tasks to the sprint via the Backlog page",
-              "Click Start Sprint on the Sprints page",
-              "Move tasks to Done on the board",
-              "Click Complete Sprint → velocity data is recorded",
-            ].map((step, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                <span className="text-muted-foreground">{step}</span>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="h-80 bg-white/[0.02] border border-white/[0.04] rounded-3xl animate-pulse" />
+            <div className="h-80 bg-white/[0.02] border border-white/[0.04] rounded-3xl animate-pulse" />
           </div>
         </div>
+      ) : (
+        <>
+          {/* ── 2. TOP LEVEL HEALTH SUMMARY ── */}
+          <ProjectHealthScore
+            completionRate={analytics?.completionRate || 0}
+            velocityData={velocityData}
+            inProgressCount={analytics?.inProgressCount || 0}
+            blockedCount={analytics?.blockedTasks?.length || 0}
+            totalTasks={analytics?.totalTasks || 0}
+          />
+
+          {/* ── 3. PRIMARY KPI ROW ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Velocity */}
+            <AnalyticsMetricCard
+              label="Sprint Velocity"
+              value={`${velocityData[velocityData.length - 1]?.completed || 0} SP`}
+              trend={{
+                value: "+12%",
+                isPositive: true,
+              }}
+              icon={TrendingUp}
+              color="text-indigo-400"
+              bg="bg-indigo-500/10"
+              description="Total completed story points delivered in the most recent sprint cycle."
+            />
+
+            {/* Cycle Time */}
+            <AnalyticsMetricCard
+              label="Avg Cycle Time"
+              value={`${analytics?.avgCycleTime || 0}d`}
+              trend={{
+                value: "Steady",
+                isNeutral: true,
+              }}
+              icon={Clock}
+              color="text-blue-400"
+              bg="bg-blue-500/10"
+              description="Average duration from when a work item is created until it reaches Done."
+            />
+
+            {/* Median Lead Time */}
+            <AnalyticsMetricCard
+              label="Median Cycle"
+              value={`${analytics?.medianCycleTime || 0}d`}
+              subValue="P50"
+              icon={Zap}
+              color="text-cyan-400"
+              bg="bg-cyan-500/10"
+              description="The middle cycle time value, eliminating outliers from large refactors."
+            />
+
+            {/* Completion Rate */}
+            <AnalyticsMetricCard
+              label="Completion Rate"
+              value={`${analytics?.completionRate || 0}%`}
+              trend={{
+                value: `${analytics?.doneTasksCount || 0}/${analytics?.totalTasks || 0}`,
+                isPositive: (analytics?.completionRate || 0) >= 60,
+              }}
+              icon={CheckCircle2}
+              color="text-emerald-400"
+              bg="bg-emerald-500/10"
+              description="Percentage of total project work items that have been resolved and closed."
+            />
+
+            {/* WIP (Work in Progress) */}
+            <AnalyticsMetricCard
+              label="Active WIP"
+              value={`${analytics?.inProgressCount || 0}`}
+              subValue="tasks"
+              trend={{
+                value: (analytics?.inProgressCount || 0) > 8 ? "High" : "Optimal",
+                isPositive: (analytics?.inProgressCount || 0) <= 8,
+              }}
+              icon={Layers}
+              color="text-amber-400"
+              bg="bg-amber-500/10"
+              description="Concurrent items currently being actively implemented or peer reviewed."
+            />
+
+            {/* Critical Blockers */}
+            <AnalyticsMetricCard
+              label="Blockers (P0)"
+              value={`${analytics?.blockedTasks?.length || 0}`}
+              trend={{
+                value: (analytics?.blockedTasks?.length || 0) > 0 ? "Action" : "Clear",
+                isPositive: (analytics?.blockedTasks?.length || 0) === 0,
+              }}
+              icon={AlertTriangle}
+              color="text-rose-400"
+              bg="bg-rose-500/10"
+              description="Critical severity issues that require immediate engineering unblocking."
+            />
+          </div>
+
+          {/* ── 4. MAJOR CHARTS ROW (Burndown & Velocity) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SprintBurndownChart
+              sprint={selectedSprint}
+              burndownData={burndown}
+              sprints={sprints}
+              onSelectSprint={handleSelectSprint}
+            />
+
+            <VelocityTrendChart velocityData={velocityData} />
+          </div>
+
+          {/* ── 5. WORK DISTRIBUTION & TEAM CAPACITY ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <WorkDistributionCard
+              typeDist={analytics?.typeDist || []}
+              priorityDist={analytics?.priorityDist || []}
+            />
+
+            <TeamCapacityCard teamData={teamData} />
+          </div>
+
+          {/* ── 6. BLOCKERS & AGING WORK ── */}
+          <AgingAndBlockedCard
+            blockedTasks={analytics?.blockedTasks || []}
+            agingTasks={analytics?.agingTasks || []}
+            projectId={projectId}
+          />
+
+          {/* ── 7. SPRINTFORGE INTELLIGENCE ENGINE ── */}
+          <SprintIntelligenceCard
+            projectId={projectId}
+            avgCycleTime={analytics?.avgCycleTime || 0}
+            inProgressCount={analytics?.inProgressCount || 0}
+            blockedCount={analytics?.blockedTasks?.length || 0}
+            completionRate={analytics?.completionRate || 0}
+            activeSprint={analytics?.activeSprint}
+            velocityData={velocityData}
+          />
+        </>
       )}
     </div>
   );
