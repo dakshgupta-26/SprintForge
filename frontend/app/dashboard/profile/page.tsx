@@ -14,7 +14,6 @@ import {
   History,
   AlertTriangle,
   ShieldCheck,
-  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -44,7 +43,6 @@ interface TabItem {
   id: AccountSection;
   label: string;
   icon: React.ComponentType<any>;
-  badge?: string;
   isDanger?: boolean;
 }
 
@@ -143,8 +141,8 @@ export default function ProfilePage() {
   if (!user) return null;
 
   return (
-    <div className="w-full max-w-[1500px] mx-auto space-y-6 pb-16 select-none">
-      {/* ── Top Header ── */}
+    <div className="w-full max-w-6xl mx-auto space-y-6 pb-20 select-none">
+      {/* ── 1. Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
@@ -155,121 +153,83 @@ export default function ProfilePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-sm">
             <ShieldCheck className="w-3.5 h-3.5" />
             Account in good standing
           </span>
         </div>
       </div>
 
-      {/* ── Account Center 2-Column Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* ── Left Navigation Sidebar / Horizontal Tabs on Mobile ── */}
-        <div className="lg:col-span-3 lg:sticky lg:top-20 space-y-1">
-          {/* Mobile Horizontal Scroll Tabs */}
-          <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
-            {navTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex-shrink-0",
-                    isActive
-                      ? tab.isDanger
-                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                        : "bg-violet-600/20 text-violet-300 border border-violet-500/40"
-                      : "bg-[#090d20] text-slate-400 hover:text-white border border-white/[0.06]"
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Desktop Left Navigation Card */}
-          <div className="hidden lg:block p-2 rounded-3xl bg-[#090d20] border border-white/[0.08] shadow-xl space-y-0.5">
-            <div className="px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-              Account Settings
-            </div>
-
-            {navTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-semibold transition-all cursor-pointer text-left relative",
-                    isActive
-                      ? tab.isDanger
-                        ? "bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm"
-                        : "bg-violet-600/15 text-violet-200 border border-violet-500/30 shadow-sm"
-                      : "text-slate-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
-                  )}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon
-                      className={cn(
-                        "w-4 h-4 flex-shrink-0",
-                        isActive
-                          ? tab.isDanger
-                            ? "text-rose-400"
-                            : "text-violet-400"
-                          : "text-slate-500"
-                      )}
-                    />
-                    <span className="truncate">{tab.label}</span>
-                  </div>
-
-                  {isActive && (
-                    <motion.div
-                      layoutId="active-account-tab-indicator"
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full",
-                        tab.isDanger ? "bg-rose-400" : "bg-violet-400"
-                      )}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Right Content Area ── */}
-        <div className="lg:col-span-9 min-w-0">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-            >
-              {activeTab === "profile" && (
-                <ProfileTab formData={formData} onChange={handleFieldChange} />
+      {/* ── 2. Horizontal Segmented Navigation Tabs ── */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-white/[0.06] -mt-2">
+        {navTabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex-shrink-0",
+                isActive
+                  ? tab.isDanger
+                    ? "text-rose-300 bg-rose-500/15 border border-rose-500/30 shadow-sm"
+                    : "text-violet-200 bg-violet-600/15 border border-violet-500/30 shadow-sm font-bold"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               )}
-              {activeTab === "preferences" && <PreferencesTab />}
-              {activeTab === "notifications" && <NotificationsTab />}
-              {activeTab === "security" && <SecurityTab />}
-              {activeTab === "sessions" && <SessionsTab />}
-              {activeTab === "connections" && <ConnectedAppsTab />}
-              {activeTab === "activity" && <AccountActivityTab />}
-              {activeTab === "danger" && <DangerZoneTab />}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+            >
+              <Icon
+                className={cn(
+                  "w-3.5 h-3.5",
+                  isActive
+                    ? tab.isDanger
+                      ? "text-rose-400"
+                      : "text-violet-400"
+                    : "text-slate-500"
+                )}
+              />
+              <span>{tab.label}</span>
+              {isActive && (
+                <motion.div
+                  layoutId="active-account-tab-indicator"
+                  className={cn(
+                    "absolute bottom-0 left-3 right-3 h-0.5 rounded-full",
+                    tab.isDanger ? "bg-rose-400" : "bg-violet-400"
+                  )}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Sticky Unsaved Changes Bar ── */}
+      {/* ── 3. Full-Width Main Content Area ── */}
+      <div className="w-full min-w-0 pt-1">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+          >
+            {activeTab === "profile" && (
+              <ProfileTab formData={formData} onChange={handleFieldChange} />
+            )}
+            {activeTab === "preferences" && <PreferencesTab />}
+            {activeTab === "notifications" && <NotificationsTab />}
+            {activeTab === "security" && <SecurityTab />}
+            {activeTab === "sessions" && <SessionsTab />}
+            {activeTab === "connections" && <ConnectedAppsTab />}
+            {activeTab === "activity" && <AccountActivityTab />}
+            {activeTab === "danger" && <DangerZoneTab />}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* ── 4. Sticky Unsaved Changes Bar ── */}
       <StickySaveBar
         hasChanges={hasChanges && activeTab === "profile"}
         isSaving={isSaving}
