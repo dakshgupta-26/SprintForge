@@ -208,6 +208,7 @@ export default function DashboardPage() {
       {/* ── Create Task Modal ── */}
       {showNewTask && (
         <CreateTaskModal
+          isOpen={showNewTask}
           projectId={primaryProject?._id || ""}
           projectName={primaryProject?.name || "TASKDEV"}
           sprintId={activeSprint?._id}

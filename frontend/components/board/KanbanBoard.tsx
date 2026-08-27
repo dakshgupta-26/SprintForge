@@ -113,10 +113,16 @@ export function KanbanBoard({
     const onTaskCreated = (newTask: any) => {
       let col = newTask.boardColumn || newTask.status || "todo";
       if (col === "in_review") col = "review";
-      setColumns((prev) => ({
-        ...prev,
-        [col]: [newTask, ...(prev[col] || [])],
-      }));
+      setColumns((prev) => {
+        const exists = Object.values(prev).some((list) =>
+          list.some((t: any) => t._id === newTask._id)
+        );
+        if (exists) return prev;
+        return {
+          ...prev,
+          [col]: [newTask, ...(prev[col] || [])],
+        };
+      });
     };
 
     const onTaskUpdated = (updated: any) => {

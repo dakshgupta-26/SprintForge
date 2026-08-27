@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -18,6 +18,7 @@ import { generateAvatar, cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface CreateTaskModalProps {
+  isOpen?: boolean;
   projectId: string;
   projectName?: string;
   defaultStatus?: string;
@@ -26,7 +27,7 @@ interface CreateTaskModalProps {
   sprints?: any[];
   projectMembers?: any[];
   onClose: () => void;
-  onCreate: () => void;
+  onCreate?: (task?: any) => void;
 }
 
 const TYPE_OPTIONS = [
@@ -46,6 +47,7 @@ const PRIORITY_OPTIONS = [
 const POINT_PRESETS = [1, 2, 3, 5, 8, 13, 21];
 
 export function CreateTaskModal({
+  isOpen = true,
   projectId,
   projectName = "TASKDEV",
   defaultStatus = "todo",
@@ -66,9 +68,28 @@ export function CreateTaskModal({
   const [storyPoints, setStoryPoints] = useState<number | "">("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const resetForm = useCallback(() => {
+    setTitle("");
+    setDescription("");
+    setType(defaultType || "task");
+    setPriority("medium");
+    setSelectedSprintId(sprintId || "");
+    setAssigneeId("");
+    setDueDate("");
+    setStoryPoints("");
+  }, [defaultType, sprintId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+    }
+  }, [isOpen, resetForm]);
+
   useEffect(() => {
     if (sprintId) setSelectedSprintId(sprintId);
   }, [sprintId]);
+
+  if (!isOpen) return null;
 
   const estimateAI = () => {
     if (!title.trim()) return;
@@ -82,6 +103,8 @@ export function CreateTaskModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (!title.trim()) {
       toast.error("Task title is required");
       return;
@@ -104,15 +127,26 @@ export function CreateTaskModal({
       if (dueDate) payload.dueDate = dueDate;
       if (storyPoints) payload.storyPoints = Number(storyPoints);
 
+      let createdTask: any = null;
       if (type === "bug") {
-        await issueAPI.create(payload);
+        const res = await issueAPI.create(payload);
+        createdTask = res.data;
       } else {
-        await taskAPI.create(payload);
+        const res = await taskAPI.create(payload);
+        createdTask = res.data;
       }
 
-      toast.success(type === "bug" ? "Bug reported! 🐞" : "Task created! 🚀");
-      onCreate();
+      // 1. Reset form state
+      resetForm();
+
+      // 2. Notify parent and close modal
+      if (onCreate) {
+        onCreate(createdTask);
+      }
       onClose();
+
+      // 3. Show success toast feedback
+      toast.success(type === "bug" ? "Bug reported! 🐞" : "Task created! 🚀");
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to create task");
     } finally {
@@ -131,7 +165,7 @@ export function CreateTaskModal({
           initial={{ opacity: 0, scale: 0.97, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.97, y: 12 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
           className="relative w-full max-w-2xl bg-[#090d1f] border border-white/[0.12] rounded-3xl shadow-[0_25px_70px_-15px_rgba(0,0,0,0.95)] overflow-hidden z-10 my-auto flex flex-col max-h-[90vh]"
         >
           {/* Header */}
@@ -169,6 +203,7 @@ export function CreateTaskModal({
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Implement JWT refresh token rotation with Redis"
                 required
+                autoFocus
                 className="w-full px-4 py-2.5 rounded-xl border border-white/[0.1] bg-[#060914] text-white text-sm focus:outline-none focus:border-violet-500/70 focus:ring-2 focus:ring-violet-500/20 transition-all font-medium placeholder:text-slate-600"
               />
             </div>
@@ -257,11 +292,11 @@ export function CreateTaskModal({
                 >
                   <option value="">Unassigned</option>
                   {projectMembers.map((m: any) => {
-                    const u = m.user;
-                    if (!u) return null;
+                    const u = m.user || m;
+                    if (!u || !u._id) return null;
                     return (
                       <option key={u._id} value={u._id}>
-                        {u.name} ({m.role})
+                        {u.name} {m.role ? `(${m.role})` : ""}
                       </option>
                     );
                   })}
@@ -344,7 +379,7 @@ export function CreateTaskModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-white/[0.1] text-xs font-semibold text-slate-300 hover:text-white"
+              className="px-4 py-2.5 rounded-xl border border-white/[0.1] text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
             >
               Cancel
             </button>

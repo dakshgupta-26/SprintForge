@@ -146,18 +146,21 @@ export default function BoardPage() {
       </div>
 
       {/* ── Modals & Drawers ── */}
-      <CreateTaskModal
-        projectId={projectId}
-        projectName={currentProject?.name}
-        sprintId={selectedSprintId}
-        sprints={sprints}
-        projectMembers={currentProject?.members}
-        onClose={() => setShowCreateModal(false)}
-        onCreate={() => {
-          setShowCreateModal(false);
-          loadSprints();
-        }}
-      />
+      {showCreateModal && (
+        <CreateTaskModal
+          isOpen={showCreateModal}
+          projectId={projectId}
+          projectName={currentProject?.name}
+          sprintId={selectedSprintId}
+          sprints={sprints}
+          projectMembers={currentProject?.members}
+          onClose={() => setShowCreateModal(false)}
+          onCreate={() => {
+            setShowCreateModal(false);
+            loadSprints();
+          }}
+        />
+      )}
 
       <AddFromBacklogDrawer
         isOpen={showBacklogDrawer}
