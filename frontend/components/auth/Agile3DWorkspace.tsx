@@ -185,7 +185,7 @@ export function Agile3DWorkspace() {
       ref={containerRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      className="relative w-full h-full min-h-[640px] flex items-center justify-center select-none overflow-hidden"
+      className="relative w-full h-full min-h-0 flex items-center justify-center select-none"
       style={{ perspective: 1200 }}
     >
       {/* ─── Layer 0: Sophisticated Dark Atmosphere, Grid & Radial Glows ─── */}
@@ -222,10 +222,10 @@ export function Agile3DWorkspace() {
         initial={{ opacity: 0, scale: 0.95, y: 25 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-[820px] aspect-[16/10] flex items-center justify-center"
+        className="relative w-full max-w-[760px] 2xl:max-w-[820px] aspect-[16/10] max-h-full flex items-center justify-center"
       >
         {/* ─── 3D Artwork Main Centerpiece Image ─── */}
-        <div className="relative w-full h-full rounded-3xl overflow-hidden border border-white/[0.08] bg-[#070a14] shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9),0_0_45px_rgba(139,92,246,0.18)] group">
+        <div className="relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden border border-white/[0.08] bg-[#070a14] shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9),0_0_45px_rgba(139,92,246,0.18)] group">
           {/* The High-Resolution 3D Agile Scene Image */}
           <Image
             src="/agile-3d-scene.jpg"
@@ -246,23 +246,23 @@ export function Agile3DWorkspace() {
           {/* ───────────────────────────────────────────────────────────── */}
 
           {/* ─── 1. Top Bar: Live Sprint Health Status & AI Copilot ─── */}
-          <div className="absolute top-4 inset-x-5 flex items-center justify-between z-20 pointer-events-none">
+          <div className="absolute top-3 sm:top-4 inset-x-3 sm:inset-x-5 flex items-center justify-between z-20 pointer-events-none">
             {/* Live Workspace Badge */}
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#080c1a]/85 border border-white/[0.12] backdrop-blur-xl shadow-lg pointer-events-auto cursor-pointer hover:border-violet-500/40 transition-all"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-[#080c1a]/85 border border-white/[0.12] backdrop-blur-xl shadow-lg pointer-events-auto cursor-pointer hover:border-violet-500/40 transition-all"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-[11px] font-bold text-slate-200 tracking-wide font-mono">
+              <span className="text-[10px] sm:text-[11px] font-bold text-slate-200 tracking-wide font-mono">
                 LIVE SPRINT
               </span>
               <span className="text-[10px] text-slate-500">•</span>
-              <span className="text-[11px] font-medium text-slate-300">
+              <span className="text-[10px] sm:text-[11px] font-medium text-slate-300">
                 3 developers active
               </span>
             </motion.div>
@@ -272,10 +272,10 @@ export function Agile3DWorkspace() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-violet-950/80 via-[#0d1226]/90 to-indigo-950/80 border border-violet-500/30 backdrop-blur-xl shadow-[0_4px_20px_rgba(124,92,255,0.25)] pointer-events-auto hover:scale-[1.02] transition-transform"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-violet-950/80 via-[#0d1226]/90 to-indigo-950/80 border border-violet-500/30 backdrop-blur-xl shadow-[0_4px_20px_rgba(124,92,255,0.25)] pointer-events-auto hover:scale-[1.02] transition-transform"
             >
               <Sparkles className="w-3.5 h-3.5 text-violet-400 animate-pulse flex-shrink-0" />
-              <div className="text-[11px] text-slate-200 font-medium">
+              <div className="text-[10px] sm:text-[11px] text-slate-200 font-medium">
                 <span className="text-violet-300 font-semibold">✦ AI Insight:</span> Velocity +14% • No blockers
               </div>
             </motion.div>
@@ -283,7 +283,7 @@ export function Agile3DWorkspace() {
 
           {/* ─── 2. Idea Lightbulb Node (Bottom-Left) ─── */}
           <div
-            className="absolute bottom-6 left-6 z-20 pointer-events-auto cursor-pointer"
+            className="absolute bottom-4 left-4 sm:bottom-5 sm:left-5 z-20 pointer-events-auto cursor-pointer"
             onMouseEnter={() => setHoveredNode("idea")}
             onMouseLeave={() => setHoveredNode(null)}
           >
