@@ -7,10 +7,13 @@ import { Sidebar } from "@/components/shared/Sidebar";
 import { Navbar } from "@/components/shared/Navbar";
 import { cn } from "@/lib/utils";
 
+import { useSidebarStore } from "@/lib/store/sidebarStore";
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isAuthenticated, initialize } = useAuthStore();
   const { fetchProjects } = useProjectStore();
+  const { isCollapsed } = useSidebarStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -60,7 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* Main content */}
-      <div className="main-content">
+      <div className={cn("main-content", isCollapsed && "sidebar-collapsed")}>
         <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         <main className="flex-1 p-6">
           {children}
