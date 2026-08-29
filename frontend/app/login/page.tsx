@@ -1,27 +1,165 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { useState, Suspense, useEffect } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
-import { Eye, EyeOff, Loader2, ArrowRight, Shield, Mail, Lock } from "lucide-react";
+import { authAPI } from "@/lib/api";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  ArrowRight,
+  Shield,
+  Mail,
+  Lock,
+  KeyRound,
+  X,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
 import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
 
+// ─── Reset Password View Component ────────────────────────────────────────────
+function ResetPasswordView({
+  token,
+  email,
+  onSuccess,
+}: {
+  token: string;
+  email: string;
+  onSuccess: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
+    if (!/\d/.test(newPassword)) {
+      toast.error("Password must contain at least one number");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await authAPI.resetPassword({
+        token,
+        email,
+        newPassword,
+      });
+      toast.success("Password reset successfully! Please sign in.");
+      onSuccess();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to reset password");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="w-full">
+      <div className="mb-5 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-violet-600/15 border border-violet-500/30 flex items-center justify-center text-violet-400 mx-auto mb-3 shadow-[0_0_20px_rgba(124,58,237,0.25)]">
+          <KeyRound className="w-6 h-6" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
+          Set New Password
+        </h2>
+        <p className="text-xs text-slate-400 mt-1">
+          Enter a new secure password for <strong className="text-violet-300">{email}</strong>
+        </p>
+      </div>
+
+      <form onSubmit={handleResetSubmit} className="space-y-4">
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            New Password
+          </label>
+          <div className="relative rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500">
+            <input
+              type={showPass ? "text" : "password"}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="•••••••••••• (min 8 chars)"
+              required
+              className="w-full pl-4 pr-11 py-2.5 bg-transparent text-white text-sm focus:outline-none rounded-xl"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+            >
+              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            Confirm Password
+          </label>
+          <div className="relative rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500">
+            <input
+              type={showPass ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-type new password"
+              required
+              className="w-full pl-4 pr-11 py-2.5 bg-transparent text-white text-sm focus:outline-none rounded-xl"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSubmitting || !newPassword || newPassword !== confirmPassword}
+          className="w-full py-3 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-md hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          <span>Update Password & Sign In</span>
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ─── Main Login Form Component ────────────────────────────────────────────────
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next");
+  const mode = searchParams.get("mode");
+  const resetToken = searchParams.get("token");
+  const resetEmail = searchParams.get("email");
 
   const { login, isLoading } = useAuthStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isFocused, setIsFocused] = useState<string | null>(null);
+
+  // Forgot password modal state
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [isSendingForgot, setIsSendingForgot] = useState(false);
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+
+  // First-time OTP verification challenge state
   const [verificationState, setVerificationState] = useState<{
     tempToken?: string;
     email: string;
@@ -56,6 +194,37 @@ function LoginForm() {
     }
   };
 
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      toast.error("Please enter your account email");
+      return;
+    }
+
+    setIsSendingForgot(true);
+    try {
+      await authAPI.forgotPassword({ email: forgotEmail.trim() });
+      setForgotSubmitted(true);
+      toast.success("Instructions sent! Check your inbox.");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to send reset link");
+    } finally {
+      setIsSendingForgot(false);
+    }
+  };
+
+  // If URL has reset password parameters
+  if (mode === "reset" && resetToken && resetEmail) {
+    return (
+      <ResetPasswordView
+        token={resetToken}
+        email={resetEmail}
+        onSuccess={() => router.push("/login")}
+      />
+    );
+  }
+
+  // If first-time OTP verification required
   if (verificationState) {
     return (
       <OtpVerificationView
@@ -146,16 +315,17 @@ function LoginForm() {
             >
               Password
             </label>
-            <Link
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault();
-                toast("Password reset instructions will be sent to your registered email.", { icon: "🔑" });
+            <button
+              type="button"
+              onClick={() => {
+                setForgotEmail(email);
+                setForgotSubmitted(false);
+                setIsForgotModalOpen(true);
               }}
-              className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium hover:underline"
+              className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium hover:underline cursor-pointer"
             >
               Forgot password?
-            </Link>
+            </button>
           </div>
           <div
             className={`relative rounded-xl border transition-all duration-200 ${
@@ -196,7 +366,6 @@ function LoginForm() {
           disabled={isLoading}
           className="w-full relative group flex items-center justify-center gap-2 py-3 sm:py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:scale-[1.01] active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2 cursor-pointer overflow-hidden"
         >
-          {/* Subtle button sheen animation */}
           <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
 
           {isLoading ? (
@@ -239,6 +408,95 @@ function LoginForm() {
           Privacy
         </Link>
       </div>
+
+      {/* ─── Forgot Password Modal ─── */}
+      <AnimatePresence>
+        {isForgotModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div className="fixed inset-0" onClick={() => setIsForgotModalOpen(false)} />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-md bg-[#090d20] border border-violet-500/30 rounded-3xl shadow-2xl z-10 overflow-hidden p-6 sm:p-7 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-violet-600/20 text-violet-400 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsForgotModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white">Reset your password</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Enter your registered work email and we&apos;ll send you a secure link to reset your password.
+                </p>
+              </div>
+
+              {forgotSubmitted ? (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                  <p className="text-xs text-emerald-300 font-medium">
+                    If an account exists with this email, a reset link has been dispatched.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    The reset link will expire in 15 minutes.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsForgotModalOpen(false)}
+                    className="mt-2 px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-xs font-semibold text-white transition-colors cursor-pointer"
+                  >
+                    Close & Return to Login
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPasswordSubmit} className="space-y-4 pt-1">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-medium text-slate-300">
+                      Work Email
+                    </label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#060914] border border-white/[0.09] focus:border-violet-500 text-white text-xs placeholder:text-slate-600 focus:outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsForgotModalOpen(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSendingForgot || !forgotEmail.trim()}
+                      className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      {isSendingForgot && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Send Reset Link</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -264,7 +522,6 @@ export default function LoginPage() {
       <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-12 pb-4 sm:pb-6 lg:pb-6">
         {/* ─── Left Side: Immersive 3D Agile Workspace Hero Stage ─── */}
         <section className="hidden lg:flex lg:w-[56%] xl:w-[58%] 2xl:w-[60%] h-full flex-col justify-center items-start min-h-0 relative">
-          {/* Top-Left Product Headline */}
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -282,7 +539,6 @@ export default function LoginPage() {
             </p>
           </motion.div>
 
-          {/* The Live Interactive 3D Agile Workspace Scene Container */}
           <div className="w-full flex-1 min-h-0 flex items-center justify-center relative">
             <Agile3DWorkspace />
           </div>
@@ -290,20 +546,16 @@ export default function LoginPage() {
 
         {/* ─── Right Side: Minimal Glass Authentication Panel ─── */}
         <section className="w-full lg:w-[44%] xl:w-[42%] 2xl:w-[40%] flex items-center justify-center relative z-20 min-h-0 py-2 sm:py-4">
-          {/* Ambient Subtle Glow Behind Auth Card */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] sm:w-[440px] h-[380px] sm:h-[440px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
 
-          {/* Floating Frosted Glass Authentication Card */}
           <motion.div
             initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="w-full max-w-[430px] bg-[#090d1b]/80 border border-white/[0.08] backdrop-blur-2xl rounded-3xl p-6 sm:p-7 xl:p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9),0_0_35px_rgba(124,92,255,0.08)] relative overflow-hidden"
           >
-            {/* Subtle Top Card Highlight */}
             <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
 
-            {/* Suspense-wrapped login form */}
             <Suspense
               fallback={
                 <div className="flex flex-col items-center justify-center min-h-[360px] text-slate-400">
@@ -320,4 +572,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

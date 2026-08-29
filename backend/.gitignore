@@ -33,3 +33,9 @@ AGENTS.md
 agents.md
 CLAUDE.md
 claude.md
+
+# Tests
+src/__tests__/
+__tests__/
+*security.test.ts
+

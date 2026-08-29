@@ -462,3 +462,169 @@ export async function sendOtpEmail(opts: {
   }
 }
 
+// ─── Password Reset Email Template ────────────────────────────────────────────
+function buildPasswordResetEmail(opts: {
+  name: string;
+  resetUrl: string;
+  recipientEmail: string;
+}) {
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset your SprintForge password</title>
+</head>
+<body style="margin:0;padding:0;background:#060812;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#060812;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding-bottom:28px;">
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:linear-gradient(135deg, #7c3aed, #4f46e5);border-radius:14px;width:44px;height:44px;text-align:center;vertical-align:middle;box-shadow:0 0 20px rgba(124,58,237,0.4);">
+                    <span style="color:#fff;font-size:22px;line-height:44px;">⚡</span>
+                  </td>
+                  <td style="padding-left:12px;vertical-align:middle;">
+                    <span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px;">SprintForge</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Card -->
+          <tr>
+            <td style="background:#0d1226;border:1px solid rgba(255,255,255,0.08);border-radius:24px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);">
+              <div style="height:4px;background:linear-gradient(90deg, #7c3aed, #6366f1, #38bdf8);"></div>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:36px 36px 28px;">
+                <tr>
+                  <td>
+                    <div style="display:inline-block;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:9999px;padding:4px 14px;margin-bottom:16px;">
+                      <span style="color:#a78bfa;font-size:12px;font-weight:700;letter-spacing:0.5px;">🔒 Password Reset Request</span>
+                    </div>
+
+                    <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0 0 12px;letter-spacing:-0.5px;">
+                      Reset your password
+                    </h1>
+
+                    <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 24px;">
+                      Hello <strong style="color:#e2e8f0;">${opts.name || 'there'}</strong>,<br/>
+                      We received a request to reset the password for your SprintForge account associated with <strong style="color:#a78bfa;">${opts.recipientEmail}</strong>.
+                    </p>
+
+                    <!-- Reset CTA Button -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                      <tr>
+                        <td align="center" style="padding:12px 0;">
+                          <a href="${opts.resetUrl}" style="display:inline-block;background:linear-gradient(135deg, #7c3aed, #4f46e5);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:14px;box-shadow:0 0 25px rgba(124,58,237,0.5);">
+                            Reset My Password →
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Direct link backup -->
+                    <p style="color:#64748b;font-size:11px;line-height:1.5;margin:0 0 20px;word-break:break-all;">
+                      Or copy and paste this link into your browser:<br/>
+                      <a href="${opts.resetUrl}" style="color:#818cf8;text-decoration:underline;">${opts.resetUrl}</a>
+                    </p>
+
+                    <!-- Security Alert Callout -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+                      <tr>
+                        <td style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px 16px;">
+                          <p style="color:#fde68a;font-size:12px;line-height:1.5;margin:0;">
+                            ⏱️ <strong>This reset link is valid for 15 minutes</strong> and can only be used once. If you did not request a password reset, please ignore this email or contact support if you have concerns.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Footer -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:20px 36px;border-top:1px solid rgba(255,255,255,0.06);background:#0a0e22;">
+                <tr>
+                  <td>
+                    <p style="color:#475569;font-size:11px;margin:0;line-height:1.5;">
+                      Sent to <strong>${opts.recipientEmail}</strong> for password recovery.<br/>
+                      SprintForge © 2026 • Modern Agile Platform
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = `
+Reset your SprintForge password 🔒
+
+Hello ${opts.name || 'there'},
+
+We received a request to reset the password for your SprintForge account (${opts.recipientEmail}).
+
+To reset your password, visit the following link (valid for 15 minutes):
+${opts.resetUrl}
+
+If you did not request this, you can safely ignore this email.
+`.trim();
+
+  return { html, text };
+}
+
+// ─── Send Password Reset Email ────────────────────────────────────────────────
+export async function sendPasswordResetEmail(opts: {
+  to: string;
+  name: string;
+  resetUrl: string;
+}) {
+  try {
+    const t = await getTransporter();
+    const { html, text } = buildPasswordResetEmail({
+      name: opts.name,
+      resetUrl: opts.resetUrl,
+      recipientEmail: opts.to,
+    });
+
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
+
+    const info = await t.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: opts.to,
+      subject: `Reset your SprintForge password 🔒`,
+      html,
+      text,
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 Password Reset Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 Password reset email sent to ${opts.to} (messageId: ${info.messageId})`);
+    }
+
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('❌ Password reset email send failed:', err);
+    return { success: false };
+  }
+}
+
+

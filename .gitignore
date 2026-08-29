@@ -68,3 +68,9 @@ Thumbs.db
 *.tsbuildinfo
 .eslintcache
 .vercel
+
+# Tests
+__tests__/
+**/__tests__/
+*security.test.ts
+

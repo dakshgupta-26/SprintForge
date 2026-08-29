@@ -8,7 +8,8 @@ export const getSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: false,
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
+      withCredentials: true, // Send HttpOnly auth cookies with socket handshake
     });
   }
   return socket;
@@ -24,7 +25,9 @@ export const connectSocket = (userId: string) => {
 };
 
 export const disconnectSocket = () => {
-  if (socket?.connected) socket.disconnect();
+  if (socket?.connected) {
+    socket.disconnect();
+  }
 };
 
 export const joinProject = (projectId: string) => {

@@ -17,7 +17,15 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
 
 export const markAsRead = async (req: AuthRequest, res: Response) => {
   try {
-    await Notification.findByIdAndUpdate(req.params.id, { isRead: true });
+    // IDOR Protection: strictly verify that the notification belongs to the requesting recipient
+    const notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, recipient: req.user._id },
+      { isRead: true },
+      { new: true }
+    );
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found or unauthorized' });
+    }
     res.json({ message: 'Notification marked as read' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -35,7 +43,14 @@ export const markAllAsRead = async (req: AuthRequest, res: Response) => {
 
 export const deleteNotification = async (req: AuthRequest, res: Response) => {
   try {
-    await Notification.findByIdAndDelete(req.params.id);
+    // IDOR Protection: strictly verify that the notification belongs to the requesting recipient
+    const notification = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      recipient: req.user._id,
+    });
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found or unauthorized' });
+    }
     res.json({ message: 'Notification deleted' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

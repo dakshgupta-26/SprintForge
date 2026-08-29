@@ -4,9 +4,13 @@ import { OAuth2Client } from 'google-auth-library';
 import path from 'path';
 import crypto from 'crypto';
 import { ObjectId } from 'mongodb';
-import User from '../models/User';
+import User, { IUser } from '../models/User';
 import EmailVerificationChallenge from '../models/EmailVerificationChallenge';
-import { sendOtpEmail } from '../services/emailService';
+import Session from '../models/Session';
+import PasswordResetToken from '../models/PasswordResetToken';
+import SecurityLog, { SecurityEventType } from '../models/SecurityLog';
+import { sendOtpEmail, sendPasswordResetEmail } from '../services/emailService';
+import { parseDeviceInfo } from '../utils/deviceInfo';
 import {
   getProfileImagesBucket,
   uploadBufferToGridFS,
@@ -15,10 +19,121 @@ import {
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const generateToken = (id: string) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  } as any);
+// ─── Configuration & Durations ────────────────────────────────────────────────
+const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRES_IN || '15m'; // Short-lived access token
+const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// ─── Token Helpers ────────────────────────────────────────────────────────────
+export const generateAccessToken = (userId: string, sessionId?: string) => {
+  return jwt.sign(
+    { id: userId, sessionId },
+    process.env.JWT_SECRET || 'secret',
+    { expiresIn: ACCESS_TOKEN_EXPIRY } as any
+  );
+};
+
+export const generateRefreshToken = (): string => {
+  return crypto.randomBytes(40).toString('hex');
+};
+
+export const hashToken = (token: string): string => {
+  return crypto
+    .createHash('sha256')
+    .update(token + (process.env.JWT_SECRET || 'sprintforge_salt'))
+    .digest('hex');
+};
+
+// ─── Cookie Helpers ───────────────────────────────────────────────────────────
+const getCookieOptions = (maxAgeMs: number) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: isProd, // Requires HTTPS in production
+    sameSite: (isProd ? 'lax' : 'lax') as 'lax' | 'strict' | 'none',
+    path: '/',
+    maxAge: maxAgeMs,
+  };
+};
+
+export const setAuthCookies = (
+  res: Response,
+  accessToken: string,
+  refreshToken: string,
+  sessionId: string
+) => {
+  res.cookie('sf_access_token', accessToken, getCookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
+  res.cookie('sf_refresh_token', refreshToken, getCookieOptions(REFRESH_TOKEN_MAX_AGE_MS));
+  res.cookie('sf_session_id', sessionId, getCookieOptions(REFRESH_TOKEN_MAX_AGE_MS));
+};
+
+export const clearAuthCookies = (res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const clearOpts = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: (isProd ? 'lax' : 'lax') as 'lax' | 'strict' | 'none',
+    path: '/',
+  };
+  res.clearCookie('sf_access_token', clearOpts);
+  res.clearCookie('sf_refresh_token', clearOpts);
+  res.clearCookie('sf_session_id', clearOpts);
+};
+
+// ─── Security Log Helper ──────────────────────────────────────────────────────
+const logSecurityEvent = async (opts: {
+  userId?: any;
+  email?: string;
+  event: SecurityEventType;
+  req: Request;
+  status?: 'success' | 'failure' | 'warning';
+  details?: string;
+}) => {
+  try {
+    const device = parseDeviceInfo(opts.req);
+    await SecurityLog.create({
+      userId: opts.userId,
+      email: opts.email,
+      event: opts.event,
+      ipAddress: device.ipAddress,
+      userAgent: device.userAgent,
+      browser: device.browser,
+      os: device.os,
+      deviceType: device.deviceType,
+      status: opts.status || 'success',
+      details: opts.details,
+    });
+  } catch (err) {
+    console.error('Failed to write security log:', err);
+  }
+};
+
+// ─── User Response DTO Sanitizer ──────────────────────────────────────────────
+export const sanitizeUser = (user: any) => {
+  if (!user) return null;
+  const u = user.toObject ? user.toObject() : user;
+  delete u.password;
+  delete u.__v;
+  return {
+    _id: u._id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    avatar: u.avatar,
+    provider: u.provider,
+    emailVerified: u.emailVerified,
+    emailVerifiedAt: u.emailVerifiedAt,
+    profileImage: u.profileImage,
+    bio: u.bio,
+    title: u.title,
+    location: u.location,
+    website: u.website,
+    timezone: u.timezone,
+    language: u.language,
+    projects: u.projects,
+    createdAt: u.createdAt,
+    lastSeen: u.lastSeen,
+  };
 };
 
 // Mask an email for security display (e.g. d****h@gmail.com)
@@ -37,28 +152,30 @@ const generateOtp = (): string => {
   return crypto.randomInt(100000, 1000000).toString();
 };
 
-// One-way cryptographic hash of OTP with server secret
-const hashOtp = (otp: string): string => {
-  return crypto
-    .createHash('sha256')
-    .update(otp + (process.env.JWT_SECRET || 'sprintforge_salt'))
-    .digest('hex');
-};
-
+// ─── 1. Register ──────────────────────────────────────────────────────────────
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please provide name, email, and password' });
     }
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+    if (!/\d/.test(password)) {
+      return res.status(400).json({ message: 'Password must contain at least one number' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists with this email' });
+      return res.status(400).json({ message: 'An account with this email already exists' });
     }
 
     const user = await User.create({
       name: name.trim(),
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       password,
       emailVerified: false,
       emailVerifiedAt: null,
@@ -66,7 +183,7 @@ export const register = async (req: Request, res: Response) => {
 
     // Generate secure 6-digit OTP for first-time email verification
     const otp = generateOtp();
-    const otpHash = hashOtp(otp);
+    const otpHash = hashToken(otp);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     await EmailVerificationChallenge.findOneAndUpdate(
@@ -83,11 +200,18 @@ export const register = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    // Send transactional verification email
     await sendOtpEmail({
       to: user.email,
       name: user.name,
       otp,
+    });
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'OTP_REQUESTED',
+      req,
+      details: 'Account registration OTP sent',
     });
 
     const tempToken = jwt.sign(
@@ -108,23 +232,38 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
+// ─── 2. Login ─────────────────────────────────────────────────────────────────
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
+
+    // Generic error message to prevent email/account enumeration
     if (!user || !(await user.comparePassword(password))) {
+      await logSecurityEvent({
+        email: cleanEmail,
+        event: 'LOGIN_FAILED',
+        req,
+        status: 'failure',
+        details: 'Invalid email or password attempt',
+      });
       return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'This account has been deactivated. Please contact support.' });
     }
 
     // Check if user email is verified
     if (user.emailVerified === false) {
-      // First-time login: generate and send OTP
       const otp = generateOtp();
-      const otpHash = hashOtp(otp);
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const otpHash = hashToken(otp);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
       await EmailVerificationChallenge.findOneAndUpdate(
         { userId: user._id },
@@ -146,6 +285,14 @@ export const login = async (req: Request, res: Response) => {
         otp,
       });
 
+      await logSecurityEvent({
+        userId: user._id,
+        email: user.email,
+        event: 'OTP_REQUESTED',
+        req,
+        details: 'Login unverified email challenge triggered',
+      });
+
       const tempToken = jwt.sign(
         { userId: user._id.toString(), email: user.email, purpose: 'FIRST_LOGIN_EMAIL_VERIFICATION' },
         process.env.JWT_SECRET || 'secret',
@@ -161,31 +308,52 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    // Normal authenticated login for verified accounts
+    // Authenticated verified login — create server-side Session
+    const sessionId = crypto.randomUUID();
+    const refreshToken = generateRefreshToken();
+    const refreshTokenHash = hashToken(refreshToken);
+    const device = parseDeviceInfo(req);
+
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
+
+    await Session.create({
+      sessionId,
+      userId: user._id,
+      refreshTokenHash,
+      userAgent: device.userAgent,
+      ipAddress: device.ipAddress,
+      browser: device.browser,
+      os: device.os,
+      deviceType: device.deviceType,
+      lastActiveAt: new Date(),
+      expiresAt,
+    });
+
+    const accessToken = generateAccessToken(user._id.toString(), sessionId);
+    setAuthCookies(res, accessToken, refreshToken, sessionId);
+
     user.lastSeen = new Date();
     await user.save({ validateBeforeSave: false });
-    const token = generateToken(user._id.toString());
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'LOGIN_SUCCESS',
+      req,
+      details: `Signed in via ${device.browser} on ${device.os}`,
+    });
+
     res.json({
-      token,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        emailVerified: user.emailVerified,
-        emailVerifiedAt: user.emailVerifiedAt,
-        profileImage: user.profileImage,
-      },
+      token: accessToken,
+      sessionId,
+      user: sanitizeUser(user),
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-/**
- * Verify Email OTP Endpoint
- */
+// ─── 3. Verify Email OTP ──────────────────────────────────────────────────────
 export const verifyEmailOtp = async (req: Request, res: Response) => {
   try {
     const { tempToken, otp, email } = req.body;
@@ -194,13 +362,11 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
     }
 
     let userId: string | null = null;
-    let tokenEmail: string | null = null;
 
     if (tempToken) {
       try {
         const decoded = jwt.verify(tempToken, process.env.JWT_SECRET || 'secret') as any;
         userId = decoded.userId;
-        tokenEmail = decoded.email;
       } catch {
         return res.status(401).json({ message: 'Verification session expired. Please sign in again.' });
       }
@@ -225,14 +391,29 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
 
     if (challenge.attempts >= 5) {
       await challenge.deleteOne();
+      await logSecurityEvent({
+        userId,
+        event: 'OTP_FAILED',
+        req,
+        status: 'failure',
+        details: 'Exceeded maximum 5 OTP verification attempts',
+      });
       return res.status(429).json({ message: 'Too many incorrect attempts. Please request a new code.' });
     }
 
-    const submittedHash = hashOtp(otp.toString().trim());
+    const submittedHash = hashToken(otp.toString().trim());
 
     if (submittedHash !== challenge.otpHash) {
       challenge.attempts += 1;
       await challenge.save();
+
+      await logSecurityEvent({
+        userId,
+        event: 'OTP_FAILED',
+        req,
+        status: 'failure',
+        details: `Incorrect OTP attempt (${challenge.attempts}/5)`,
+      });
 
       const remainingAttempts = 5 - challenge.attempts;
       if (remainingAttempts <= 0) {
@@ -259,22 +440,41 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
     // Invalidate challenge immediately
     await challenge.deleteOne();
 
-    // Generate production authentication token
-    const token = generateToken(user._id.toString());
+    // Create authenticated session & HttpOnly cookies
+    const sessionId = crypto.randomUUID();
+    const refreshToken = generateRefreshToken();
+    const refreshTokenHash = hashToken(refreshToken);
+    const device = parseDeviceInfo(req);
+
+    await Session.create({
+      sessionId,
+      userId: user._id,
+      refreshTokenHash,
+      userAgent: device.userAgent,
+      ipAddress: device.ipAddress,
+      browser: device.browser,
+      os: device.os,
+      deviceType: device.deviceType,
+      lastActiveAt: new Date(),
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+    });
+
+    const accessToken = generateAccessToken(user._id.toString(), sessionId);
+    setAuthCookies(res, accessToken, refreshToken, sessionId);
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'EMAIL_VERIFIED',
+      req,
+      details: 'Email successfully verified via OTP',
+    });
 
     res.json({
       message: 'Email verified successfully! Welcome to SprintForge 🚀',
-      token,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        emailVerified: user.emailVerified,
-        emailVerifiedAt: user.emailVerifiedAt,
-        profileImage: user.profileImage,
-      },
+      token: accessToken,
+      sessionId,
+      user: sanitizeUser(user),
     });
   } catch (error: any) {
     console.error('OTP verification error:', error);
@@ -282,9 +482,7 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * Resend Email OTP Endpoint with 60-Second Cooldown
- */
+// ─── 4. Resend Email OTP ──────────────────────────────────────────────────────
 export const resendEmailOtp = async (req: Request, res: Response) => {
   try {
     const { tempToken, email } = req.body;
@@ -330,7 +528,7 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
     }
 
     const otp = generateOtp();
-    const otpHash = hashOtp(otp);
+    const otpHash = hashToken(otp);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await EmailVerificationChallenge.findOneAndUpdate(
@@ -353,6 +551,14 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
       otp,
     });
 
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'OTP_REQUESTED',
+      req,
+      details: 'Resent verification code',
+    });
+
     res.json({
       message: `A new 6-digit verification code was sent to ${maskEmail(user.email)} 📬`,
     });
@@ -362,21 +568,466 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
   }
 };
 
-export const getMe = async (req: any, res: Response) => {
+// ─── 5. Refresh Token (Rotation & Reuse Detection) ────────────────────────────
+export const refreshToken = async (req: Request, res: Response) => {
   try {
-    const user = await User.findById(req.user._id).populate('projects', 'name key color icon');
-    res.json(user);
+    const token = req.cookies?.sf_refresh_token || req.body?.refreshToken;
+    if (!token) {
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'No refresh token provided.' });
+    }
+
+    const submittedHash = hashToken(token);
+
+    // Find the session associated with this refresh token
+    const session = await Session.findOne({ refreshTokenHash: submittedHash });
+
+    if (!session) {
+      // Possible token reuse attack or invalid token!
+      clearAuthCookies(res);
+      await logSecurityEvent({
+        event: 'TOKEN_REUSE_DETECTED',
+        req,
+        status: 'warning',
+        details: 'Attempted to refresh with an unrecognised or revoked refresh token',
+      });
+      return res.status(401).json({ message: 'Invalid or revoked session. Please sign in again.' });
+    }
+
+    if (session.revokedAt) {
+      // Token reuse detected on a revoked session! Invalidate all sessions for user as security measure.
+      await Session.updateMany({ userId: session.userId }, { revokedAt: new Date() });
+      clearAuthCookies(res);
+      await logSecurityEvent({
+        userId: session.userId,
+        event: 'TOKEN_REUSE_DETECTED',
+        req,
+        status: 'warning',
+        details: 'Token reuse detected on revoked session. Revoked all user sessions for safety.',
+      });
+      return res.status(401).json({ message: 'Security alert: Session reuse detected. All sessions signed out.' });
+    }
+
+    if (new Date() > session.expiresAt) {
+      session.revokedAt = new Date();
+      await session.save();
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'Session has expired. Please sign in again.' });
+    }
+
+    const user = await User.findById(session.userId);
+    if (!user || !user.isActive) {
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'User account not active.' });
+    }
+
+    // Refresh Token Rotation: Issue new refresh token and invalidate old one
+    const newRefreshToken = generateRefreshToken();
+    session.refreshTokenHash = hashToken(newRefreshToken);
+    session.lastActiveAt = new Date();
+    await session.save();
+
+    const newAccessToken = generateAccessToken(user._id.toString(), session.sessionId);
+    setAuthCookies(res, newAccessToken, newRefreshToken, session.sessionId);
+
+    res.json({
+      token: newAccessToken,
+      sessionId: session.sessionId,
+      user: sanitizeUser(user),
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
+// ─── 6. Google SSO Auth ───────────────────────────────────────────────────────
+export const googleAuth = async (req: Request, res: Response) => {
+  try {
+    const { credential, token } = req.body;
+    const idToken = credential || token;
+
+    if (!idToken) {
+      return res.status(400).json({ message: 'Google credential / token is required' });
+    }
+
+    let payload: any = null;
+
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID || undefined,
+      });
+      payload = ticket.getPayload();
+    } catch (verifyErr) {
+      const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+      if (tokenInfoRes.ok) {
+        payload = await tokenInfoRes.json();
+      } else {
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (userInfoRes.ok) {
+          payload = await userInfoRes.json();
+        } else {
+          return res.status(401).json({ message: 'Invalid or expired Google authentication token' });
+        }
+      }
+    }
+
+    if (!payload || !payload.email) {
+      return res.status(400).json({ message: 'Unable to retrieve user information from Google' });
+    }
+
+    const { email, name, picture, sub } = payload;
+    const cleanEmail = email.toLowerCase().trim();
+
+    let user = await User.findOne({ email: cleanEmail });
+
+    if (user) {
+      if (!user.avatar && picture) user.avatar = picture;
+      if (!user.providerId && sub) user.providerId = sub;
+      user.emailVerified = true;
+      if (!user.emailVerifiedAt) user.emailVerifiedAt = new Date();
+      user.lastSeen = new Date();
+      await user.save({ validateBeforeSave: false });
+    } else {
+      user = await User.create({
+        name: name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        avatar: picture,
+        provider: 'google',
+        providerId: sub,
+        role: 'member',
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+        isActive: true,
+      });
+    }
+
+    const sessionId = crypto.randomUUID();
+    const refreshTokenVal = generateRefreshToken();
+    const refreshTokenHash = hashToken(refreshTokenVal);
+    const device = parseDeviceInfo(req);
+
+    await Session.create({
+      sessionId,
+      userId: user._id,
+      refreshTokenHash,
+      userAgent: device.userAgent,
+      ipAddress: device.ipAddress,
+      browser: device.browser,
+      os: device.os,
+      deviceType: device.deviceType,
+      lastActiveAt: new Date(),
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+    });
+
+    const accessToken = generateAccessToken(user._id.toString(), sessionId);
+    setAuthCookies(res, accessToken, refreshTokenVal, sessionId);
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'LOGIN_SUCCESS',
+      req,
+      details: 'Signed in via Google SSO',
+    });
+
+    res.json({
+      token: accessToken,
+      sessionId,
+      user: sanitizeUser(user),
+    });
+  } catch (error: any) {
+    console.error('Google Auth Error:', error);
+    res.status(500).json({ message: error.message || 'Google authentication failed' });
+  }
+};
+
+// ─── 7. Forgot Password ───────────────────────────────────────────────────────
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Please provide your account email' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail });
+
+    // Always respond with identical message to prevent account enumeration
+    const genericResponse = {
+      message: 'If an account exists with this email, password reset instructions have been sent.',
+    };
+
+    if (!user) {
+      return res.json(genericResponse);
+    }
+
+    // Generate secure 32-byte hex reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashToken(resetToken);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await PasswordResetToken.create({
+      userId: user._id,
+      email: user.email,
+      tokenHash,
+      expiresAt,
+    });
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const resetUrl = `${clientUrl}/login?mode=reset&token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+
+    await sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      resetUrl,
+    });
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'PASSWORD_RESET_REQUESTED',
+      req,
+      details: 'Password reset link dispatched via email',
+    });
+
+    res.json(genericResponse);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 8. Reset Password ────────────────────────────────────────────────────────
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token, email, newPassword } = req.body;
+    if (!token || !email || !newPassword) {
+      return res.status(400).json({ message: 'Token, email, and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters' });
+    }
+    if (!/\d/.test(newPassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one number' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const tokenHash = hashToken(token);
+
+    const resetDoc = await PasswordResetToken.findOne({
+      tokenHash,
+      email: cleanEmail,
+      usedAt: null,
+    });
+
+    if (!resetDoc) {
+      return res.status(400).json({ message: 'Invalid or expired password reset link.' });
+    }
+
+    if (new Date() > resetDoc.expiresAt) {
+      await resetDoc.deleteOne();
+      return res.status(400).json({ message: 'Password reset link has expired. Please request a new one.' });
+    }
+
+    const user = await User.findById(resetDoc.userId).select('+password');
+    if (!user) {
+      return res.status(404).json({ message: 'User account not found.' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Invalidate reset token
+    resetDoc.usedAt = new Date();
+    await resetDoc.save();
+
+    // Revoke all existing active sessions for security
+    await Session.updateMany({ userId: user._id }, { revokedAt: new Date() });
+    clearAuthCookies(res);
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'PASSWORD_RESET_COMPLETED',
+      req,
+      details: 'Password successfully reset. Revoked all existing sessions.',
+    });
+
+    res.json({
+      message: 'Password reset successfully! Please sign in with your new password.',
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 9. Change Password (Authenticated) ───────────────────────────────────────
+export const changePassword = async (req: any, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters' });
+    }
+    if (!/\d/.test(newPassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one number' });
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user || !(await user.comparePassword(currentPassword))) {
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Revoke all other active sessions (keep current session active)
+    if (req.sessionId) {
+      await Session.updateMany(
+        { userId: user._id, sessionId: { $ne: req.sessionId } },
+        { revokedAt: new Date() }
+      );
+    }
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'PASSWORD_CHANGED',
+      req,
+      details: 'Password updated. Revoked all other active sessions.',
+    });
+
+    res.json({ message: 'Password updated successfully. Other active devices were signed out for security.' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 10. Get Active Sessions ──────────────────────────────────────────────────
+export const getSessions = async (req: any, res: Response) => {
+  try {
+    const sessions = await Session.find({
+      userId: req.user._id,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).sort({ lastActiveAt: -1 });
+
+    const formattedSessions = sessions.map((s) => ({
+      sessionId: s.sessionId,
+      browser: s.browser,
+      os: s.os,
+      deviceType: s.deviceType,
+      ipAddress: s.ipAddress,
+      lastActiveAt: s.lastActiveAt,
+      createdAt: s.createdAt,
+      isCurrent: s.sessionId === req.sessionId,
+    }));
+
+    res.json(formattedSessions);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 11. Revoke Specific Session ──────────────────────────────────────────────
+export const revokeSession = async (req: any, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ message: 'Session ID is required' });
+    }
+
+    const session = await Session.findOne({
+      sessionId,
+      userId: req.user._id,
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found' });
+    }
+
+    session.revokedAt = new Date();
+    await session.save();
+
+    // If current session was revoked, clear cookies
+    if (sessionId === req.sessionId) {
+      clearAuthCookies(res);
+    }
+
+    await logSecurityEvent({
+      userId: req.user._id,
+      email: req.user.email,
+      event: 'SESSION_REVOKED',
+      req,
+      details: `Revoked session (${session.browser} on ${session.os})`,
+    });
+
+    res.json({ message: 'Session revoked successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 12. Revoke All Other Sessions ────────────────────────────────────────────
+export const revokeOtherSessions = async (req: any, res: Response) => {
+  try {
+    const currentSessionId = req.sessionId;
+    const filter: any = { userId: req.user._id, revokedAt: null };
+    if (currentSessionId) {
+      filter.sessionId = { $ne: currentSessionId };
+    }
+
+    await Session.updateMany(filter, { revokedAt: new Date() });
+
+    await logSecurityEvent({
+      userId: req.user._id,
+      email: req.user.email,
+      event: 'REVOKE_ALL_SESSIONS',
+      req,
+      details: 'Signed out of all other active devices',
+    });
+
+    res.json({ message: 'All other sessions have been signed out successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 13. Get Security Audit Activity ──────────────────────────────────────────
+export const getSecurityActivity = async (req: any, res: Response) => {
+  try {
+    const logs = await SecurityLog.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(25);
+
+    res.json(logs);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 14. Get Me ───────────────────────────────────────────────────────────────
+export const getMe = async (req: any, res: Response) => {
+  try {
+    const user = await User.findById(req.user._id).populate('projects', 'name key color icon');
+    res.json(sanitizeUser(user));
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── 15. Update Profile ───────────────────────────────────────────────────────
 export const updateProfile = async (req: any, res: Response) => {
   try {
     const { name, bio, title, avatar, location, website, timezone, language } = req.body;
-    
-    // If removing avatar
-    if (avatar === "") {
+
+    if (avatar === '') {
       const existing = await User.findById(req.user._id);
       if (existing?.profileImage?.fileId) {
         await deleteGridFSFile(existing.profileImage.fileId);
@@ -387,7 +1038,7 @@ export const updateProfile = async (req: any, res: Response) => {
           name,
           bio,
           title,
-          avatar: "",
+          avatar: '',
           $unset: { profileImage: 1 },
           location,
           website,
@@ -396,7 +1047,7 @@ export const updateProfile = async (req: any, res: Response) => {
         },
         { new: true, runValidators: true }
       );
-      return res.json(updated);
+      return res.json(sanitizeUser(updated));
     }
 
     const user = await User.findByIdAndUpdate(
@@ -404,28 +1055,39 @@ export const updateProfile = async (req: any, res: Response) => {
       { name, bio, title, avatar, location, website, timezone, language },
       { new: true, runValidators: true }
     );
-    res.json(user);
+    res.json(sanitizeUser(user));
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-export const changePassword = async (req: any, res: Response) => {
+// ─── 16. Logout ───────────────────────────────────────────────────────────────
+export const logout = async (req: any, res: Response) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user._id).select('+password');
-    if (!user || !(await user.comparePassword(currentPassword))) {
-      return res.status(401).json({ message: 'Current password is incorrect' });
+    const sessionId = req.sessionId || req.cookies?.sf_session_id;
+    if (sessionId) {
+      await Session.findOneAndUpdate({ sessionId }, { revokedAt: new Date() });
     }
-    user.password = newPassword;
-    await user.save();
-    const token = generateToken(user._id.toString());
-    res.json({ token, message: 'Password changed successfully' });
+
+    if (req.user) {
+      await logSecurityEvent({
+        userId: req.user._id,
+        email: req.user.email,
+        event: 'LOGOUT',
+        req,
+        details: 'User logged out',
+      });
+    }
+
+    clearAuthCookies(res);
+    res.json({ message: 'Successfully logged out' });
   } catch (error: any) {
+    clearAuthCookies(res);
     res.status(500).json({ message: error.message });
   }
 };
 
+// ─── 17. Avatar Handling ──────────────────────────────────────────────────────
 export const uploadAvatar = async (req: any, res: Response) => {
   try {
     if (!req.file || !req.file.buffer) {
@@ -466,7 +1128,7 @@ export const uploadAvatar = async (req: any, res: Response) => {
     res.json({
       message: 'Avatar updated successfully',
       avatarUrl,
-      user: currentUser,
+      user: sanitizeUser(currentUser),
     });
   } catch (error: any) {
     console.error('Avatar upload error:', error);
@@ -521,104 +1183,12 @@ export const removeAvatar = async (req: any, res: Response) => {
       await deleteGridFSFile(user.profileImage.fileId);
     }
 
-    user.avatar = "";
+    user.avatar = '';
     user.profileImage = undefined;
     await user.save({ validateBeforeSave: false });
 
-    res.json({ message: 'Avatar removed successfully', user });
+    res.json({ message: 'Avatar removed successfully', user: sanitizeUser(user) });
   } catch (error: any) {
     res.status(500).json({ message: error.message || 'Failed to remove avatar' });
-  }
-};
-
-export const logout = async (req: Request, res: Response) => {
-  try {
-    res.json({ message: 'Successfully logged out' });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const googleAuth = async (req: Request, res: Response) => {
-  try {
-    const { credential, token } = req.body;
-    const idToken = credential || token;
-
-    if (!idToken) {
-      return res.status(400).json({ message: 'Google credential / token is required' });
-    }
-
-    let payload: any = null;
-
-    try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken,
-        audience: process.env.GOOGLE_CLIENT_ID || undefined,
-      });
-      payload = ticket.getPayload();
-    } catch (verifyErr) {
-      const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-      if (tokenInfoRes.ok) {
-        payload = await tokenInfoRes.json();
-      } else {
-        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        if (userInfoRes.ok) {
-          payload = await userInfoRes.json();
-        } else {
-          return res.status(401).json({ message: 'Invalid or expired Google authentication token' });
-        }
-      }
-    }
-
-    if (!payload || !payload.email) {
-      return res.status(400).json({ message: 'Unable to retrieve user information from Google' });
-    }
-
-    const { email, name, picture, sub } = payload;
-
-    let user = await User.findOne({ email: email.toLowerCase() });
-
-    if (user) {
-      if (!user.avatar && picture) user.avatar = picture;
-      if (!user.providerId && sub) user.providerId = sub;
-      user.emailVerified = true;
-      if (!user.emailVerifiedAt) user.emailVerifiedAt = new Date();
-      user.lastSeen = new Date();
-      await user.save({ validateBeforeSave: false });
-    } else {
-      user = await User.create({
-        name: name || email.split('@')[0],
-        email: email.toLowerCase(),
-        avatar: picture,
-        provider: 'google',
-        providerId: sub,
-        role: 'member',
-        emailVerified: true,
-        emailVerifiedAt: new Date(),
-        isActive: true,
-      });
-    }
-
-    const jwtToken = generateToken(user._id.toString());
-
-    res.json({
-      token: jwtToken,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        provider: user.provider,
-        emailVerified: user.emailVerified,
-        emailVerifiedAt: user.emailVerifiedAt,
-        profileImage: user.profileImage,
-      },
-    });
-  } catch (error: any) {
-    console.error('Google Auth Error:', error);
-    res.status(500).json({ message: error.message || 'Google authentication failed' });
   }
 };

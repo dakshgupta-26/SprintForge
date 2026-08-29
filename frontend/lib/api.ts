@@ -4,31 +4,82 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 const api = axios.create({
   baseURL: API_BASE,
-  headers: { "Content-Type": "application/json" },
-  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+    "X-Requested-With": "XMLHttpRequest", // CSRF custom header verification
+  },
+  withCredentials: true, // Send and receive HttpOnly cookies
 });
 
-// Attach JWT token from localStorage
-api.interceptors.request.use(
-  (config) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("sf_token");
-      if (token) config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Mutex flag to prevent simultaneous multiple refresh attempts
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value?: unknown) => void;
+  reject: (reason?: any) => void;
+}> = [];
 
-// Handle 401 → clear token and redirect to login
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+// Response Interceptor: Silent Token Refresh on 401
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("sf_token");
-      localStorage.removeItem("sf_user");
-      window.location.href = "/login";
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Do not attempt refresh on auth entry routes (login, register, refresh itself)
+    const isAuthRoute =
+      originalRequest.url?.includes("/auth/login") ||
+      originalRequest.url?.includes("/auth/register") ||
+      originalRequest.url?.includes("/auth/refresh") ||
+      originalRequest.url?.includes("/auth/verify-email-otp") ||
+      originalRequest.url?.includes("/auth/forgot-password") ||
+      originalRequest.url?.includes("/auth/reset-password");
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then(() => api(originalRequest))
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        await axios.post(
+          `${API_BASE}/auth/refresh`,
+          {},
+          {
+            withCredentials: true,
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+          }
+        );
+        processQueue(null);
+        isRefreshing = false;
+        return api(originalRequest);
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
+        isRefreshing = false;
+
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+          // Cleanly redirect to login on expired refresh token
+          window.location.href = "/login";
+        }
+        return Promise.reject(refreshErr);
+      }
     }
+
     return Promise.reject(error);
   }
 );
@@ -42,10 +93,20 @@ export const authAPI = {
   googleLogin: (data: { credential?: string; token?: string }) =>
     api.post("/auth/google", data),
   getMe: () => api.get("/auth/me"),
+  refreshSession: () => api.post("/auth/refresh"),
   updateProfile: (data: any) => api.put("/auth/profile", data),
   changePassword: (data: any) => api.put("/auth/change-password", data),
-  uploadAvatar: (formData: FormData) => 
-    api.post("/auth/upload-avatar", formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  forgotPassword: (data: { email: string }) => api.post("/auth/forgot-password", data),
+  resetPassword: (data: { token: string; email: string; newPassword: string }) =>
+    api.post("/auth/reset-password", data),
+  getSessions: () => api.get("/auth/sessions"),
+  revokeSession: (sessionId: string) => api.delete(`/auth/sessions/${sessionId}`),
+  revokeOtherSessions: () => api.post("/auth/sessions/revoke-others"),
+  getSecurityActivity: () => api.get("/auth/activity"),
+  uploadAvatar: (formData: FormData) =>
+    api.post("/auth/upload-avatar", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
   removeAvatar: () => api.delete("/auth/avatar"),
   verifyEmailOtp: (data: { tempToken?: string; email?: string; otp: string }) =>
     api.post("/auth/verify-email-otp", data),
@@ -80,7 +141,6 @@ export const projectAPI = {
   updateMemberRole: (projectId: string, userId: string, data: any) =>
     api.patch(`/projects/${projectId}/members/${userId}/role`, data),
 };
-
 
 // ─── Tasks ───
 export const taskAPI = {
