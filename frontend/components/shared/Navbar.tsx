@@ -182,11 +182,17 @@ export function Navbar({ onMenuClick }: NavbarProps) {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setProfileOpen(false);
-    logout();
-    router.push("/login");
+    try {
+      await logout();
+      toast.success("Signed out safely");
+      router.push("/login");
+    } catch {
+      router.push("/login");
+    }
   };
+
 
   return (
     <>

@@ -11,6 +11,7 @@ import {
   getMe,
   updateProfile,
   changePassword,
+  setPassword,
   getSessions,
   revokeSession,
   revokeOtherSessions,
@@ -47,6 +48,7 @@ router.post('/reset-password', passwordResetLimiter, resetPassword);
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
 router.put('/change-password', protect, changePassword);
+router.post('/set-password', protect, setPassword);
 
 // Active Session Management
 router.get('/sessions', protect, getSessions);

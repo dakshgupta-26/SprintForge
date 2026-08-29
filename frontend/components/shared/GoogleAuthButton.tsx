@@ -19,7 +19,7 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
 
   const handleSuccess = async (credentialResponse: any) => {
     if (!credentialResponse?.credential) {
-      toast.error("No credentials received from Google");
+      toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
       return;
     }
     setLoading(true);
@@ -28,14 +28,17 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
       toast.success("Signed in with Google! 🎉");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Google authentication failed");
+      toast.error(
+        err?.response?.data?.message ||
+          "Google authentication failed. Please try again or continue with email."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleError = () => {
-    toast.error("Google Sign-In was cancelled or failed");
+    toast.error("Google sign-in was cancelled or unavailable. Please try again or continue with email.");
   };
 
   if (!clientId) {
@@ -43,11 +46,11 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
       <button
         type="button"
         onClick={() => {
-          toast.error("Google Client ID is not configured yet. Please set NEXT_PUBLIC_GOOGLE_CLIENT_ID.");
+          toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
         }}
-        className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border bg-card hover:bg-muted/50 text-foreground text-sm font-semibold transition-all shadow-sm active:scale-[0.98]"
+        className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-white/[0.1] bg-[#0c1022] hover:bg-white/[0.06] text-white text-xs sm:text-sm font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
       >
-        <svg className="w-4 h-4" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
           <path
             fill="#4285F4"
             d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -73,8 +76,8 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
   return (
     <div className="w-full flex flex-col items-center justify-center relative min-h-[42px]">
       {loading ? (
-        <div className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-border bg-card text-foreground text-sm font-semibold">
-          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+        <div className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-white/[0.1] bg-[#0c1022] text-white text-xs sm:text-sm font-semibold shadow-sm">
+          <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
           <span>Authenticating with Google...</span>
         </div>
       ) : (
@@ -83,7 +86,7 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
             onSuccess={handleSuccess}
             onError={handleError}
             useOneTap={false}
-            theme="outline"
+            theme="filled_black"
             size="large"
             text={text}
             shape="rectangular"
@@ -94,3 +97,4 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { authAPI } from "@/lib/api";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
+import { useProjectStore } from "@/lib/store/projectStore";
 
 export interface User {
   _id: string;
@@ -11,6 +12,8 @@ export interface User {
   bio?: string;
   title?: string;
   provider?: string;
+  providerId?: string;
+  hasPassword?: boolean;
   emailVerified?: boolean;
   emailVerifiedAt?: string;
   location?: string;
@@ -44,6 +47,7 @@ interface AuthState {
   register: (name: string, email: string, password: string) => Promise<AuthResponse>;
   verifyEmailOtp: (tempToken: string, otp: string, email?: string) => Promise<void>;
   resendEmailOtp: (tempToken: string, email?: string) => Promise<{ message: string; remainingSeconds?: number }>;
+  setPassword: (newPassword: string) => Promise<void>;
   setSession: (user: User) => void;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
@@ -135,6 +139,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return data;
   },
 
+  setPassword: async (newPassword: string) => {
+    const { data } = await authAPI.setPassword({ newPassword });
+    if (data.user) {
+      set({ user: data.user });
+    } else {
+      set((state) => ({ user: state.user ? { ...state.user, hasPassword: true } : null }));
+    }
+  },
+
   setSession: (user) => {
     connectSocket(user._id);
     set({ user, isAuthenticated: true });
@@ -146,8 +159,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // Ignore network errors on logout
     } finally {
+      // 1. Disconnect real-time socket
       disconnectSocket();
+
+      // 2. Clear frontend authentication state
       set({ user: null, isAuthenticated: false });
+
+      // 3. Invalidate protected cached workspace data
+      try {
+        useProjectStore.setState({
+          projects: [],
+          currentProject: null,
+          isLoading: false,
+        });
+      } catch {
+        // Ignore store reset errors
+      }
+
+      // 4. Invalidate browser storage caches if any
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.clear();
+        } catch {
+          // Ignore storage clearance errors
+        }
+      }
     }
   },
 
@@ -169,3 +205,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 }));
+

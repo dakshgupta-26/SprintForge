@@ -112,6 +112,11 @@ const logSecurityEvent = async (opts: {
 export const sanitizeUser = (user: any) => {
   if (!user) return null;
   const u = user.toObject ? user.toObject() : user;
+  const hasPassword = Boolean(
+    u.password ||
+    (user.password !== undefined && user.password !== null && user.password !== '') ||
+    (u.hasPassword !== undefined ? u.hasPassword : false)
+  );
   delete u.password;
   delete u.__v;
   return {
@@ -120,7 +125,9 @@ export const sanitizeUser = (user: any) => {
     email: u.email,
     role: u.role,
     avatar: u.avatar,
-    provider: u.provider,
+    provider: u.provider || 'local',
+    providerId: u.providerId,
+    hasPassword,
     emailVerified: u.emailVerified,
     emailVerifiedAt: u.emailVerifiedAt,
     profileImage: u.profileImage,
@@ -135,6 +142,7 @@ export const sanitizeUser = (user: any) => {
     lastSeen: u.lastSeen,
   };
 };
+
 
 // Mask an email for security display (e.g. d****h@gmail.com)
 const maskEmail = (email: string): string => {
@@ -909,6 +917,46 @@ export const changePassword = async (req: any, res: Response) => {
   }
 };
 
+// ─── 9b. Set Initial Password (for OAuth accounts without password) ───────────
+export const setPassword = async (req: any, res: Response) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+    if (!/\d/.test(newPassword)) {
+      return res.status(400).json({ message: 'Password must contain at least one number' });
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(404).json({ message: 'User account not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    await logSecurityEvent({
+      userId: user._id,
+      email: user.email,
+      event: 'PASSWORD_CHANGED',
+      req,
+      details: 'Configured password for account. Email + Password login enabled.',
+    });
+
+    const sanitized = sanitizeUser(user);
+    sanitized.hasPassword = true;
+
+    res.json({
+      message: 'Password set successfully! Email + Password login is now enabled.',
+      user: sanitized,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 // ─── 10. Get Active Sessions ──────────────────────────────────────────────────
 export const getSessions = async (req: any, res: Response) => {
   try {
@@ -1015,12 +1063,21 @@ export const getSecurityActivity = async (req: any, res: Response) => {
 // ─── 14. Get Me ───────────────────────────────────────────────────────────────
 export const getMe = async (req: any, res: Response) => {
   try {
-    const user = await User.findById(req.user._id).populate('projects', 'name key color icon');
-    res.json(sanitizeUser(user));
+    const user = await User.findById(req.user._id)
+      .select('+password')
+      .populate('projects', 'name key color icon');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const hasPassword = Boolean(user.password && user.password.length > 0);
+    const sanitized: any = sanitizeUser(user);
+    sanitized.hasPassword = hasPassword;
+    res.json(sanitized);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // ─── 15. Update Profile ───────────────────────────────────────────────────────
 export const updateProfile = async (req: any, res: Response) => {

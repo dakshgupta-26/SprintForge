@@ -194,14 +194,15 @@ export default function InvitePage() {
                 You are logged in as {user?.email}, but this invite is for {inviteData.email}.
               </p>
               <button 
-                onClick={() => {
-                  useAuthStore.getState().logout?.();
-                  window.location.reload();
+                onClick={async () => {
+                  await useAuthStore.getState().logout?.();
+                  router.push("/login");
                 }}
                 className="px-4 py-2 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
               >
                 Log out & Switch accounts
               </button>
+
             </div>
           ) : (
             <button

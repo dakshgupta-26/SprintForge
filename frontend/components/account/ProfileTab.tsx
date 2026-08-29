@@ -92,17 +92,31 @@ export function ProfileTab({ formData, onChange }: ProfileTabProps) {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   Online
                 </span>
+                {Boolean(user?.provider === "google" || user?.providerId) ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/15 border border-blue-500/30 text-blue-300">
+                    Google SSO
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
+                    Email + Password
+                  </span>
+                )}
               </div>
 
-              <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+              <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5 flex-wrap">
                 <Mail className="w-3.5 h-3.5 text-slate-500" />
                 <span>{user?.email}</span>
                 {user?.emailVerified !== false ? (
-                  <span className="text-emerald-400 font-bold ml-1">Verified ✓</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-400 font-bold px-2 py-0.2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px]">
+                    Verified ✓
+                  </span>
                 ) : (
-                  <span className="text-amber-400 font-bold ml-1">⚠ Unverified</span>
+                  <span className="inline-flex items-center gap-1 text-amber-400 font-bold px-2 py-0.2 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px]">
+                    ⚠ Unverified
+                  </span>
                 )}
               </p>
+
 
               <p className="text-xs text-slate-400 font-medium">
                 {formData.title || "Software Engineer"}

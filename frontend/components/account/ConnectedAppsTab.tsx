@@ -2,30 +2,44 @@
 
 import React from "react";
 import { useAuthStore } from "@/lib/store/authStore";
-import { CheckCircle2, ExternalLink, Link2, Unlink } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Link2,
+  Unlink,
+  Shield,
+  KeyRound,
+  AlertCircle,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 export function ConnectedAppsTab() {
   const { user } = useAuthStore();
 
-  const isGoogleConnected = user?.provider === "google";
+  const isGoogleConnected = Boolean(
+    user?.provider === "google" || user?.providerId
+  );
   const isGithubConnected = user?.provider === "github";
+  const hasPasswordConfigured = Boolean(
+    user?.hasPassword ?? (user?.provider === "local" || !user?.providerId)
+  );
 
   return (
     <div className="space-y-6">
       <div className="p-6 rounded-3xl bg-[#090d20] border border-white/[0.08] shadow-xl space-y-5">
         <div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono">
-            Connected Developer Tools
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-violet-400" />
+            Connected Accounts & Developer Tools
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Connect third-party platforms to streamline authentication and activity notifications.
+            Connect third-party platforms to streamline Single Sign-On (SSO), profile synchronization, and project workflows.
           </p>
         </div>
 
         <div className="space-y-3.5">
-          {/* Google */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-[#060914] border border-white/[0.06]">
+          {/* Google Workspace */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#060914] border border-white/[0.06] hover:border-white/[0.12] transition-colors">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.1] flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -49,36 +63,48 @@ export function ConnectedAppsTab() {
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-white">Google Workspace</p>
-                  {isGoogleConnected && (
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                  <p className="text-xs font-bold text-white">Google Workspace / Account</p>
+                  {isGoogleConnected ? (
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1 px-2 py-0.2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                       <CheckCircle2 className="w-3 h-3" /> Connected
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-400 px-2 py-0.2 rounded-full bg-slate-800 border border-slate-700">
+                      Not Connected
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  Single Sign-On and profile synchronization
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {isGoogleConnected
+                    ? `Linked to ${user?.email} • Single Sign-On and profile sync active`
+                    : "Connect your Google account for passwordless Single Sign-On"}
                 </p>
               </div>
             </div>
 
-            {isGoogleConnected ? (
-              <span className="text-xs font-mono text-slate-400 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-                Primary SSO Provider
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => toast("Google SSO link is available from the login screen.", { icon: "🔗" })}
-                className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white transition-colors cursor-pointer"
-              >
-                Connect
-              </button>
-            )}
+            <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+              {isGoogleConnected ? (
+                <span className="text-xs font-mono text-slate-300 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                  Primary SSO Provider
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    toast("Google SSO link is available from the login and registration screens.", {
+                      icon: "🔗",
+                    })
+                  }
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-semibold text-white transition-all cursor-pointer shadow-sm"
+                >
+                  Connect Google
+                </button>
+              )}
+            </div>
           </div>
 
           {/* GitHub */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-[#060914] border border-white/[0.06]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#060914] border border-white/[0.06] hover:border-white/[0.12] transition-colors">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.1] flex items-center justify-center flex-shrink-0 text-white">
                 <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
@@ -89,23 +115,27 @@ export function ConnectedAppsTab() {
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-bold text-white">GitHub</p>
                   {isGithubConnected && (
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1 px-2 py-0.2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                       <CheckCircle2 className="w-3 h-3" /> Connected
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  Repository commit linking and issue triggers
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Repository commit linking, automated branch triggers, and issue sync
                 </p>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={() => toast("GitHub App connection integration configured.", { icon: "🐙" })}
-              className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white transition-colors cursor-pointer"
+              onClick={() =>
+                toast("GitHub App integration ready for workspace linking.", {
+                  icon: "🐙",
+                })
+              }
+              className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white transition-colors cursor-pointer self-end sm:self-center flex-shrink-0"
             >
-              {isGithubConnected ? "Manage" : "Connect"}
+              {isGithubConnected ? "Manage" : "Connect GitHub"}
             </button>
           </div>
         </div>
@@ -113,3 +143,4 @@ export function ConnectedAppsTab() {
     </div>
   );
 }
+
