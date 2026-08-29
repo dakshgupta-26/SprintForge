@@ -6,20 +6,36 @@ let transporter: nodemailer.Transporter | null = null;
 async function getTransporter() {
   if (transporter) return transporter;
 
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    // Production / configured SMTP (Gmail, SendGrid, Mailgun, etc.)
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true', // false → STARTTLS on 587
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-    console.log(`📧 Using SMTP: ${process.env.SMTP_HOST} (${process.env.SMTP_USER})`);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpService = process.env.SMTP_SERVICE;
+
+  if (smtpUser && smtpPass) {
+    if (smtpService === 'gmail' || smtpHost === 'smtp.gmail.com' || (!smtpHost && smtpUser.endsWith('@gmail.com'))) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+      console.log(`📧 Using Gmail SMTP: ${smtpUser}`);
+    } else {
+      transporter = nodemailer.createTransport({
+        host: smtpHost || 'smtp.gmail.com',
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+      console.log(`📧 Using SMTP: ${smtpHost} (${smtpUser})`);
+    }
   } else {
-    // Development fallback: Ethereal (fake SMTP — emails captured at ethereal.email)
+    // Development fallback: Ethereal (fake SMTP when no real credentials in .env)
+    console.warn('⚠️ SMTP_USER / SMTP_PASS not set in .env. Falling back to temporary Ethereal test inbox.');
     const testAccount = await nodemailer.createTestAccount();
     transporter = nodemailer.createTransport({
       host: 'smtp.ethereal.email',
@@ -27,7 +43,7 @@ async function getTransporter() {
       secure: false,
       auth: { user: testAccount.user, pass: testAccount.pass },
     });
-    console.log('📧 Ethereal email account:', testAccount.user);
+    console.log('📧 Ethereal test email account:', testAccount.user);
     console.log('📧 Preview emails at: https://ethereal.email');
   }
 
@@ -421,8 +437,8 @@ export async function sendOtpEmail(opts: {
       recipientEmail: opts.to,
     });
 
-    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge Security';
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'security@sprintforge.io';
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
 
     const info = await t.sendMail({
       from: `"${fromName}" <${fromEmail}>`,

@@ -25,8 +25,7 @@ export const uploadBufferToGridFS = async (
   const bucket = getProfileImagesBucket();
   return new Promise((resolve, reject) => {
     const uploadStream = bucket.openUploadStream(filename, {
-      contentType,
-      metadata: { uploadedAt: new Date() },
+      metadata: { contentType, uploadedAt: new Date() },
     });
 
     const readable = new Readable();
