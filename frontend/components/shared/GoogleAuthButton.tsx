@@ -71,14 +71,14 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with", onError }: G
           if (onError) {
             onError({
               title: "Google sign-in unavailable",
-              description: "Google client ID is not configured. Please continue with work email.",
+              description: "Google sign-in is temporarily unavailable. Please continue with your work email.",
               type: "server",
             });
           } else {
             toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
           }
         }}
-        className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-white/[0.1] bg-[#0c1022] hover:bg-white/[0.06] text-white text-xs sm:text-sm font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+        className="w-full flex items-center justify-center gap-2.5 py-2.5 sm:py-3 px-4 rounded-xl border border-white/[0.08] dark:border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] text-white text-xs sm:text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow-md hover:border-white/[0.15] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] cursor-pointer"
       >
         <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
           <path
