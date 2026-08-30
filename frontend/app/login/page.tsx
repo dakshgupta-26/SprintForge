@@ -24,6 +24,7 @@ import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
 import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
+import { AuthErrorAlert, normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 
 // ─── Reset Password View Component ────────────────────────────────────────────
 function ResetPasswordView({
@@ -39,19 +40,34 @@ function ResetPasswordView({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<AuthErrorInfo | null>(null);
 
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (resetError) setResetError(null);
+
     if (newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters");
+      setResetError({
+        title: "Weak password",
+        description: "Password must be at least 8 characters long.",
+        type: "validation",
+      });
       return;
     }
     if (!/\d/.test(newPassword)) {
-      toast.error("Password must contain at least one number");
+      setResetError({
+        title: "Password requirement not met",
+        description: "Password must contain at least one numeric digit.",
+        type: "validation",
+      });
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match");
+      setResetError({
+        title: "Passwords do not match",
+        description: "Please verify both password fields are identical.",
+        type: "validation",
+      });
       return;
     }
 
@@ -65,7 +81,7 @@ function ResetPasswordView({
       toast.success("Password reset successfully! Please sign in.");
       onSuccess();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to reset password");
+      setResetError(normalizeAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -90,11 +106,16 @@ function ResetPasswordView({
           <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
             New Password
           </label>
-          <div className="relative rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500">
+          <div className={`relative rounded-xl border transition-all duration-200 ${
+            resetError ? "border-rose-500/40 bg-rose-500/[0.02]" : "border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500"
+          }`}>
             <input
               type={showPass ? "text" : "password"}
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                if (resetError) setResetError(null);
+              }}
               placeholder="•••••••••••• (min 8 chars)"
               required
               className="w-full pl-4 pr-11 py-2.5 bg-transparent text-white text-sm focus:outline-none rounded-xl"
@@ -113,17 +134,25 @@ function ResetPasswordView({
           <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
             Confirm Password
           </label>
-          <div className="relative rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500">
+          <div className={`relative rounded-xl border transition-all duration-200 ${
+            resetError ? "border-rose-500/40 bg-rose-500/[0.02]" : "border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500"
+          }`}>
             <input
               type={showPass ? "text" : "password"}
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                if (resetError) setResetError(null);
+              }}
               placeholder="Re-type new password"
               required
               className="w-full pl-4 pr-11 py-2.5 bg-transparent text-white text-sm focus:outline-none rounded-xl"
             />
           </div>
         </div>
+
+        {/* Inline Reset Error Alert */}
+        <AuthErrorAlert error={resetError} className="my-2" />
 
         <button
           type="submit"
@@ -152,6 +181,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isFocused, setIsFocused] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<AuthErrorInfo | null>(null);
 
   // Forgot password modal state
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
@@ -168,15 +198,20 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authError) setAuthError(null);
+
     if (!email.trim() || !password) {
-      toast.error("Please enter both email and password");
+      setAuthError({
+        title: "Invalid email or password",
+        description: "Check your credentials and try again.",
+        type: "validation",
+      });
       return;
     }
 
     try {
       const result = await login(email.trim(), password);
       if (result.verificationRequired) {
-        toast("First-time verification code sent to your email.", { icon: "🔐" });
         setVerificationState({
           tempToken: result.tempToken,
           email: result.email || email.trim(),
@@ -188,9 +223,9 @@ function LoginForm() {
       toast.success("Welcome back! 🎉");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
-      toast.error(
-        err?.response?.data?.message || "Login failed. Please verify your credentials."
-      );
+      // Show error directly inside the login form — NEVER in top-right toast!
+      const normalized = normalizeAuthError(err);
+      setAuthError(normalized);
     }
   };
 
@@ -260,7 +295,7 @@ function LoginForm() {
 
       {/* Google Single Sign-On Button */}
       <div className="mb-4 sm:mb-5">
-        <GoogleAuthButton nextUrl={nextUrl} text="signin_with" />
+        <GoogleAuthButton nextUrl={nextUrl} text="signin_with" onError={setAuthError} />
       </div>
 
       {/* Subtle Divider */}
@@ -285,17 +320,24 @@ function LoginForm() {
             className={`relative rounded-xl border transition-all duration-200 ${
               isFocused === "email"
                 ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : authError
+                ? "border-rose-500/45 bg-rose-500/[0.02] shadow-[0_0_12px_rgba(244,63,94,0.08)]"
                 : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
             }`}
           >
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+              authError ? "text-rose-400" : "text-slate-500"
+            }`}>
               <Mail className="w-4 h-4" />
             </div>
             <input
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (authError) setAuthError(null);
+              }}
               onFocus={() => setIsFocused("email")}
               onBlur={() => setIsFocused(null)}
               placeholder="you@company.com"
@@ -331,17 +373,24 @@ function LoginForm() {
             className={`relative rounded-xl border transition-all duration-200 ${
               isFocused === "password"
                 ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : authError
+                ? "border-rose-500/45 bg-rose-500/[0.02] shadow-[0_0_12px_rgba(244,63,94,0.08)]"
                 : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
             }`}
           >
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+              authError ? "text-rose-400" : "text-slate-500"
+            }`}>
               <Lock className="w-4 h-4" />
             </div>
             <input
               id="password"
               type={showPass ? "text" : "password"}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (authError) setAuthError(null);
+              }}
               onFocus={() => setIsFocused("password")}
               onBlur={() => setIsFocused(null)}
               placeholder="••••••••••••"
@@ -360,6 +409,9 @@ function LoginForm() {
           </div>
         </div>
 
+        {/* ── Contextual Inline Authentication Error (Directly above Sign In button) ── */}
+        <AuthErrorAlert error={authError} className="my-2" />
+
         {/* Primary Sign In Button */}
         <button
           type="submit"
@@ -371,7 +423,7 @@ function LoginForm() {
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Authenticating...</span>
+              <span>Signing in to Workspace...</span>
             </>
           ) : (
             <>

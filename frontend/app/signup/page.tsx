@@ -22,6 +22,7 @@ import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
 import { SprintForgeLogo } from "@/components/shared/SprintForgeLogo";
 import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
 import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
+import { AuthErrorAlert, normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 
 const passwordRules = [
   { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
@@ -40,6 +41,7 @@ function SignupForm() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isFocused, setIsFocused] = useState<string | null>(null);
+  const [signupError, setSignupError] = useState<AuthErrorInfo | null>(null);
   const [verificationState, setVerificationState] = useState<{
     tempToken?: string;
     email: string;
@@ -48,27 +50,44 @@ function SignupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (signupError) setSignupError(null);
+
     if (!name.trim()) {
-      toast.error("Please enter your full name");
+      setSignupError({
+        title: "Name is required",
+        description: "Please enter your full name to set up your profile.",
+        type: "validation",
+      });
       return;
     }
     if (!email.trim()) {
-      toast.error("Please enter your work email");
+      setSignupError({
+        title: "Work email is required",
+        description: "Please enter a valid work email address.",
+        type: "validation",
+      });
       return;
     }
     if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
+      setSignupError({
+        title: "Password too short",
+        description: "Password must be at least 8 characters long.",
+        type: "validation",
+      });
       return;
     }
     if (!/\d/.test(password)) {
-      toast.error("Password must contain at least one number");
+      setSignupError({
+        title: "Password requirement missing",
+        description: "Password must contain at least one number.",
+        type: "validation",
+      });
       return;
     }
 
     try {
       const result = await register(name.trim(), email.trim(), password);
       if (result.verificationRequired) {
-        toast("Verification code sent to your email.", { icon: "🔐" });
         setVerificationState({
           tempToken: result.tempToken,
           email: result.email || email.trim(),
@@ -80,11 +99,8 @@ function SignupForm() {
       toast.success("Account created! Welcome to SprintForge 🚀");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
-      if (!err?.response) {
-        toast.error("Cannot reach the server. Check if the backend is running.");
-      } else {
-        toast.error(err.response.data?.message || "Registration failed. Please try again.");
-      }
+      const normalized = normalizeAuthError(err);
+      setSignupError(normalized);
     }
   };
 
@@ -123,7 +139,7 @@ function SignupForm() {
 
       {/* Google Single Sign-On Button */}
       <div className="mb-4">
-        <GoogleAuthButton nextUrl={nextUrl} text="signup_with" />
+        <GoogleAuthButton nextUrl={nextUrl} text="signup_with" onError={setSignupError} />
       </div>
 
       {/* Subtle Divider */}
@@ -148,17 +164,24 @@ function SignupForm() {
             className={`relative rounded-xl border transition-all duration-200 ${
               isFocused === "name"
                 ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : signupError
+                ? "border-rose-500/45 bg-rose-500/[0.02]"
                 : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
             }`}
           >
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+              signupError ? "text-rose-400" : "text-slate-500"
+            }`}>
               <User className="w-4 h-4" />
             </div>
             <input
               id="name"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (signupError) setSignupError(null);
+              }}
               onFocus={() => setIsFocused("name")}
               onBlur={() => setIsFocused(null)}
               placeholder="Your full name"
@@ -181,17 +204,24 @@ function SignupForm() {
             className={`relative rounded-xl border transition-all duration-200 ${
               isFocused === "email"
                 ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : signupError
+                ? "border-rose-500/45 bg-rose-500/[0.02]"
                 : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
             }`}
           >
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+              signupError ? "text-rose-400" : "text-slate-500"
+            }`}>
               <Mail className="w-4 h-4" />
             </div>
             <input
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (signupError) setSignupError(null);
+              }}
               onFocus={() => setIsFocused("email")}
               onBlur={() => setIsFocused(null)}
               placeholder="you@company.com"
@@ -214,17 +244,24 @@ function SignupForm() {
             className={`relative rounded-xl border transition-all duration-200 ${
               isFocused === "password"
                 ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
+                : signupError
+                ? "border-rose-500/45 bg-rose-500/[0.02]"
                 : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
             }`}
           >
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+              signupError ? "text-rose-400" : "text-slate-500"
+            }`}>
               <Lock className="w-4 h-4" />
             </div>
             <input
               id="password"
               type={showPass ? "text" : "password"}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (signupError) setSignupError(null);
+              }}
               onFocus={() => setIsFocused("password")}
               onBlur={() => setIsFocused(null)}
               placeholder="••••••••••••"
@@ -264,6 +301,9 @@ function SignupForm() {
             })}
           </div>
         </div>
+
+        {/* ── Contextual Inline Authentication Error (Directly above Submit button) ── */}
+        <AuthErrorAlert error={signupError} className="my-2" />
 
         {/* Primary Create Account Button */}
         <button

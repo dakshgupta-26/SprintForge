@@ -5,13 +5,15 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Loader2 } from "lucide-react";
+import { normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 
 interface GoogleAuthButtonProps {
   nextUrl?: string | null;
   text?: "signin_with" | "signup_with" | "continue_with";
+  onError?: (error: AuthErrorInfo) => void;
 }
 
-export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuthButtonProps) {
+export function GoogleAuthButton({ nextUrl, text = "continue_with", onError }: GoogleAuthButtonProps) {
   const router = useRouter();
   const { loginWithGoogle } = useAuthStore();
   const [loading, setLoading] = useState(false);
@@ -19,7 +21,15 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
 
   const handleSuccess = async (credentialResponse: any) => {
     if (!credentialResponse?.credential) {
-      toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
+      if (onError) {
+        onError({
+          title: "Google sign-in unavailable",
+          description: "Please try again or continue with email and password.",
+          type: "server",
+        });
+      } else {
+        toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
+      }
       return;
     }
     setLoading(true);
@@ -28,17 +38,29 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
       toast.success("Signed in with Google! 🎉");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
-      toast.error(
-        err?.response?.data?.message ||
-          "Google authentication failed. Please try again or continue with email."
-      );
+      if (onError) {
+        onError(normalizeAuthError(err));
+      } else {
+        toast.error(
+          err?.response?.data?.message ||
+            "Google authentication failed. Please try again or continue with email."
+        );
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleError = () => {
-    toast.error("Google sign-in was cancelled or unavailable. Please try again or continue with email.");
+    if (onError) {
+      onError({
+        title: "Google sign-in cancelled",
+        description: "Google sign-in was cancelled or unavailable. Please try again or continue with email.",
+        type: "server",
+      });
+    } else {
+      toast.error("Google sign-in was cancelled or unavailable. Please try again or continue with email.");
+    }
   };
 
   if (!clientId) {
@@ -46,7 +68,15 @@ export function GoogleAuthButton({ nextUrl, text = "continue_with" }: GoogleAuth
       <button
         type="button"
         onClick={() => {
-          toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
+          if (onError) {
+            onError({
+              title: "Google sign-in unavailable",
+              description: "Google client ID is not configured. Please continue with work email.",
+              type: "server",
+            });
+          } else {
+            toast.error("Google sign-in is temporarily unavailable. Please try again or continue with email.");
+          }
         }}
         className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-white/[0.1] bg-[#0c1022] hover:bg-white/[0.06] text-white text-xs sm:text-sm font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
       >
