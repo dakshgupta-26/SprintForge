@@ -3,16 +3,20 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
+import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Navbar } from "@/components/shared/Navbar";
+import { GlobalChatToastContainer } from "@/components/chat/GlobalChatToast";
+import { connectSocket } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 
 import { useSidebarStore } from "@/lib/store/sidebarStore";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, initialize } = useAuthStore();
+  const { user, isAuthenticated, initialize } = useAuthStore();
   const { fetchProjects } = useProjectStore();
+  const { initialize: initializeChatUnread } = useChatUnreadStore();
   const { isCollapsed } = useSidebarStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -28,10 +32,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (initialized && !isAuthenticated) {
       router.push("/login");
-    } else if (initialized && isAuthenticated) {
+    } else if (initialized && isAuthenticated && user?._id) {
       fetchProjects();
+      connectSocket(user._id);
+      initializeChatUnread(user._id);
     }
-  }, [initialized, isAuthenticated]);
+  }, [initialized, isAuthenticated, user?._id]);
 
   if (!initialized) {
     return (
@@ -51,6 +57,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Global Realtime Chat Notification Toast */}
+      <GlobalChatToastContainer />
+
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 

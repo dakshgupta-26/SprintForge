@@ -201,6 +201,10 @@ export const teamsAPI = {
 // ─── Chat ───
 export const chatAPI = {
   getMessages: (projectId: string) => api.get(`/messages/${projectId}`),
+  getUnreadCounts: () => api.get("/messages/unread"),
+  markAsRead: (projectId: string, lastReadMessageId?: string) =>
+    api.post(`/messages/${projectId}/read`, { lastReadMessageId }),
+  markAllAsRead: () => api.post("/messages/read-all"),
 };
 
 // ─── Issues ───
