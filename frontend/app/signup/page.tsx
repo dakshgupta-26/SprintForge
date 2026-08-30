@@ -15,6 +15,7 @@ import {
   Lock,
   User,
   CheckCircle2,
+  Circle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
@@ -23,10 +24,42 @@ import { Agile3DWorkspace } from "@/components/auth/Agile3DWorkspace";
 import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
 import { AuthErrorAlert, normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 
-const passwordRules = [
-  { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
-  { label: "Contains a number", test: (p: string) => /\d/.test(p) },
+const passwordRequirements = [
+  { id: "length", label: "At least 8 characters", test: (p: string) => p.length >= 8 },
+  { id: "number", label: "Contains a number", test: (p: string) => /\d/.test(p) },
+  { id: "uppercase", label: "Contains an uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
+  { id: "lowercase", label: "Contains a lowercase letter", test: (p: string) => /[a-z]/.test(p) },
+  { id: "special", label: "Contains a special character", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ];
+
+function calculatePasswordStrength(password: string): {
+  score: number;
+  label: "Weak" | "Fair" | "Good" | "Strong";
+  color: string;
+  barColor: string;
+  widthPercent: number;
+} {
+  if (!password) {
+    return { score: 0, label: "Weak", color: "text-slate-500", barColor: "bg-slate-700", widthPercent: 0 };
+  }
+
+  let passedCount = 0;
+  if (password.length >= 8) passedCount++;
+  if (password.length >= 12) passedCount++;
+  if (/\d/.test(password)) passedCount++;
+  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) passedCount++;
+  if (/[^A-Za-z0-9]/.test(password)) passedCount++;
+
+  if (passedCount <= 1 || password.length < 8) {
+    return { score: 1, label: "Weak", color: "text-rose-400", barColor: "bg-rose-500", widthPercent: 25 };
+  } else if (passedCount === 2 || passedCount === 3) {
+    return { score: 2, label: "Fair", color: "text-amber-400", barColor: "bg-amber-500", widthPercent: 50 };
+  } else if (passedCount === 4) {
+    return { score: 3, label: "Good", color: "text-blue-400", barColor: "bg-blue-500", widthPercent: 75 };
+  } else {
+    return { score: 4, label: "Strong", color: "text-emerald-400", barColor: "bg-emerald-500", widthPercent: 100 };
+  }
+}
 
 function SignupForm() {
   const router = useRouter();
@@ -47,6 +80,8 @@ function SignupForm() {
     email: string;
     maskedEmail?: string;
   } | null>(null);
+
+  const strength = calculatePasswordStrength(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,7 +355,7 @@ function SignupForm() {
                 }}
                 onFocus={() => setIsFocused("password")}
                 onBlur={() => setIsFocused(null)}
-                placeholder="•••••••••••• (min 8 chars)"
+                placeholder="Create a strong password"
                 required
                 autoComplete="new-password"
                 className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
@@ -335,24 +370,49 @@ function SignupForm() {
               </button>
             </div>
 
-            {/* Live Password Rules Indicator */}
-            <div className="mt-2 flex items-center gap-3 text-[11px]">
-              {passwordRules.map((r) => {
-                const pass = r.test(password);
-                return (
-                  <div
-                    key={r.label}
-                    className={`flex items-center gap-1 transition-colors duration-150 ${
-                      pass ? "text-emerald-400 font-medium" : "text-slate-500"
-                    }`}
-                  >
-                    <CheckCircle2
-                      className={`w-3.5 h-3.5 ${pass ? "text-emerald-400" : "text-slate-600"}`}
-                    />
-                    <span>{r.label}</span>
+            {/* Live Password Requirements Area */}
+            <div className="mt-2.5 space-y-2 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+              <span className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Password requirements
+              </span>
+              <div className="space-y-1.5">
+                {passwordRequirements.map((r) => {
+                  const met = r.test(password);
+                  return (
+                    <div
+                      key={r.id}
+                      className={`flex items-center gap-2 text-xs transition-colors duration-200 ${
+                        met ? "text-emerald-400 font-medium" : "text-slate-500"
+                      }`}
+                    >
+                      {met ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                      ) : (
+                        <Circle className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+                      )}
+                      <span>{r.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Live Password Strength Meter */}
+              {password.length > 0 && (
+                <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400 font-medium">Password strength</span>
+                    <span className={`font-semibold ${strength.color}`}>{strength.label}</span>
                   </div>
-                );
-              })}
+                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${strength.widthPercent}%` }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className={`h-full rounded-full ${strength.barColor}`}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
 
@@ -502,6 +562,7 @@ export default function SignupPage() {
             {/* Subtle Top Card Highlight */}
             <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent pointer-events-none" />
 
+            {/* Suspense-wrapped signup form */}
             <Suspense
               fallback={
                 <div className="flex flex-col items-center justify-center min-h-[360px] text-slate-400">

@@ -18,6 +18,8 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
+  Circle,
+  XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
@@ -27,12 +29,45 @@ import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
 import { AuthErrorAlert, normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 import { ForgotPasswordModal } from "@/components/auth/ForgotPasswordModal";
 
-const passwordRules = [
-  { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
-  { label: "Contains a number", test: (p: string) => /\d/.test(p) },
+// ─── Live Password Requirements & Strength Evaluator ─────────────────────────
+const passwordRequirements = [
+  { id: "length", label: "At least 8 characters", test: (p: string) => p.length >= 8 },
+  { id: "number", label: "Contains a number", test: (p: string) => /\d/.test(p) },
+  { id: "uppercase", label: "Contains an uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
+  { id: "lowercase", label: "Contains a lowercase letter", test: (p: string) => /[a-z]/.test(p) },
+  { id: "special", label: "Contains a special character", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ];
 
-// ─── Reset Password View Component ────────────────────────────────────────────
+function calculatePasswordStrength(password: string): {
+  score: number;
+  label: "Weak" | "Fair" | "Good" | "Strong";
+  color: string;
+  barColor: string;
+  widthPercent: number;
+} {
+  if (!password) {
+    return { score: 0, label: "Weak", color: "text-slate-500", barColor: "bg-slate-700", widthPercent: 0 };
+  }
+
+  let passedCount = 0;
+  if (password.length >= 8) passedCount++;
+  if (password.length >= 12) passedCount++;
+  if (/\d/.test(password)) passedCount++;
+  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) passedCount++;
+  if (/[^A-Za-z0-9]/.test(password)) passedCount++;
+
+  if (passedCount <= 1 || password.length < 8) {
+    return { score: 1, label: "Weak", color: "text-rose-400", barColor: "bg-rose-500", widthPercent: 25 };
+  } else if (passedCount === 2 || passedCount === 3) {
+    return { score: 2, label: "Fair", color: "text-amber-400", barColor: "bg-amber-500", widthPercent: 50 };
+  } else if (passedCount === 4) {
+    return { score: 3, label: "Good", color: "text-blue-400", barColor: "bg-blue-500", widthPercent: 75 };
+  } else {
+    return { score: 4, label: "Strong", color: "text-emerald-400", barColor: "bg-emerald-500", widthPercent: 100 };
+  }
+}
+
+// ─── Set New Password View Component ──────────────────────────────────────────
 function ResetPasswordView({
   token,
   email,
@@ -49,6 +84,11 @@ function ResetPasswordView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [resetError, setResetError] = useState<AuthErrorInfo | null>(null);
+
+  const strength = calculatePasswordStrength(newPassword);
+  const isBaseValid = newPassword.length >= 8 && /\d/.test(newPassword);
+  const isMatching = confirmPassword.length > 0 && newPassword === confirmPassword;
+  const isFormValid = isBaseValid && isMatching;
 
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,18 +142,18 @@ function ResetPasswordView({
         </div>
         <div className="space-y-1.5">
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
-            Password updated
+            Password updated successfully
           </h2>
           <p className="text-xs sm:text-[13px] text-slate-300 leading-relaxed max-w-[320px] mx-auto">
-            Your account password has been securely updated. You can now sign in to your workspace.
+            Your password has been changed securely. You can now continue to SprintForge.
           </p>
         </div>
         <button
           type="button"
           onClick={onSuccess}
-          className="w-full py-3 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
+          className="w-full py-3 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
         >
-          <span>Sign in to Workspace</span>
+          <span>Continue to SprintForge</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
@@ -122,22 +162,32 @@ function ResetPasswordView({
 
   return (
     <div className="w-full">
-      <div className="mb-5 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-violet-600/15 border border-violet-500/30 flex items-center justify-center text-violet-400 mx-auto mb-3 shadow-[0_0_20px_rgba(124,58,237,0.25)]">
+      {/* Header & User Email Context */}
+      <div className="mb-5 text-center space-y-1.5">
+        <div className="w-12 h-12 rounded-2xl bg-violet-600/15 border border-violet-500/30 flex items-center justify-center text-violet-400 mx-auto mb-2 shadow-[0_0_20px_rgba(124,58,237,0.25)]">
           <KeyRound className="w-6 h-6" />
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
-          Set New Password
+          Set a new password
         </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Enter a new secure password for <strong className="text-violet-300">{email}</strong>
+        <p className="text-xs text-slate-400 max-w-[320px] mx-auto leading-relaxed">
+          Choose a strong password to keep your SprintForge account secure.
         </p>
+        <div className="pt-1 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+          <span>Changing password for</span>
+          <span className="font-mono font-medium text-violet-300 bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/[0.06] truncate max-w-[220px]">
+            {email}
+          </span>
+        </div>
       </div>
 
-      <form onSubmit={handleResetSubmit} className="space-y-3.5">
+      <form onSubmit={handleResetSubmit} className="space-y-4">
         {/* New Password Field */}
         <div>
-          <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+          <label
+            htmlFor="new-password"
+            className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
+          >
             New Password
           </label>
           <div
@@ -151,56 +201,90 @@ function ResetPasswordView({
               <Lock className="w-4 h-4" />
             </div>
             <input
+              id="new-password"
               type={showNewPass ? "text" : "password"}
               value={newPassword}
               onChange={(e) => {
                 setNewPassword(e.target.value);
                 if (resetError) setResetError(null);
               }}
-              placeholder="•••••••••••• (min 8 chars)"
+              placeholder="Enter your new password"
               required
-              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white text-sm focus:outline-none rounded-xl"
+              autoComplete="new-password"
+              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
             />
             <button
               type="button"
               onClick={() => setShowNewPass(!showNewPass)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white cursor-pointer"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
               aria-label={showNewPass ? "Hide password" : "Show password"}
             >
               {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
 
-          {/* Password Requirements Checklist */}
-          <div className="mt-2 flex items-center gap-3 text-[11px]">
-            {passwordRules.map((r) => {
-              const pass = r.test(newPassword);
-              return (
-                <div
-                  key={r.label}
-                  className={`flex items-center gap-1 transition-colors duration-150 ${
-                    pass ? "text-emerald-400 font-medium" : "text-slate-500"
-                  }`}
-                >
-                  <CheckCircle2
-                    className={`w-3.5 h-3.5 ${pass ? "text-emerald-400" : "text-slate-600"}`}
-                  />
-                  <span>{r.label}</span>
+          {/* Live Password Requirements Area */}
+          <div className="mt-3 space-y-2 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+            <span className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              Password requirements
+            </span>
+            <div className="space-y-1.5">
+              {passwordRequirements.map((r) => {
+                const met = r.test(newPassword);
+                return (
+                  <div
+                    key={r.id}
+                    className={`flex items-center gap-2 text-xs transition-colors duration-200 ${
+                      met ? "text-emerald-400 font-medium" : "text-slate-500"
+                    }`}
+                  >
+                    {met ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <Circle className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+                    )}
+                    <span>{r.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Live Password Strength Meter */}
+            {newPassword.length > 0 && (
+              <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-medium">Password strength</span>
+                  <span className={`font-semibold ${strength.color}`}>{strength.label}</span>
                 </div>
-              );
-            })}
+                <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${strength.widthPercent}%` }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className={`h-full rounded-full ${strength.barColor}`}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Confirm Password Field */}
         <div>
-          <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+          <label
+            htmlFor="confirm-password"
+            className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
+          >
             Confirm Password
           </label>
           <div
             className={`relative rounded-xl border transition-all duration-200 ${
               resetError
                 ? "border-rose-500/40 bg-rose-500/[0.02]"
+                : confirmPassword && !isMatching
+                ? "border-rose-500/40 bg-rose-500/[0.02]"
+                : confirmPassword && isMatching
+                ? "border-emerald-500/40 bg-emerald-500/[0.02]"
                 : "border-white/[0.09] bg-white/[0.02] focus-within:border-violet-500 focus-within:bg-[#0c1020]"
             }`}
           >
@@ -208,47 +292,75 @@ function ResetPasswordView({
               <Lock className="w-4 h-4" />
             </div>
             <input
+              id="confirm-password"
               type={showConfirmPass ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => {
                 setConfirmPassword(e.target.value);
                 if (resetError) setResetError(null);
               }}
-              placeholder="Re-type new password"
+              placeholder="Re-enter your new password"
               required
-              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white text-sm focus:outline-none rounded-xl"
+              autoComplete="new-password"
+              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
             />
             <button
               type="button"
               onClick={() => setShowConfirmPass(!showConfirmPass)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white cursor-pointer"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
               aria-label={showConfirmPass ? "Hide password" : "Show password"}
             >
               {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+
+          {/* Live Confirm Match Indicator */}
+          {confirmPassword.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+              {isMatching ? (
+                <div className="flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Passwords match</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 text-rose-400 font-medium">
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Passwords don&apos;t match</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Inline Reset Error Alert */}
         <AuthErrorAlert error={resetError} className="my-2" />
 
+        {/* Primary Submit Button */}
         <button
           type="submit"
-          disabled={isSubmitting || !newPassword || newPassword !== confirmPassword}
-          className="w-full py-3 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mt-2"
+          disabled={isSubmitting || !isFormValid}
+          className="w-full relative group flex items-center justify-center gap-2 py-3 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none cursor-pointer overflow-hidden mt-1"
         >
+          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
+
           {isSubmitting ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
               <span>Updating password...</span>
             </>
           ) : (
             <>
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Update Password & Sign In</span>
+              <span>Update Password</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
             </>
           )}
         </button>
+
+        {/* Security Note Footer */}
+        <div className="pt-2 text-center flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+          <Shield className="w-3 h-3 text-emerald-400" />
+          <span>Your password is encrypted and securely stored.</span>
+        </div>
       </form>
     </div>
   );
