@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Loader2, MessageCircle, Paperclip, Flag, Clock, User, Tag, Send, ExternalLink, Edit2, Trash2, CheckCircle2 } from "lucide-react";
 import { taskAPI } from "@/lib/api";
 import { cn, PRIORITY_BG, STATUS_LABELS, formatDate, generateAvatar } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 import { useAuthStore } from "@/lib/store/authStore";
 
@@ -230,8 +231,11 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
                           <div className="space-y-1.5">
                             {task.assignees.map((assignee: any) => (
                               <div key={assignee._id} className="flex items-center gap-2">
-                                <img src={assignee.avatar || generateAvatar(assignee.name)} alt={assignee.name}
-                                  className="w-5 h-5 rounded-full object-cover" />
+                                <UserAvatar
+                                  src={assignee.avatar}
+                                  name={assignee.name}
+                                  size="xs"
+                                />
                                 <span className="text-xs text-foreground">{assignee.name}</span>
                               </div>
                             ))}
@@ -280,8 +284,11 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
                         <div>
                           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Reporter</label>
                           <div className="flex items-center gap-2">
-                            <img src={task.reporter.avatar || generateAvatar(task.reporter.name)} alt={task.reporter.name}
-                              className="w-5 h-5 rounded-full" />
+                            <UserAvatar
+                              src={task.reporter.avatar}
+                              name={task.reporter.name}
+                              size="xs"
+                            />
                             <span className="text-xs text-foreground">{task.reporter.name}</span>
                           </div>
                         </div>
@@ -302,8 +309,12 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
                     )}
                     {task.comments?.map((c: any, i: number) => (
                       <div key={c._id || i} className="flex gap-3">
-                        <img src={c.author?.avatar || generateAvatar(c.author?.name || "U")} alt={c.author?.name}
-                          className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5" />
+                        <UserAvatar
+                          src={c.author?.avatar}
+                          name={c.author?.name}
+                          size="sm"
+                          className="mt-0.5"
+                        />
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm font-medium text-foreground">{c.author?.name}</span>
@@ -316,8 +327,11 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
 
                     {/* Comment input */}
                     <div className="flex gap-3 pt-2 border-t border-border">
-                      <img src={user?.avatar || generateAvatar(user?.name || "U")} alt={user?.name}
-                        className="w-7 h-7 rounded-full flex-shrink-0" />
+                      <UserAvatar
+                        src={user?.avatar}
+                        name={user?.name}
+                        size="sm"
+                      />
                       <div className="flex-1 flex gap-2">
                         <input value={comment} onChange={(e) => setComment(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitComment(); } }}

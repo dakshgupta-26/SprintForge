@@ -1164,22 +1164,39 @@ export const uploadAvatar = async (req: any, res: Response) => {
     );
 
     const currentUser = await User.findById(userId);
-    const oldFileId = currentUser?.profileImage?.fileId;
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
+    const oldFileId = currentUser?.profileImage?.fileId;
     const avatarUrl = `/api/auth/avatar/${userId}?v=${timestamp}`;
 
-    currentUser!.avatar = avatarUrl;
-    currentUser!.profileImage = {
+    currentUser.avatar = avatarUrl;
+    currentUser.profileImage = {
       fileId: gridFSFileId as any,
       filename: safeFilename,
       contentType,
       uploadedAt: new Date(),
     };
 
-    await currentUser!.save({ validateBeforeSave: false });
+    await currentUser.save({ validateBeforeSave: false });
 
     if (oldFileId) {
-      await deleteGridFSFile(oldFileId);
+      try {
+        await deleteGridFSFile(oldFileId);
+      } catch (delErr) {
+        console.warn('Could not clean up old GridFS avatar:', delErr);
+      }
+    }
+
+    // Broadcast realtime profile update across open project rooms & chats
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user:profile:updated', {
+        userId: String(userId),
+        avatar: avatarUrl,
+        name: currentUser.name,
+      });
     }
 
     res.json({
@@ -1201,25 +1218,35 @@ export const getAvatar = async (req: Request, res: Response) => {
     }
 
     const user = await User.findById(userId);
-    if (!user || !user.profileImage?.fileId) {
-      return res.status(404).json({ message: 'No profile image found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
 
-    const fileId = new ObjectId(user.profileImage.fileId);
-    const bucket = getProfileImagesBucket();
+    // If custom GridFS image exists
+    if (user.profileImage?.fileId) {
+      const fileId = new ObjectId(user.profileImage.fileId);
+      const bucket = getProfileImagesBucket();
 
-    res.setHeader('Content-Type', user.profileImage.contentType || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+      res.setHeader('Content-Type', user.profileImage.contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
 
-    const downloadStream = bucket.openDownloadStream(fileId);
+      const downloadStream = bucket.openDownloadStream(fileId);
 
-    downloadStream.on('error', () => {
-      if (!res.headersSent) {
-        res.status(404).json({ message: 'Image not found in storage' });
-      }
-    });
+      downloadStream.on('error', () => {
+        if (!res.headersSent) {
+          res.status(404).json({ message: 'Image not found in storage' });
+        }
+      });
 
-    downloadStream.pipe(res);
+      return downloadStream.pipe(res);
+    }
+
+    // If external URL (e.g. Google OAuth photo)
+    if (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
+      return res.redirect(user.avatar);
+    }
+
+    return res.status(404).json({ message: 'No profile image found' });
   } catch (error: any) {
     console.error('Get avatar error:', error);
     if (!res.headersSent) {
@@ -1237,12 +1264,26 @@ export const removeAvatar = async (req: any, res: Response) => {
     }
 
     if (user.profileImage?.fileId) {
-      await deleteGridFSFile(user.profileImage.fileId);
+      try {
+        await deleteGridFSFile(user.profileImage.fileId);
+      } catch (delErr) {
+        console.warn('Could not clean up GridFS avatar on delete:', delErr);
+      }
     }
 
     user.avatar = '';
     user.profileImage = undefined;
     await user.save({ validateBeforeSave: false });
+
+    // Broadcast realtime removal
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user:profile:updated', {
+        userId: String(userId),
+        avatar: '',
+        name: user.name,
+      });
+    }
 
     res.json({ message: 'Avatar removed successfully', user: sanitizeUser(user) });
   } catch (error: any) {

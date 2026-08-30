@@ -30,6 +30,7 @@ import { taskAPI, sprintAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
 import { getSocket } from "@/lib/socket";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface BacklogDetailDrawerProps {
@@ -428,13 +429,10 @@ export function BacklogDetailDrawer({
                     Created By
                   </label>
                   <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
-                    <img
-                      src={
-                        task.reporter?.avatar ||
-                        generateAvatar(task.reporter?.name || "U")
-                      }
-                      alt=""
-                      className="w-4 h-4 rounded-full object-cover"
+                    <UserAvatar
+                      src={task.reporter?.avatar}
+                      name={task.reporter?.name}
+                      size="xs"
                     />
                     <span className="truncate">{task.reporter?.name || "System"}</span>
                   </div>
@@ -504,13 +502,10 @@ export function BacklogDetailDrawer({
                       >
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <img
-                              src={
-                                author?.avatar ||
-                                generateAvatar(author?.name || "U")
-                              }
-                              alt=""
-                              className="w-5 h-5 rounded-full object-cover"
+                            <UserAvatar
+                              src={author?.avatar}
+                              name={author?.name}
+                              size="xs"
                             />
                             <span className="font-bold text-white">
                               {author?.name || "Teammate"}

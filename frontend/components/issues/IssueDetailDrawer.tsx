@@ -32,6 +32,7 @@ import { taskAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
 import { getSocket } from "@/lib/socket";
 import { generateAvatar, formatDate, cn, PRIORITY_BG } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface IssueDetailDrawerProps {
@@ -402,13 +403,10 @@ export function IssueDetailDrawer({
                     Reported By
                   </label>
                   <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
-                    <img
-                      src={
-                        issue.reporter?.avatar ||
-                        generateAvatar(issue.reporter?.name || "U")
-                      }
-                      alt=""
-                      className="w-4 h-4 rounded-full object-cover"
+                    <UserAvatar
+                      src={issue.reporter?.avatar}
+                      name={issue.reporter?.name}
+                      size="xs"
                     />
                     <span className="truncate">{issue.reporter?.name || "System"}</span>
                   </div>
@@ -488,13 +486,10 @@ export function IssueDetailDrawer({
                       >
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <img
-                              src={
-                                author?.avatar ||
-                                generateAvatar(author?.name || "U")
-                              }
-                              alt=""
-                              className="w-5 h-5 rounded-full object-cover"
+                            <UserAvatar
+                              src={author?.avatar}
+                              name={author?.name}
+                              size="xs"
                             />
                             <span className="font-bold text-white">
                               {author?.name || "Teammate"}

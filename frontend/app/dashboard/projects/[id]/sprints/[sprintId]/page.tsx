@@ -14,6 +14,7 @@ const statusColor: Record<string, string> = {
 
 import toast from "react-hot-toast";
 import { TaskDetailModal } from "@/components/board/TaskDetailModal";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 
 export default function SprintDetailPage() {
   const { id: projectId, sprintId } = useParams<{ id: string; sprintId: string }>();
@@ -167,7 +168,15 @@ export default function SprintDetailPage() {
                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full capitalize", task.status === "done" ? "bg-green-500/10 text-green-500" : "bg-muted text-muted-foreground")}>{task.status.replace("_", " ")}</span>
                      {task.assignees?.length > 0 ? (
                         <div className="flex -space-x-2">
-                           {task.assignees.map((a: any) => <img key={a._id} src={a.avatar || `https://ui-avatars.com/api/?name=${a.name}`} className="w-6 h-6 rounded-full border-2 border-card" alt={a.name} title={a.name} />)}
+                           {task.assignees.map((a: any) => (
+                             <UserAvatar
+                               key={a._id}
+                               src={a.avatar}
+                               name={a.name}
+                               size="xs"
+                               ringClassName="border-2 border-card"
+                             />
+                           ))}
                         </div>
                      ) : <span className="text-xs text-muted-foreground px-1 border border-dashed rounded opacity-50">Unassigned</span>}
                      <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />

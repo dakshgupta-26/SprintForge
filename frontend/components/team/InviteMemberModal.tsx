@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { projectAPI, teamsAPI } from "@/lib/api";
 import { generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface InviteMemberModalProps {
@@ -233,10 +234,11 @@ export function InviteMemberModal({
                         className="w-full flex items-center justify-between p-3 hover:bg-white/[0.04] transition-colors text-left cursor-pointer group"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <img
-                            src={user.avatar || generateAvatar(user.name)}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full object-cover border border-white/[0.1]"
+                          <UserAvatar
+                            src={user.avatar}
+                            name={user.name}
+                            size="md"
+                            ringClassName="border border-white/[0.1]"
                           />
                           <div className="min-w-0">
                             <p className="text-xs font-bold text-white group-hover:text-violet-300 truncate">

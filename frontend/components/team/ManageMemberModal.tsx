@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { projectAPI } from "@/lib/api";
 import { generateAvatar, cn, formatDate } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface ManageMemberModalProps {
@@ -119,10 +120,11 @@ export function ManageMemberModal({
           {/* Header */}
           <div className="px-6 py-5 border-b border-white/[0.08] bg-[#0b1026] flex items-center justify-between gap-4 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <img
-                src={user.avatar || generateAvatar(user.name)}
-                alt={user.name}
-                className="w-10 h-10 rounded-full object-cover border-2 border-white/[0.1] flex-shrink-0"
+              <UserAvatar
+                src={user.avatar}
+                name={user.name}
+                size="md"
+                ringClassName="border-2 border-white/[0.1]"
               />
               <div className="min-w-0">
                 <h2 className="text-base font-bold text-white tracking-tight truncate">

@@ -28,6 +28,7 @@ import { taskAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
 import { getSocket } from "@/lib/socket";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 
 interface TaskDetailDrawerProps {
@@ -511,13 +512,10 @@ export function TaskDetailDrawer({
                       >
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <img
-                              src={
-                                author?.avatar ||
-                                generateAvatar(author?.name || "U")
-                              }
-                              alt=""
-                              className="w-5 h-5 rounded-full object-cover"
+                            <UserAvatar
+                              src={author?.avatar}
+                              name={author?.name}
+                              size="xs"
                             />
                             <span className="font-bold text-white">
                               {author?.name || "Teammate"}

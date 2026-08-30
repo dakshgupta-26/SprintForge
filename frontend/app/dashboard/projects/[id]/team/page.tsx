@@ -34,6 +34,7 @@ import {
   Settings,
 } from "lucide-react";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 import { InviteMemberModal } from "@/components/team/InviteMemberModal";
 import { ManageMemberModal } from "@/components/team/ManageMemberModal";
@@ -380,15 +381,14 @@ export default function TeamPage() {
                     key={u._id}
                     className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs"
                   >
-                    <div className="relative">
-                      <img
-                        src={u.avatar || generateAvatar(u.name)}
-                        alt={u.name}
-                        className="w-5 h-5 rounded-full object-cover"
-                      />
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-[#080c1d]" />
-                    </div>
-                    <span className="text-white font-medium text-xs">{u.name}</span>
+                    <UserAvatar
+                      src={u?.avatar}
+                      name={u?.name}
+                      size="xs"
+                      showOnline={true}
+                      isOnline={true}
+                    />
+                    <span className="text-white font-medium text-xs">{u?.name}</span>
                     <span className="text-[10px] font-mono text-emerald-400">Online</span>
                   </div>
                 );
@@ -466,20 +466,15 @@ export default function TeamPage() {
                 >
                   {/* Left: Identity */}
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={u?.avatar || generateAvatar(u?.name || "U")}
-                        alt={u?.name}
-                        className="w-11 h-11 rounded-2xl object-cover border border-white/[0.1]"
-                      />
-                      <span
-                        className={cn(
-                          "absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-[#090d1f]",
-                          isUserOnline ? "bg-emerald-500" : "bg-slate-600"
-                        )}
-                        title={isUserOnline ? "Online now" : "Offline"}
-                      />
-                    </div>
+                    <UserAvatar
+                      src={u?.avatar}
+                      name={u?.name || "Member"}
+                      size="lg"
+                      shape="rounded-2xl"
+                      showOnline={true}
+                      isOnline={isUserOnline}
+                      ringClassName="border border-white/[0.1]"
+                    />
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">

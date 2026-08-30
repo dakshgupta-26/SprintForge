@@ -17,6 +17,7 @@ import {
   Copy,
 } from "lucide-react";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import { getStatusConfig } from "@/lib/statusConfig";
 import toast from "react-hot-toast";
 
@@ -193,14 +194,11 @@ export function TaskCard({
           {/* Assignee Avatar */}
           {task.assignees?.length > 0 ? (
             <div className="flex items-center gap-1">
-              <img
-                src={
-                  task.assignees[0]?.avatar ||
-                  generateAvatar(task.assignees[0]?.name || "U")
-                }
-                alt=""
-                className="w-4 h-4 rounded-full object-cover border border-white/[0.1]"
-                title={task.assignees[0]?.name}
+              <UserAvatar
+                src={task.assignees[0]?.avatar}
+                name={task.assignees[0]?.name}
+                size="xs"
+                ringClassName="border border-white/[0.1]"
               />
               <span className="truncate max-w-[80px] text-[10px] text-slate-300">
                 {task.assignees[0]?.name?.split(" ")[0]}

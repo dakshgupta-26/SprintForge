@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import { getStatusConfig } from "@/lib/statusConfig";
 import { useProjectStore } from "@/lib/store/projectStore";
 import toast from "react-hot-toast";
@@ -262,10 +263,11 @@ export function NotificationCard({
 
       {/* ── Actor Avatar with Type Badge Overlay ── */}
       <div className="relative flex-shrink-0 mt-0.5">
-        <img
-          src={senderAvatar}
-          alt={senderName}
-          className="w-9 h-9 rounded-full object-cover ring-2 ring-white/[0.1] group-hover:ring-violet-500/40 transition-all"
+        <UserAvatar
+          src={notification.sender?.avatar}
+          name={senderName}
+          size="md"
+          ringClassName="ring-2 ring-white/[0.1] group-hover:ring-violet-500/40 transition-all"
         />
         <div
           className={cn(

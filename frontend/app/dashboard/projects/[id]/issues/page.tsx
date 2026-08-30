@@ -30,6 +30,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn, PRIORITY_BG, formatDate, generateAvatar } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 import { ReportIssueModal } from "@/components/issues/ReportIssueModal";
 import { IssueDetailDrawer } from "@/components/issues/IssueDetailDrawer";
@@ -522,13 +523,11 @@ export default function IssuesPage() {
                   {/* Assignee */}
                   {issue.assignees?.length > 0 ? (
                     <div className="flex items-center gap-1.5 text-slate-300">
-                      <img
-                        src={
-                          issue.assignees[0]?.avatar ||
-                          generateAvatar(issue.assignees[0]?.name || "U")
-                        }
-                        alt=""
-                        className="w-5 h-5 rounded-full object-cover border border-white/[0.1]"
+                      <UserAvatar
+                        src={issue.assignees[0]?.avatar}
+                        name={issue.assignees[0]?.name}
+                        size="xs"
+                        ringClassName="border border-white/[0.1]"
                       />
                       <span className="truncate max-w-[100px]">
                         {issue.assignees[0]?.name}

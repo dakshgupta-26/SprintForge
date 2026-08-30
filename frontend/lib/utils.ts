@@ -65,13 +65,42 @@ export const PROJECT_COLORS = [
   "#06b6d4", "#3b82f6",
 ];
 
+export function getInitials(name?: string | null): string {
+  if (!name || !name.trim()) return "U";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function getAvatarGradient(name?: string | null): string {
+  const gradients = [
+    "from-violet-600 to-indigo-600",
+    "from-indigo-600 to-blue-600",
+    "from-blue-600 to-cyan-600",
+    "from-emerald-600 to-teal-600",
+    "from-amber-600 to-orange-600",
+    "from-rose-600 to-pink-600",
+    "from-purple-600 to-pink-600",
+    "from-fuchsia-600 to-purple-600",
+  ];
+  if (!name) return gradients[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % gradients.length;
+  return gradients[index];
+}
+
 export function generateAvatar(name: string) {
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "User")}&background=6366f1&color=fff&size=80&bold=true`;
 }
 
 export function getAvatarUrl(avatar?: string | null, name: string = "User"): string {
   if (!avatar || avatar.trim() === "") {
-    return generateAvatar(name);
+    return "";
   }
   if (
     avatar.startsWith("http://") ||

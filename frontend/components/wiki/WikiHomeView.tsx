@@ -19,6 +19,7 @@ import {
   Activity,
 } from "lucide-react";
 import { formatDate, generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 
 interface WikiHomeViewProps {
   pages: any[];
@@ -367,13 +368,11 @@ export function WikiHomeView({
                     onClick={() => onSelectPage(p)}
                     className="flex items-start gap-3 text-xs cursor-pointer group"
                   >
-                    <img
-                      src={
-                        p.author?.avatar ||
-                        generateAvatar(p.author?.name || "U")
-                      }
-                      alt=""
-                      className="w-6 h-6 rounded-full object-cover border border-white/[0.1] mt-0.5"
+                    <UserAvatar
+                      src={p.author?.avatar}
+                      name={p.author?.name}
+                      size="xs"
+                      ringClassName="border border-white/[0.1] mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-slate-300 font-medium leading-snug">

@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
 import { AttachmentCard, AttachmentItem } from "./AttachmentCard";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
@@ -422,6 +423,35 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       });
     };
 
+    const handleUserProfileUpdated = ({
+      userId,
+      avatar,
+      name,
+    }: {
+      userId: string;
+      avatar: string;
+      name?: string;
+    }) => {
+      if (!userId) return;
+      setMessages((prev) =>
+        prev.map((msg) => {
+          const sId = typeof msg.sender === "object" ? msg.sender?._id : msg.sender;
+          if (String(sId) === String(userId)) {
+            return {
+              ...msg,
+              sender: {
+                ...msg.sender,
+                avatar,
+                ...(name ? { name } : {}),
+              },
+            };
+          }
+          return msg;
+        })
+      );
+      fetchProject(projectId);
+    };
+
     socket.on("presence:sync", handlePresenceSync);
     socket.on("presence:update", handlePresenceUpdate);
     socket.on("chat:message:receive", handleMessageReceive);
@@ -429,6 +459,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     socket.on("chat:message:react:update", handleReactionUpdate);
     socket.on("chat:typing:start", handleTypingStart);
     socket.on("chat:typing:stop", handleTypingStop);
+    socket.on("user:profile:updated", handleUserProfileUpdated);
 
     return () => {
       mounted = false;
@@ -439,6 +470,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       socket.off("chat:message:react:update", handleReactionUpdate);
       socket.off("chat:typing:start", handleTypingStart);
       socket.off("chat:typing:stop", handleTypingStop);
+      socket.off("user:profile:updated", handleUserProfileUpdated);
       socket.emit("leave:project", { projectId, userId: user?._id });
     };
   }, [projectId, user, isNearBottom, scrollToBottom, markMessagesAsRead]);
@@ -1003,13 +1035,11 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                     {!isMe && (
                       <div className="w-8 flex-shrink-0">
                         {!isSameSenderAsPrev ? (
-                          <img
-                            src={
-                              msg.sender?.avatar ||
-                              generateAvatar(msg.sender?.name || "U")
-                            }
-                            alt={msg.sender?.name}
-                            className="w-8 h-8 rounded-full object-cover ring-1 ring-white/[0.1] shadow-sm"
+                          <UserAvatar
+                            src={msg.sender?.avatar}
+                            name={msg.sender?.name || "Member"}
+                            size="md"
+                            ringClassName="ring-1 ring-white/[0.1] shadow-sm"
                           />
                         ) : null}
                       </div>
@@ -1501,19 +1531,14 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                   key={m._id}
                   className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] transition-colors"
                 >
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={m.avatar || generateAvatar(m.name)}
-                      alt={m.name}
-                      className="w-7 h-7 rounded-full object-cover ring-1 ring-white/[0.1]"
-                    />
-                    <span
-                      className={cn(
-                        "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#080b18]",
-                        m.isOnline ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
-                      )}
-                    />
-                  </div>
+                  <UserAvatar
+                    src={m.avatar}
+                    name={m.name}
+                    size="sm"
+                    showOnline={true}
+                    isOnline={m.isOnline}
+                    ringClassName="ring-1 ring-white/[0.1]"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-slate-200 truncate">
                       {m.name}
@@ -1634,10 +1659,11 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                                 className="flex items-center justify-between p-2 rounded-xl bg-cyan-500/[0.04] border border-cyan-500/15 text-xs"
                               >
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <img
-                                    src={u?.avatar || generateAvatar(u?.name || "U")}
-                                    alt={u?.name}
-                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-cyan-400/30"
+                                  <UserAvatar
+                                    src={u?.avatar}
+                                    name={u?.name || "Member"}
+                                    size="xs"
+                                    ringClassName="ring-1 ring-cyan-400/30"
                                   />
                                   <span className="font-semibold text-slate-200 truncate">{u?.name}</span>
                                 </div>
@@ -1664,10 +1690,11 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                               className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-xs opacity-70"
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                <img
-                                  src={m.avatar || generateAvatar(m.name)}
-                                  alt={m.name}
-                                  className="w-6 h-6 rounded-full object-cover ring-1 ring-white/[0.08]"
+                                <UserAvatar
+                                  src={m.avatar}
+                                  name={m.name}
+                                  size="xs"
+                                  ringClassName="ring-1 ring-white/[0.08]"
                                 />
                                 <span className="font-medium text-slate-300 truncate">{m.name}</span>
                               </div>

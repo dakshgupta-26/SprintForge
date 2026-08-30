@@ -206,15 +206,20 @@ export const initSocket = (io: Server) => {
           reactions: {},
         });
 
+        const freshUser = await User.findById(senderId).select('name avatar email').lean();
+        const effectiveName = freshUser?.name || senderInfo?.name || 'Team Member';
+        const effectiveAvatar = freshUser?.avatar || senderInfo?.avatar || '';
+        const effectiveEmail = freshUser?.email || senderInfo?.email || '';
+
         // 1. Broadcast to everyone in the project room
         io.to(`project:${projectId}`).emit('chat:message:receive', {
           _id: newMessage._id,
           project: projectId,
           sender: {
             _id: senderId,
-            name: senderInfo?.name || 'Team Member',
-            avatar: senderInfo?.avatar || '',
-            email: senderInfo?.email || '',
+            name: effectiveName,
+            avatar: effectiveAvatar,
+            email: effectiveEmail,
           },
           content: content || '',
           attachments: newMessage.attachments || [],
@@ -249,8 +254,8 @@ export const initSocket = (io: Server) => {
               messageId: String(newMessage._id),
               sender: {
                 _id: String(senderId),
-                name: senderInfo?.name || 'Team Member',
-                avatar: senderInfo?.avatar || '',
+                name: effectiveName,
+                avatar: effectiveAvatar,
               },
               createdAt: newMessage.createdAt,
             });

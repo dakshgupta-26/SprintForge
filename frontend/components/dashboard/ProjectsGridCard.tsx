@@ -11,6 +11,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 
 interface ProjectsGridCardProps {
   projects: any[];
@@ -103,12 +104,12 @@ export function ProjectsGridCard({ projects = [], onOpenCreateProject }: Project
                     {project.members?.slice(0, 3).map((m: any, idx: number) => {
                       const user = m.user || m;
                       return (
-                        <img
+                        <UserAvatar
                           key={idx}
-                          src={user?.avatar || generateAvatar(user?.name || "M")}
-                          alt=""
-                          className="w-5 h-5 rounded-full object-cover border border-[#090d1f]"
-                          title={user?.name}
+                          src={user?.avatar}
+                          name={user?.name || "Member"}
+                          size="xs"
+                          ringClassName="border border-[#090d1f]"
                         />
                       );
                     })}

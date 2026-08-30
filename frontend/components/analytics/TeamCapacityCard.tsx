@@ -3,6 +3,7 @@
 import React from "react";
 import { Users2, CheckCircle2, Flame, Scale } from "lucide-react";
 import { generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 
 interface TeamCapacityCardProps {
   teamData: any[];
@@ -67,10 +68,11 @@ export function TeamCapacityCard({ teamData = [] }: TeamCapacityCardProps) {
               <div key={member._id} className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={member.avatar || generateAvatar(member.name || "U")}
-                      alt=""
-                      className="w-5 h-5 rounded-full object-cover border border-white/[0.1]"
+                    <UserAvatar
+                      src={member.avatar}
+                      name={member.name}
+                      size="xs"
+                      ringClassName="border border-white/[0.1]"
                     />
                     <span className="font-bold text-white truncate max-w-[120px]">
                       {member.name}

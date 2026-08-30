@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { projectAPI, teamsAPI } from "@/lib/api";
-import { generateAvatar } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import {
   Users, UserPlus, Search, ArrowRight, FolderKanban,
   Crown, Shield, Eye, Loader2, Mail, ChevronDown, ChevronUp
@@ -33,56 +33,57 @@ export default function GlobalTeamPage() {
 
   useEffect(() => {
     fetchProjects();
-  }, []);
+  }, [fetchProjects]);
 
-  // Default-select first project
   useEffect(() => {
     if (projects.length > 0 && !selectedProjectId) {
       setSelectedProjectId(projects[0]._id);
-      setExpandedProjects(new Set([projects[0]._id]));
+      setExpandedProjects(new Set(projects.map((p) => p._id)));
     }
-  }, [projects]);
+  }, [projects, selectedProjectId]);
 
-  // Live user search debounced
-  useEffect(() => {
-    if (searchQuery.length < 2) { setSearchResults([]); return; }
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const { data } = await teamsAPI.search(searchQuery);
-        setSearchResults(data);
-      } catch {} finally { setIsSearching(false); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const toggleProjectExpand = (projectId: string) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) { setSearchResults([]); return; }
+    setIsSearching(true);
+    try {
+      const res = await teamsAPI.search(query);
+      setSearchResults(res.data || []);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return toast.error("Please enter an email address");
-    if (!selectedProjectId) return toast.error("Please select a project first");
+    if (!selectedProjectId) { toast.error("Select a project"); return; }
+    if (!email) { toast.error("Enter an email"); return; }
     setIsInviting(true);
     try {
       await projectAPI.invite(selectedProjectId, { email, role });
-      toast.success(`Invitation sent to ${email}!`);
+      toast.success("Invitation sent successfully");
       setEmail("");
       setSearchQuery("");
       setSearchResults([]);
       fetchProjects();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to send invitation");
-    } finally { setIsInviting(false); }
+      toast.error(err.response?.data?.message || "Failed to send invite");
+    } finally {
+      setIsInviting(false);
+    }
   };
 
-  const toggleProjectExpand = (id: string) => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  /* ─── No-project empty state ─── */
   if (projects.length === 0) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -102,72 +103,68 @@ export default function GlobalTeamPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold text-foreground">Team</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage members and invite collaborators across your projects
-        </p>
-      </motion.div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">Team Management</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage members and invite collaborators across all projects</p>
+        </div>
+      </div>
 
-      {/* ── Invite Section ── */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="p-5 rounded-2xl border border-border bg-card">
-        <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
-          <UserPlus className="w-4 h-4 text-primary" /> Invite Team Member
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
+        <h2 className="font-bold text-foreground flex items-center gap-2 text-base">
+          <UserPlus className="w-4 h-4 text-primary" /> Invite to Project
         </h2>
 
         <form onSubmit={handleInvite} className="space-y-3">
-          {/* Project picker */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Invite to project</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {projects.map((p) => (
-                <option key={p._id} value={p._id}>
-                  {p.name} ({p.key})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-end gap-3">
-            {/* Email field with search overlay */}
-            <div className="flex-1 relative">
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email address</label>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="sm:w-64">
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Target Project</label>
               <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <FolderKanban className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  {projects.map((p) => (
+                    <option key={p._id} value={p._id}>{p.name} ({p.key})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex-1 relative">
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">User Email or Name</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); setSearchQuery(e.target.value); }}
-                  placeholder="colleague@company.com"
+                  onChange={(e) => { setEmail(e.target.value); handleSearch(e.target.value); }}
+                  placeholder="name@company.com"
                   required
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
 
-              {/* Search autocomplete dropdown */}
               {(searchResults.length > 0 || isSearching) && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-xl z-20 overflow-hidden">
                   {isSearching ? (
                     <div className="flex items-center justify-center py-4">
                       <Loader2 className="w-4 h-4 animate-spin text-primary" />
                     </div>
-                  ) : searchResults.map((user) => (
+                  ) : searchResults.map((u) => (
                     <button
-                      key={user._id} type="button"
-                      onClick={() => { setEmail(user.email); setSearchResults([]); setSearchQuery(""); }}
+                      key={u._id} type="button"
+                      onClick={() => { setEmail(u.email); setSearchResults([]); setSearchQuery(""); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-left"
                     >
-                      <img src={user.avatar || generateAvatar(user.name)} alt={user.name} className="w-7 h-7 rounded-full object-cover" />
+                      <UserAvatar src={u.avatar} name={u.name} size="sm" />
                       <div>
-                        <p className="text-sm font-medium text-foreground">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                        <p className="text-sm font-medium text-foreground">{u.name}</p>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
                       </div>
                     </button>
                   ))}
@@ -175,7 +172,6 @@ export default function GlobalTeamPage() {
               )}
             </div>
 
-            {/* Role */}
             <div className="w-32">
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Role</label>
               <select
@@ -189,19 +185,19 @@ export default function GlobalTeamPage() {
               </select>
             </div>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={isInviting}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-60 active:scale-95 whitespace-nowrap"
-            >
-              {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Send Invite</>}
-            </button>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={isInviting}
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-60 whitespace-nowrap"
+              >
+                {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Invite</>}
+              </button>
+            </div>
           </div>
         </form>
       </motion.div>
 
-      {/* ── Members per project ── */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
         className="space-y-3">
         <h2 className="font-bold text-foreground flex items-center gap-2">
@@ -214,7 +210,6 @@ export default function GlobalTeamPage() {
 
           return (
             <div key={project._id} className="rounded-2xl border border-border bg-card overflow-hidden">
-              {/* Project header */}
               <button
                 onClick={() => toggleProjectExpand(project._id)}
                 className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-muted/40 transition-colors"
@@ -239,7 +234,6 @@ export default function GlobalTeamPage() {
                 </div>
               </button>
 
-              {/* Members list */}
               {isExpanded && (
                 <div className="border-t border-border divide-y divide-border">
                   {members.length === 0 ? (
@@ -250,10 +244,10 @@ export default function GlobalTeamPage() {
                     const RoleIcon = ROLE_ICONS[roleName] || Shield;
                     return (
                       <div key={user?._id || Math.random()} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-colors">
-                        <img
-                          src={user?.avatar || generateAvatar(user?.name || "?")}
-                          alt={user?.name}
-                          className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                        <UserAvatar
+                          src={user?.avatar}
+                          name={user?.name || "Member"}
+                          size="md"
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{user?.name || "Unknown"}</p>

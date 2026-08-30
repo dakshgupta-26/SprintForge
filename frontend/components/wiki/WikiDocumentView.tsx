@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { wikiAPI } from "@/lib/api";
 import { formatDate, generateAvatar, cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 import { WikiAIAssistModal } from "./WikiAIAssistModal";
 
@@ -359,13 +360,10 @@ export function WikiDocumentView({
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Author:</span>
                 <div className="flex items-center gap-1.5 font-bold text-white">
-                  <img
-                    src={
-                      page.author?.avatar ||
-                      generateAvatar(page.author?.name || "U")
-                    }
-                    alt=""
-                    className="w-4 h-4 rounded-full object-cover"
+                  <UserAvatar
+                    src={page.author?.avatar}
+                    name={page.author?.name}
+                    size="xs"
                   />
                   <span>{page.author?.name || "Member"}</span>
                 </div>
