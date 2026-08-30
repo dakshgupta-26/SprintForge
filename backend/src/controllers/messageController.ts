@@ -195,10 +195,12 @@ export const getAttachmentStream = async (req: any, res: Response) => {
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', disposition);
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.removeHeader('X-Frame-Options');
     if (size) {
       res.setHeader('Content-Length', size);
     }
-    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('Cache-Control', 'private, max-age=86400, must-revalidate');
 
     downloadStream.pipe(res);
   } catch (error: any) {

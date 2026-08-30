@@ -225,7 +225,8 @@ export function AttachmentCard({ attachment, className }: AttachmentCardProps) {
         <PdfViewerModal
           isOpen={showPdfModal}
           onClose={() => setShowPdfModal(false)}
-          src={previewUrl}
+          attachmentId={attachmentId}
+          previewUrl={previewUrl}
           downloadUrl={downloadUrl}
           filename={name}
           size={formatFileSize(attachment.size)}
@@ -300,19 +301,23 @@ export function AttachmentCard({ attachment, className }: AttachmentCardProps) {
 function PdfViewerModal({
   isOpen,
   onClose,
-  src,
+  attachmentId,
+  previewUrl,
   downloadUrl,
   filename,
   size,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  src: string;
+  attachmentId: string;
+  previewUrl: string;
   downloadUrl: string;
   filename: string;
   size: string;
 }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -328,16 +333,62 @@ function PdfViewerModal({
     };
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen || !attachmentId) {
+      setBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setIsLoading(false);
+      setErrorMessage(null);
+      return;
+    }
+
+    let isMounted = true;
+    let createdUrl: string | null = null;
+
+    const fetchPdf = async () => {
+      setIsLoading(true);
+      setErrorMessage(null);
+
+      try {
+        const response = await chatAPI.getAttachmentBlob(attachmentId);
+        if (!isMounted) return;
+
+        const blob = new Blob([response.data], { type: "application/pdf" });
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+        setIsLoading(false);
+      } catch (err: any) {
+        console.error("PDF preview load error:", err);
+        if (isMounted) {
+          setIsLoading(false);
+          setErrorMessage("The document could not be loaded right now.");
+        }
+      }
+    };
+
+    fetchPdf();
+
+    return () => {
+      isMounted = false;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [isOpen, attachmentId]);
+
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
+        <div className="fixed inset-0" onClick={onClose} />
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-5xl h-[90vh] bg-[#0a0e20] border border-white/[0.12] rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+          className="relative w-full max-w-5xl h-[90vh] bg-[#0a0e20] border border-white/[0.12] rounded-3xl shadow-2xl flex flex-col overflow-hidden z-10"
         >
           {/* Top Header */}
           <div className="px-5 py-3.5 border-b border-white/[0.08] bg-[#070a18] flex items-center justify-between gap-3 flex-shrink-0">
@@ -355,7 +406,7 @@ function PdfViewerModal({
 
             <div className="flex items-center gap-2 flex-shrink-0">
               <a
-                href={src}
+                href={previewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs text-slate-300 font-semibold transition-all"
@@ -383,20 +434,58 @@ function PdfViewerModal({
             </div>
           </div>
 
-          {/* PDF Frame */}
-          <div className="flex-1 w-full h-full relative bg-[#04060e] flex items-center justify-center">
+          {/* PDF Viewer Body */}
+          <div className="flex-1 w-full h-full relative bg-[#04060e] flex items-center justify-center overflow-hidden">
             {isLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#060814] text-slate-400 z-10">
-                <Loader2 className="w-6 h-6 animate-spin text-rose-400" />
-                <span className="text-xs font-mono">Loading PDF stream...</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#060814] text-center p-6 z-10">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shadow-inner">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-white">Loading document...</p>
+                  <p className="text-xs text-slate-400 font-mono">Preparing secure PDF preview</p>
+                </div>
               </div>
             )}
-            <iframe
-              src={src}
-              title={filename}
-              onLoad={() => setIsLoading(false)}
-              className="w-full h-full border-none"
-            />
+
+            {errorMessage && !isLoading && (
+              <div className="flex flex-col items-center justify-center gap-4 p-8 text-center max-w-md mx-auto z-10">
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-rose-400">
+                  <AlertCircle className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-white">Unable to preview this file</h4>
+                  <p className="text-xs text-slate-400">{errorMessage}</p>
+                </div>
+                <div className="flex items-center gap-3 mt-2">
+                  <a
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open in New Tab</span>
+                  </a>
+                  <a
+                    href={downloadUrl}
+                    download={filename}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-all shadow-md"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download File</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {blobUrl && !isLoading && !errorMessage && (
+              <iframe
+                src={`${blobUrl}#toolbar=1&navpanes=1`}
+                title={filename}
+                className="w-full h-full border-none bg-[#030610]"
+              />
+            )}
           </div>
         </motion.div>
       </div>

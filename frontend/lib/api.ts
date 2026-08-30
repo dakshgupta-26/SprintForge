@@ -219,6 +219,11 @@ export const chatAPI = {
       onUploadProgress,
     });
   },
+  getAttachmentBlob: (attachmentId: string) => {
+    return api.get(`/messages/attachments/${attachmentId}?preview=true`, {
+      responseType: "blob",
+    });
+  },
   getAttachmentUrl: (attachmentId: string, preview = false) => {
     return `${API_BASE}/messages/attachments/${attachmentId}${preview ? "?preview=true" : ""}`;
   },

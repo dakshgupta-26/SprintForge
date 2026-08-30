@@ -11,11 +11,15 @@ export interface AuthRequest extends Request {
 
 export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // 1. Check HttpOnly cookie first, fallback to Authorization header
+    // 1. Check HttpOnly cookie first, fallback to Authorization header, fallback to query param token
     let token: string | undefined = req.cookies?.sf_access_token;
 
     if (!token && req.headers.authorization?.startsWith('Bearer ')) {
       token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token && req.query?.token && typeof req.query.token === 'string') {
+      token = req.query.token;
     }
 
     if (!token) {

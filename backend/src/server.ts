@@ -75,8 +75,9 @@ initSocket(io);
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
     xContentTypeOptions: true,
-    frameguard: { action: 'sameorigin' },
+    frameguard: false, // Frameguard disabled to allow embedded PDF/image attachments across configured origins
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     hidePoweredBy: true,
   })
