@@ -50,7 +50,7 @@ const getCookieOptions = (maxAgeMs: number) => {
   return {
     httpOnly: true,
     secure: isProd, // Requires HTTPS in production
-    sameSite: (isProd ? 'lax' : 'lax') as 'lax' | 'strict' | 'none',
+    sameSite: (isProd ? 'none' : 'lax') as 'lax' | 'strict' | 'none',
     path: '/',
     maxAge: maxAgeMs,
   };
@@ -72,7 +72,7 @@ export const clearAuthCookies = (res: Response) => {
   const clearOpts = {
     httpOnly: true,
     secure: isProd,
-    sameSite: (isProd ? 'lax' : 'lax') as 'lax' | 'strict' | 'none',
+    sameSite: (isProd ? 'none' : 'lax') as 'lax' | 'strict' | 'none',
     path: '/',
   };
   res.clearCookie('sf_access_token', clearOpts);

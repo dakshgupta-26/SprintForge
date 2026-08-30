@@ -110,8 +110,37 @@ export function getAvatarUrl(avatar?: string | null, name: string = "User"): str
   ) {
     return avatar;
   }
-  const backendBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000";
-  return `${backendBase}${avatar.startsWith("/") ? "" : "/"}${avatar}`;
+
+  let cleanPath = avatar.startsWith("/") ? avatar : `/${avatar}`;
+  if (!cleanPath.startsWith("/api/")) {
+    cleanPath = `/api${cleanPath}`;
+  }
+
+  const apiBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  // If in browser on a public HTTPS domain, use relative path or remote HTTPS base
+  if (typeof window !== "undefined") {
+    const isPublicOrigin =
+      window.location.protocol === "https:" ||
+      (!window.location.hostname.includes("localhost") &&
+        !window.location.hostname.includes("127.0.0.1"));
+
+    if (isPublicOrigin) {
+      if (
+        apiBase &&
+        (apiBase.startsWith("https://") || apiBase.startsWith("http://")) &&
+        !apiBase.includes("localhost") &&
+        !apiBase.includes("127.0.0.1")
+      ) {
+        const backendBase = apiBase.replace(/\/api\/?$/, "");
+        return `${backendBase}${cleanPath}`;
+      }
+      return cleanPath;
+    }
+  }
+
+  const backendBase = apiBase?.replace(/\/api\/?$/, "") || "http://localhost:5000";
+  return `${backendBase}${cleanPath}`;
 }
 
 export function truncate(str: string, len: number) {

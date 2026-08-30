@@ -9,6 +9,23 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.googleusercontent.com" },
     ],
   },
+  async rewrites() {
+    const rawBackendUrl =
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") ||
+      process.env.BACKEND_URL ||
+      "http://localhost:5000";
+
+    // If backend is a full URL (http:// or https://), proxy /api requests through Next.js
+    if (rawBackendUrl.startsWith("http://") || rawBackendUrl.startsWith("https://")) {
+      return [
+        {
+          source: "/api/:path*",
+          destination: `${rawBackendUrl}/api/:path*`,
+        },
+      ];
+    }
+    return [];
+  },
 };
 
 export default nextConfig;

@@ -1,14 +1,54 @@
 import axios from "axios";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+/**
+ * Safely resolves the API Base URL.
+ * - In local development: uses NEXT_PUBLIC_API_URL or http://localhost:5000/api
+ * - In production browser (HTTPS / public domain): NEVER defaults to http://localhost:5000,
+ *   which triggers Chromium's "Access other apps and services on this device" (Private Network Access).
+ *   Instead, uses NEXT_PUBLIC_API_URL if valid remote HTTPS, or falls back to relative /api.
+ */
+export const getApiBaseUrl = (): string => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  // If in browser
+  if (typeof window !== "undefined") {
+    const isPublicOrigin =
+      window.location.protocol === "https:" ||
+      (!window.location.hostname.includes("localhost") &&
+        !window.location.hostname.includes("127.0.0.1") &&
+        !window.location.hostname.includes("0.0.0.0"));
+
+    if (isPublicOrigin) {
+      if (envUrl && (envUrl.startsWith("https://") || envUrl.startsWith("/"))) {
+        return envUrl;
+      }
+      return "/api";
+    }
+  }
+
+  return envUrl || "http://localhost:5000/api";
+};
 
 const api = axios.create({
-  baseURL: API_BASE,
+  baseURL: getApiBaseUrl(),
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest", // CSRF custom header verification
   },
   withCredentials: true, // Send and receive HttpOnly cookies
+});
+
+// Dynamic Request Interceptor: Ensure baseURL stays up-to-date across hydration
+api.interceptors.request.use((config) => {
+  if (
+    !config.baseURL ||
+    (typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      config.baseURL.includes("localhost"))
+  ) {
+    config.baseURL = getApiBaseUrl();
+  }
+  return config;
 });
 
 // Mutex flag to prevent simultaneous multiple refresh attempts
@@ -58,7 +98,7 @@ api.interceptors.response.use(
 
       try {
         await axios.post(
-          `${API_BASE}/auth/refresh`,
+          `${getApiBaseUrl()}/auth/refresh`,
           {},
           {
             withCredentials: true,
@@ -225,7 +265,8 @@ export const chatAPI = {
     });
   },
   getAttachmentUrl: (attachmentId: string, preview = false) => {
-    return `${API_BASE}/messages/attachments/${attachmentId}${preview ? "?preview=true" : ""}`;
+    const base = getApiBaseUrl();
+    return `${base}/messages/attachments/${attachmentId}${preview ? "?preview=true" : ""}`;
   },
 };
 
