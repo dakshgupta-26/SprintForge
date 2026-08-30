@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, Variants } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -15,7 +15,6 @@ import {
   Lock,
   User,
   CheckCircle2,
-  Circle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { GoogleAuthButton } from "@/components/shared/GoogleAuthButton";
@@ -34,6 +33,7 @@ function SignupForm() {
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next");
   const prefillEmail = searchParams.get("email");
+  const shouldReduceMotion = useReducedMotion();
 
   const { register, isLoading } = useAuthStore();
   const [name, setName] = useState("");
@@ -116,6 +116,27 @@ function SignupForm() {
     );
   }
 
+  // Staggered motion variants for right-side auth content
+  const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: shouldReduceMotion ? 0 : 0.04,
+        delayChildren: shouldReduceMotion ? 0 : 0.08,
+      },
+    },
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: shouldReduceMotion ? 0 : 8 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] },
+    },
+  };
+
   return (
     <div className="w-full">
       {/* Mobile-only Branding Header */}
@@ -127,233 +148,274 @@ function SignupForm() {
         </div>
       </div>
 
-      {/* Form Header */}
-      <div className="mb-4 sm:mb-5">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-display mb-1">
-          Create your account
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-400">
-          Start building better software in minutes.
-        </p>
-      </div>
-
-      {/* Google Single Sign-On Button */}
-      <div className="mb-4">
-        <GoogleAuthButton nextUrl={nextUrl} text="signup_with" onError={setSignupError} />
-      </div>
-
-      {/* Subtle Divider */}
-      <div className="relative flex items-center justify-center my-4">
-        <div className="border-t border-white/[0.08] w-full" />
-        <span className="bg-[#090d1b] px-3 text-[10px] sm:text-[11px] text-slate-400 uppercase font-semibold tracking-wider absolute rounded-full border border-white/[0.06]">
-          or register with email
-        </span>
-      </div>
-
-      {/* Registration Form */}
-      <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-3.5">
-        {/* Full Name Field */}
-        <div>
-          <label
-            htmlFor="name"
-            className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
-          >
-            Full Name
-          </label>
-          <div
-            className={`relative rounded-xl border transition-all duration-200 ${
-              isFocused === "name"
-                ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
-                : signupError
-                ? "border-rose-500/45 bg-rose-500/[0.02]"
-                : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
-            }`}
-          >
-            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
-              signupError ? "text-rose-400" : "text-slate-500"
-            }`}>
-              <User className="w-4 h-4" />
-            </div>
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (signupError) setSignupError(null);
-              }}
-              onFocus={() => setIsFocused("name")}
-              onBlur={() => setIsFocused(null)}
-              placeholder="Your full name"
-              required
-              autoComplete="name"
-              className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
-            />
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="w-full"
+      >
+        {/* ── 1. Status Indicator ── */}
+        <motion.div variants={itemVariants} className="flex items-center gap-2 mb-3">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-bold tracking-widest font-mono uppercase">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            <span>SprintForge Workspace</span>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Work Email Field */}
-        <div>
-          <label
-            htmlFor="email"
-            className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
-          >
-            Work Email
-          </label>
-          <div
-            className={`relative rounded-xl border transition-all duration-200 ${
-              isFocused === "email"
-                ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
-                : signupError
-                ? "border-rose-500/45 bg-rose-500/[0.02]"
-                : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
-            }`}
-          >
-            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
-              signupError ? "text-rose-400" : "text-slate-500"
-            }`}>
-              <Mail className="w-4 h-4" />
-            </div>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (signupError) setSignupError(null);
-              }}
-              onFocus={() => setIsFocused("email")}
-              onBlur={() => setIsFocused(null)}
-              placeholder="you@company.com"
-              required
-              autoComplete="email"
-              className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
-            />
-          </div>
-        </div>
+        {/* ── 2. Form Header ── */}
+        <motion.div variants={itemVariants} className="space-y-1 mb-5 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight font-display">
+            Create your account
+          </h1>
+          <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed font-normal">
+            Start building better software in minutes.
+          </p>
+        </motion.div>
 
-        {/* Password Field */}
-        <div>
-          <label
-            htmlFor="password"
-            className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
-          >
-            Password
-          </label>
-          <div
-            className={`relative rounded-xl border transition-all duration-200 ${
-              isFocused === "password"
-                ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.25)] bg-[#0c1020]"
-                : signupError
-                ? "border-rose-500/45 bg-rose-500/[0.02]"
-                : "border-white/[0.09] bg-white/[0.02] hover:border-white/[0.18]"
-            }`}
-          >
-            <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
-              signupError ? "text-rose-400" : "text-slate-500"
-            }`}>
-              <Lock className="w-4 h-4" />
-            </div>
-            <input
-              id="password"
-              type={showPass ? "text" : "password"}
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (signupError) setSignupError(null);
-              }}
-              onFocus={() => setIsFocused("password")}
-              onBlur={() => setIsFocused(null)}
-              placeholder="••••••••••••"
-              required
-              autoComplete="new-password"
-              className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPass(!showPass)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
-              aria-label={showPass ? "Hide password" : "Show password"}
+        {/* ── 3. Google Single Sign-On Button ── */}
+        <motion.div variants={itemVariants} className="mb-4 sm:mb-5">
+          <GoogleAuthButton nextUrl={nextUrl} text="signup_with" onError={setSignupError} />
+        </motion.div>
+
+        {/* ── 4. Clean Modern Hairline Divider ── */}
+        <motion.div
+          variants={itemVariants}
+          className="relative flex items-center justify-center my-4 sm:my-5"
+        >
+          <div className="border-t border-white/[0.08] w-full" />
+          <span className="bg-[#090d1f] px-3 text-[11px] text-slate-500 font-medium tracking-normal absolute">
+            or register with email
+          </span>
+        </motion.div>
+
+        {/* ── 5. Registration Form ── */}
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* Full Name Field */}
+          <motion.div variants={itemVariants} className="space-y-1.5">
+            <label
+              htmlFor="name"
+              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
             >
-              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              Full Name
+            </label>
+            <div
+              className={`relative rounded-xl border transition-all duration-200 ${
+                isFocused === "name"
+                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  : signupError
+                  ? "border-rose-500/45 bg-rose-500/[0.02]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+              }`}
+            >
+              <div
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                  signupError
+                    ? "text-rose-400"
+                    : isFocused === "name"
+                    ? "text-violet-400"
+                    : "text-slate-500"
+                }`}
+              >
+                <User className="w-4 h-4" />
+              </div>
+              <input
+                id="name"
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (signupError) setSignupError(null);
+                }}
+                onFocus={() => setIsFocused("name")}
+                onBlur={() => setIsFocused(null)}
+                placeholder="Your full name"
+                required
+                autoComplete="name"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+              />
+            </div>
+          </motion.div>
+
+          {/* Work Email Field */}
+          <motion.div variants={itemVariants} className="space-y-1.5">
+            <label
+              htmlFor="email"
+              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
+            >
+              Work Email
+            </label>
+            <div
+              className={`relative rounded-xl border transition-all duration-200 ${
+                isFocused === "email"
+                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  : signupError
+                  ? "border-rose-500/45 bg-rose-500/[0.02]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+              }`}
+            >
+              <div
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                  signupError
+                    ? "text-rose-400"
+                    : isFocused === "email"
+                    ? "text-violet-400"
+                    : "text-slate-500"
+                }`}
+              >
+                <Mail className="w-4 h-4" />
+              </div>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (signupError) setSignupError(null);
+                }}
+                onFocus={() => setIsFocused("email")}
+                onBlur={() => setIsFocused(null)}
+                placeholder="you@company.com"
+                required
+                autoComplete="email"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+              />
+            </div>
+          </motion.div>
+
+          {/* Password Field */}
+          <motion.div variants={itemVariants} className="space-y-1.5">
+            <label
+              htmlFor="password"
+              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
+            >
+              Password
+            </label>
+            <div
+              className={`relative rounded-xl border transition-all duration-200 ${
+                isFocused === "password"
+                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  : signupError
+                  ? "border-rose-500/45 bg-rose-500/[0.02]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+              }`}
+            >
+              <div
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                  signupError
+                    ? "text-rose-400"
+                    : isFocused === "password"
+                    ? "text-violet-400"
+                    : "text-slate-500"
+                }`}
+              >
+                <Lock className="w-4 h-4" />
+              </div>
+              <input
+                id="password"
+                type={showPass ? "text" : "password"}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (signupError) setSignupError(null);
+                }}
+                onFocus={() => setIsFocused("password")}
+                onBlur={() => setIsFocused(null)}
+                placeholder="•••••••••••• (min 8 chars)"
+                required
+                autoComplete="new-password"
+                className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
+                aria-label={showPass ? "Hide password" : "Show password"}
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Live Password Rules Indicator */}
+            <div className="mt-2 flex items-center gap-3 text-[11px]">
+              {passwordRules.map((r) => {
+                const pass = r.test(password);
+                return (
+                  <div
+                    key={r.label}
+                    className={`flex items-center gap-1 transition-colors duration-150 ${
+                      pass ? "text-emerald-400 font-medium" : "text-slate-500"
+                    }`}
+                  >
+                    <CheckCircle2
+                      className={`w-3.5 h-3.5 ${pass ? "text-emerald-400" : "text-slate-600"}`}
+                    />
+                    <span>{r.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          {/* ── Contextual Inline Error & CTA Button ── */}
+          <motion.div variants={itemVariants} className="space-y-2.5 pt-1">
+            <AuthErrorAlert error={signupError} />
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full relative group flex items-center justify-center gap-2 py-3 sm:py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:translate-y-0 cursor-pointer overflow-hidden"
+            >
+              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
+
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Creating your account...</span>
+                </>
+              ) : (
+                <>
+                  <span>Create Account</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
+                </>
+              )}
             </button>
-          </div>
+          </motion.div>
+        </form>
 
-          {/* Real-time Password Requirements Indicator */}
-          <div className="mt-2 flex items-center gap-3 text-[11px]">
-            {passwordRules.map((r) => {
-              const pass = r.test(password);
-              return (
-                <div
-                  key={r.label}
-                  className={`flex items-center gap-1 transition-colors duration-150 ${
-                    pass ? "text-emerald-400 font-medium" : "text-slate-500"
-                  }`}
-                >
-                  {pass ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : (
-                    <Circle className="w-3.5 h-3.5 text-slate-600" />
-                  )}
-                  <span>{r.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Contextual Inline Authentication Error (Directly above Submit button) ── */}
-        <AuthErrorAlert error={signupError} className="my-2" />
-
-        {/* Primary Create Account Button */}
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full relative group flex items-center justify-center gap-2 py-3 sm:py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:scale-[1.01] active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2 cursor-pointer overflow-hidden"
+        {/* ── 6. Switch to Login ── */}
+        <motion.div
+          variants={itemVariants}
+          className="text-center text-xs sm:text-sm text-slate-400 mt-4 sm:mt-5 pt-3.5 sm:pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5"
         >
-          {/* Subtle button sheen animation */}
-          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
+          <span>Already have an account?</span>
+          <Link
+            href="/login"
+            className="group text-violet-400 hover:text-violet-300 font-semibold transition-colors inline-flex items-center gap-0.5 hover:underline"
+          >
+            <span>Sign in to workspace</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform duration-150" />
+          </Link>
+        </motion.div>
 
-          {isLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Creating workspace...</span>
-            </>
-          ) : (
-            <>
-              <span>Create Account</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform duration-200" />
-            </>
-          )}
-        </button>
-      </form>
-
-      {/* Switch to Sign In */}
-      <div className="text-center text-xs sm:text-sm text-slate-400 mt-4 sm:mt-5 pt-3.5 sm:pt-4 border-t border-white/[0.06]">
-        Already have an account?{" "}
-        <Link
-          href="/login"
-          className="text-violet-400 hover:text-violet-300 font-semibold transition-colors hover:underline"
+        {/* ── 7. Honest Security Notice ── */}
+        <motion.div
+          variants={itemVariants}
+          className="text-center text-[10px] sm:text-[11px] text-slate-500 mt-3 sm:mt-3.5 flex items-center justify-center gap-2.5 sm:gap-3"
         >
-          Sign in
-        </Link>
-      </div>
-
-      {/* Legal & Security Compliance Footer */}
-      <div className="text-center text-[10px] sm:text-[11px] text-slate-500 mt-3 sm:mt-3.5 flex items-center justify-center gap-3 sm:gap-4">
-        <span className="flex items-center gap-1">
-          <Shield className="w-3 h-3 text-emerald-400" />
-          SOC-2 Compliant
-        </span>
-        <span>•</span>
-        <Link href="/terms" className="hover:text-slate-400 transition-colors">
-          Terms
-        </Link>
-        <span>•</span>
-        <Link href="/privacy" className="hover:text-slate-400 transition-colors">
-          Privacy
-        </Link>
-      </div>
+          <span className="flex items-center gap-1 text-slate-400 font-medium">
+            <Shield className="w-3 h-3 text-emerald-400" />
+            Secure authentication
+          </span>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-slate-400 transition-colors">
+            Terms
+          </Link>
+          <span>•</span>
+          <Link href="/privacy" className="hover:text-slate-400 transition-colors">
+            Privacy
+          </Link>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }
@@ -377,9 +439,8 @@ export default function SignupPage() {
 
       {/* ─── Main Content Workspace ─── */}
       <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-12 pb-4 sm:pb-6 lg:pb-6">
-        {/* ─── Left Side: Product Showcase & Visual Story ─── */}
+        {/* ─── Left Side: Product Showcase & Visual Story (PRESERVED) ─── */}
         <section className="hidden lg:flex lg:w-[56%] xl:w-[58%] 2xl:w-[60%] h-full flex-col justify-center items-start min-h-0 relative">
-          {/* Top-Left Product Headline */}
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -397,28 +458,50 @@ export default function SignupPage() {
             </p>
           </motion.div>
 
-          {/* Interactive Workspace Preview */}
           <div className="w-full flex-1 min-h-0 flex items-center justify-center relative">
             <Agile3DWorkspace variant="signup" />
           </div>
         </section>
 
-        {/* ─── Right Side: Minimal Glass Authentication Panel ─── */}
+        {/* ─── Right Side: Premium Floating Authentication Surface ─── */}
         <section className="w-full lg:w-[44%] xl:w-[42%] 2xl:w-[40%] flex items-center justify-center relative z-20 min-h-0 py-2 sm:py-4">
-          {/* Ambient Subtle Glow Behind Auth Card */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] sm:w-[440px] h-[380px] sm:h-[440px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
-
-          {/* Floating Frosted Glass Authentication Card */}
+          {/* Subtle slow ambient breathing glow behind floating card */}
           <motion.div
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20, scale: 0.98 }}
+            animate={{
+              scale: shouldReduceMotion ? 1 : [1, 1.08, 1],
+              opacity: [0.35, 0.55, 0.35],
+            }}
+            transition={{
+              duration: 10,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+            className="absolute -top-12 -right-12 w-[340px] h-[340px] bg-violet-600/15 rounded-full blur-[100px] pointer-events-none -z-10"
+          />
+          <motion.div
+            animate={{
+              scale: shouldReduceMotion ? 1 : [1, 1.12, 1],
+              opacity: [0.25, 0.45, 0.25],
+            }}
+            transition={{
+              duration: 12,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: 2,
+            }}
+            className="absolute -bottom-10 -left-10 w-[300px] h-[300px] bg-indigo-600/15 rounded-full blur-[90px] pointer-events-none -z-10"
+          />
+
+          {/* Floating Authentication Card */}
+          <motion.div
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-[430px] bg-[#090d1b]/80 border border-white/[0.08] backdrop-blur-2xl rounded-3xl p-6 sm:p-7 xl:p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9),0_0_35px_rgba(124,92,255,0.08)] relative overflow-hidden"
+            transition={{ duration: 0.45, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full max-w-[430px] bg-[#090d1f]/85 bg-[radial-gradient(ellipse_at_top_right,rgba(124,58,237,0.09),transparent_60%)] border border-white/[0.08] dark:border-white/[0.08] backdrop-blur-2xl rounded-3xl p-6 sm:p-7 xl:p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(124,92,255,0.08)] relative overflow-hidden"
           >
             {/* Subtle Top Card Highlight */}
-            <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
+            <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent pointer-events-none" />
 
-            {/* Suspense-wrapped signup form */}
             <Suspense
               fallback={
                 <div className="flex flex-col items-center justify-center min-h-[360px] text-slate-400">
