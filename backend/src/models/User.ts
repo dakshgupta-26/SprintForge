@@ -27,6 +27,21 @@ export interface IUser extends Document {
   language?: string;
   projects: mongoose.Types.ObjectId[];
   notifications: mongoose.Types.ObjectId[];
+  notificationPreferences?: {
+    chatInApp?: boolean;
+    chatBrowser?: boolean;
+    chatSound?: boolean;
+    taskAssignedInApp?: boolean;
+    taskAssignedEmail?: boolean;
+    taskUpdatedInApp?: boolean;
+    taskUpdatedEmail?: boolean;
+    mentionsInApp?: boolean;
+    mentionsEmail?: boolean;
+    sprintEventsInApp?: boolean;
+    sprintEventsEmail?: boolean;
+    teamInvitesInApp?: boolean;
+    teamInvitesEmail?: boolean;
+  };
   isActive: boolean;
   lastSeen: Date;
   createdAt: Date;
@@ -57,6 +72,21 @@ const userSchema = new Schema<IUser>(
     website:  { type: String },
     timezone: { type: String, default: 'UTC' },
     language: { type: String, default: 'English (US)' },
+    notificationPreferences: {
+      chatInApp: { type: Boolean, default: true },
+      chatBrowser: { type: Boolean, default: true },
+      chatSound: { type: Boolean, default: true },
+      taskAssignedInApp: { type: Boolean, default: true },
+      taskAssignedEmail: { type: Boolean, default: true },
+      taskUpdatedInApp: { type: Boolean, default: true },
+      taskUpdatedEmail: { type: Boolean, default: false },
+      mentionsInApp: { type: Boolean, default: true },
+      mentionsEmail: { type: Boolean, default: true },
+      sprintEventsInApp: { type: Boolean, default: true },
+      sprintEventsEmail: { type: Boolean, default: false },
+      teamInvitesInApp: { type: Boolean, default: true },
+      teamInvitesEmail: { type: Boolean, default: true },
+    },
     projects:      [{ type: Schema.Types.ObjectId, ref: 'Project' }],
     notifications: [{ type: Schema.Types.ObjectId, ref: 'Notification' }],
     isActive: { type: Boolean, default: true },

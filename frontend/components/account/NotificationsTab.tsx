@@ -11,6 +11,7 @@ import {
   Users,
   AlertTriangle,
 } from "lucide-react";
+import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
 import { cn } from "@/lib/utils";
 
 interface NotificationChannelSettings {
@@ -219,6 +220,98 @@ export function NotificationsTab() {
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Chat & Direct Message Realtime Alerts ── */}
+      <ChatPreferencesSection />
+    </div>
+  );
+}
+
+function ChatPreferencesSection() {
+  const {
+    preferences: chatPrefs,
+    updatePreferences,
+    requestBrowserNotificationPermission,
+  } = useChatUnreadStore();
+  const [browserPermission, setBrowserPermission] = useState<string>("default");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setBrowserPermission(Notification.permission);
+    }
+  }, []);
+
+  const handleBrowserToggle = async () => {
+    if (!chatPrefs.browser) {
+      const res = await requestBrowserNotificationPermission();
+      setBrowserPermission(res);
+    } else {
+      updatePreferences({ browser: false });
+    }
+  };
+
+  return (
+    <div className="p-6 rounded-3xl bg-[#090d20] border border-white/[0.08] shadow-xl space-y-5">
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-violet-400" />
+          Realtime Chat & Messaging Notifications
+        </h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Configure how SprintForge notifies you when team members send messages across channels.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {/* In-App Floating Toasts */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#060914] border border-white/[0.04]">
+          <div className="min-w-0 pr-4">
+            <p className="text-xs font-bold text-white">In-App Floating Toasts</p>
+            <p className="text-[11px] text-slate-400">
+              Display temporary glass toast notifications in the top-right when working elsewhere in the app
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={chatPrefs.inApp}
+            onChange={() => updatePreferences({ inApp: !chatPrefs.inApp })}
+          />
+        </div>
+
+        {/* Browser Desktop Notifications */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#060914] border border-white/[0.04]">
+          <div className="min-w-0 pr-4">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-white">Browser Desktop Notifications</p>
+              {browserPermission === "denied" && (
+                <span className="text-[10px] font-mono font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20">
+                  Permission Blocked in Browser
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Receive system push alerts when SprintForge is running in background or minimized tab
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={chatPrefs.browser && browserPermission === "granted"}
+            onChange={handleBrowserToggle}
+          />
+        </div>
+
+        {/* Sound Notifications */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#060914] border border-white/[0.04]">
+          <div className="min-w-0 pr-4">
+            <p className="text-xs font-bold text-white">Subtle Notification Chime</p>
+            <p className="text-[11px] text-slate-400">
+              Play a soft, gentle audio chime when a new message arrives
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={chatPrefs.sound}
+            onChange={() => updatePreferences({ sound: !chatPrefs.sound })}
+          />
         </div>
       </div>
     </div>

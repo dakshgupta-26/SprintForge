@@ -33,6 +33,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateAvatar, cn } from "@/lib/utils";
+import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
+import { AttachmentCard, AttachmentItem } from "./AttachmentCard";
+import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import toast from "react-hot-toast";
 
 interface MessageSender {
@@ -63,28 +66,36 @@ interface Message {
     senderName: string;
     text: string;
   };
-  attachments?: Array<{
-    name: string;
-    size?: string;
-    type: "image" | "file" | "code";
-    url?: string;
-  }>;
+  attachments?: AttachmentItem[];
   readBy?: ReadReceipt[];
   reactions?: Record<string, string[]>; // emoji -> array of userIds
   isOptimistic?: boolean;
 }
 
-const COMMON_EMOJIS = ["👍", "🚀", "❤️", "🔥", "🎉", "👀", "💯", "⚡", "💡", "🎯"];
+interface PendingAttachment {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  sizeFormatted: string;
+  type: "image" | "file";
+  progress: number;
+  status: "uploading" | "uploaded" | "error";
+  error?: string;
+  attachmentData?: AttachmentItem;
+}
 
 export function ChatRoom({ projectId }: { projectId: string }) {
   const { user } = useAuthStore();
   const { currentProject, projects, fetchProject } = useProjectStore();
+  const { setActiveProjectId, markProjectAsRead, markAllAsRead } = useChatUnreadStore();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [firstUnreadMessageId, setFirstUnreadMessageId] = useState<string | null>(null);
 
   // UI Panels
   const [showMembersDrawer, setShowMembersDrawer] = useState(false);
@@ -96,9 +107,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
-  const [pendingAttachments, setPendingAttachments] = useState<
-    Array<{ name: string; size: string; type: "image" | "file"; dataUrl?: string }>
-  >([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [unreadBelowCount, setUnreadBelowCount] = useState(0);
@@ -222,10 +231,37 @@ export function ChatRoom({ projectId }: { projectId: string }) {
             },
           });
         }
+        markProjectAsRead(projectId, unreadMessageIds[unreadMessageIds.length - 1]);
       }
     },
-    [projectId, user]
+    [projectId, user, markProjectAsRead]
   );
+
+  // ─── Active Project & Unread Lifecycle ───────────────────────────────────────
+  useEffect(() => {
+    setActiveProjectId(projectId);
+    return () => {
+      setActiveProjectId(null);
+    };
+  }, [projectId, setActiveProjectId]);
+
+  // ─── Tab Visibility & Window Focus Read Sync ─────────────────────────────────
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible" && messages.length > 0) {
+        markMessagesAsRead(messages);
+        markProjectAsRead(projectId);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+    };
+  }, [messages, projectId, markMessagesAsRead, markProjectAsRead]);
 
   // ─── Fetch Messages & Socket Listeners ────────────────────────────────────────
   useEffect(() => {
@@ -240,7 +276,23 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         if (mounted) {
           const list = data || [];
           setMessages(list);
+
+          // Locate first unread message for the "NEW MESSAGES" divider
+          const firstUnread = list.find((m: Message) => {
+            if (m.sender?._id === user?._id || m.isOptimistic) return false;
+            const read = (m.readBy || []).some((r) => {
+              const rUserId = typeof r.user === "object" ? r.user?._id : r.user;
+              return rUserId === user?._id;
+            });
+            return !read;
+          });
+
+          if (firstUnread) {
+            setFirstUnreadMessageId(firstUnread._id);
+          }
+
           markMessagesAsRead(list);
+          markProjectAsRead(projectId);
         }
       } catch (error) {
         console.error("Failed to load project messages", error);
@@ -411,10 +463,52 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     }, 2000);
   };
 
+  const isOnlyEmojis = (text: string) => {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\uFE0F|\u200D|\s)+$/u;
+    if (!emojiRegex.test(trimmed)) return false;
+    const emojiArray = [...trimmed].filter((c) => c.trim() !== "");
+    return emojiArray.length > 0 && emojiArray.length <= 5;
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setNewMessage((prev) => prev + emoji);
+      return;
+    }
+
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const text = newMessage;
+    const updated = text.substring(0, start) + emoji + text.substring(end);
+    setNewMessage(updated);
+
+    setTimeout(() => {
+      textarea.focus();
+      const newCursor = start + emoji.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+    }, 10);
+  };
+
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = newMessage.trim();
-    if ((!text && pendingAttachments.length === 0) || !user) return;
+
+    // Check if any file is currently uploading
+    const hasUploading = pendingAttachments.some((p) => p.status === "uploading");
+    if (hasUploading) {
+      toast("Please wait for file upload to complete...", { icon: "⏳" });
+      return;
+    }
+
+    const uploadedAttachments = pendingAttachments
+      .filter((p) => p.status === "uploaded" && p.attachmentData)
+      .map((p) => p.attachmentData!);
+
+    if ((!text && uploadedAttachments.length === 0) || !user) return;
 
     const socket = getSocket();
     if (!socket) return;
@@ -424,15 +518,6 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       formattedContent = `> Replying to @${replyingTo.sender.name}: "${replyingTo.content.slice(0, 60)}${
         replyingTo.content.length > 60 ? "..." : ""
       }"\n\n${text}`;
-    }
-
-    if (pendingAttachments.length > 0) {
-      const attachmentsText = pendingAttachments
-        .map((att) => `[Attachment: ${att.name} (${att.size})]`)
-        .join(" ");
-      formattedContent = formattedContent
-        ? `${formattedContent}\n\n${attachmentsText}`
-        : attachmentsText;
     }
 
     // 1. Optimistic Local Append
@@ -446,6 +531,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         avatar: user.avatar,
       },
       content: formattedContent,
+      attachments: uploadedAttachments,
       readBy: [],
       reactions: {},
       createdAt: new Date().toISOString(),
@@ -465,6 +551,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         avatar: user.avatar,
       },
       content: formattedContent,
+      attachments: uploadedAttachments,
     });
 
     socket.emit("chat:typing:stop", { projectId, userId: user._id });
@@ -494,27 +581,73 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   };
 
   // ─── File Upload & Drag-and-Drop ─────────────────────────────────────────────
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const newItems: Array<{
-      name: string;
-      size: string;
-      type: "image" | "file";
-      dataUrl?: string;
-    }> = [];
+
+    const newPending: PendingAttachment[] = [];
 
     Array.from(files).forEach((file) => {
+      // 25 MB max limit
+      if (file.size > 25 * 1024 * 1024) {
+        toast.error(`"${file.name}" exceeds maximum allowed size of 25 MB.`);
+        return;
+      }
+
+      const id = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      const sizeFormatted = file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)} KB` : `${sizeMb} MB`;
       const isImg = file.type.startsWith("image/");
-      newItems.push({
+
+      newPending.push({
+        id,
+        file,
         name: file.name,
-        size: `${sizeMb} MB`,
+        size: file.size,
+        sizeFormatted,
         type: isImg ? "image" : "file",
+        progress: 0,
+        status: "uploading",
       });
     });
 
-    setPendingAttachments((prev) => [...prev, ...newItems]);
-    toast.success(`${files.length} file(s) ready to send!`);
+    if (newPending.length === 0) return;
+
+    setPendingAttachments((prev) => [...prev, ...newPending]);
+
+    // Upload each file to GridFS backend
+    for (const item of newPending) {
+      try {
+        const { data } = await chatAPI.uploadAttachment(projectId, item.file, (e) => {
+          const percent = Math.round((e.loaded * 100) / (e.total || item.size));
+          setPendingAttachments((prev) =>
+            prev.map((p) => (p.id === item.id ? { ...p, progress: percent } : p))
+          );
+        });
+
+        if (data?.attachment) {
+          setPendingAttachments((prev) =>
+            prev.map((p) =>
+              p.id === item.id
+                ? {
+                    ...p,
+                    progress: 100,
+                    status: "uploaded",
+                    attachmentData: data.attachment,
+                  }
+                : p
+            )
+          );
+        }
+      } catch (err: any) {
+        console.error("Upload failed for file:", item.name, err);
+        toast.error(`Failed to upload "${item.name}". Please try again.`);
+        setPendingAttachments((prev) =>
+          prev.map((p) =>
+            p.id === item.id ? { ...p, status: "error", error: "Upload failed" } : p
+          )
+        );
+      }
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -689,6 +822,20 @@ export function ChatRoom({ projectId }: { projectId: string }) {
             >
               <Search className="w-4 h-4" />
             </button>
+            
+            {/* Mark All Read Button */}
+            <button
+              onClick={async () => {
+                await markAllAsRead();
+                setFirstUnreadMessageId(null);
+                toast.success("All messages marked as read", { duration: 2000 });
+              }}
+              className="p-2 rounded-xl border bg-white/[0.03] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all cursor-pointer text-xs flex items-center gap-1"
+              title="Mark all as read"
+            >
+              <CheckCheck className="w-4 h-4 text-emerald-400" />
+              <span className="hidden md:inline-block text-[11px] font-semibold text-slate-300">Mark Read</span>
+            </button>
 
             {/* Interactive Members Drawer Toggle */}
             <button
@@ -750,7 +897,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 select-text"
+          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 scrollbar-thin scrollbar-thumb-white/10"
         >
           {filteredMessages.length === 0 ? (
             /* ── Empty State ── */
@@ -819,6 +966,17 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                           : isYesterday(new Date(msg.createdAt))
                           ? "Yesterday"
                           : format(new Date(msg.createdAt), "MMMM d, yyyy")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Unread "NEW MESSAGES" Divider */}
+                  {msg._id === firstUnreadMessageId && (
+                    <div className="relative flex items-center justify-center my-6">
+                      <div className="border-t border-violet-500/40 w-full" />
+                      <span className="bg-[#0c1024] text-violet-300 px-3.5 py-0.5 text-[10px] font-bold uppercase font-mono tracking-wider absolute rounded-full border border-violet-500/50 shadow-[0_0_15px_rgba(139,92,246,0.35)] flex items-center gap-1.5 z-10">
+                        <Sparkles className="w-3 h-3 text-violet-400" />
+                        New Messages
                       </span>
                     </div>
                   )}
@@ -965,11 +1123,35 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                           ) : null}
 
                           {/* Message Text Content */}
-                          <div className="whitespace-pre-wrap font-sans">
-                            {msg.content.startsWith("> Replying to")
+                          {isOnlyEmojis(
+                            msg.content.startsWith("> Replying to")
                               ? msg.content.split("\n\n").slice(1).join("\n\n")
-                              : msg.content}
-                          </div>
+                              : msg.content
+                          ) && (!msg.attachments || msg.attachments.length === 0) ? (
+                            <div className="text-3xl sm:text-4xl py-1 px-1 leading-normal select-text">
+                              {msg.content.startsWith("> Replying to")
+                                ? msg.content.split("\n\n").slice(1).join("\n\n")
+                                : msg.content}
+                            </div>
+                          ) : (
+                            <div className="whitespace-pre-wrap font-sans">
+                              {msg.content.startsWith("> Replying to")
+                                ? msg.content.split("\n\n").slice(1).join("\n\n")
+                                : msg.content}
+                            </div>
+                          )}
+
+                          {/* Real Attachments Rendering */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex flex-col gap-2 mt-2">
+                              {msg.attachments.map((att, attIdx) => (
+                                <AttachmentCard
+                                  key={att._id || att.fileId || `att-${attIdx}`}
+                                  attachment={att}
+                                />
+                              ))}
+                            </div>
+                          )}
 
                           {/* Delivery & Read Receipts Indicator for Own Messages */}
                           {isMe && (
@@ -1001,7 +1183,12 @@ export function ChatRoom({ projectId }: { projectId: string }) {
 
                       {/* Emoji Reactions Attached Directly Underneath Bubble */}
                       {Object.keys(reactions).length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
+                        <div
+                          className={cn(
+                            "flex flex-wrap gap-1 mt-1 px-1",
+                            isMe ? "justify-end" : "justify-start"
+                          )}
+                        >
                           {Object.entries(reactions).map(([emoji, userIds]) => {
                             if (!userIds || userIds.length === 0) return null;
                             const hasReacted = userIds.includes(user?._id || "");
@@ -1011,10 +1198,10 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                                 type="button"
                                 onClick={() => handleToggleReaction(msg._id, emoji)}
                                 className={cn(
-                                  "px-2 py-0.5 rounded-full border text-[11px] flex items-center gap-1 transition-all cursor-pointer active:scale-95",
+                                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all cursor-pointer border",
                                   hasReacted
                                     ? "bg-violet-500/20 border-violet-500/40 text-violet-200 shadow-sm"
-                                    : "bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-slate-300"
+                                    : "bg-white/[0.04] border-white/[0.06] text-slate-300 hover:bg-white/[0.08]"
                                 )}
                                 title={`Reacted by ${userIds.length} member(s)`}
                               >
@@ -1061,14 +1248,21 @@ export function ChatRoom({ projectId }: { projectId: string }) {
         <AnimatePresence>
           {showScrollBottom && (
             <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              onClick={() => scrollToBottom(true)}
-              className="absolute bottom-24 right-6 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-[0_0_20px_rgba(124,92,255,0.4)] transition-all cursor-pointer"
+              initial={{ opacity: 0, y: 10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.9 }}
+              onClick={() => {
+                scrollToBottom(true);
+                setUnreadBelowCount(0);
+              }}
+              className="absolute bottom-24 right-6 z-20 flex items-center gap-2 px-3.5 py-2 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-[0_8px_25px_rgba(124,92,255,0.45)] border border-violet-400/30 transition-all cursor-pointer"
             >
               <ArrowDown className="w-3.5 h-3.5" />
-              <span>{unreadBelowCount > 0 ? `${unreadBelowCount} new` : "Latest"}</span>
+              <span>
+                {unreadBelowCount > 0
+                  ? `${unreadBelowCount} new message${unreadBelowCount > 1 ? "s" : ""}`
+                  : "Jump to latest"}
+              </span>
             </motion.button>
           )}
         </AnimatePresence>
@@ -1103,28 +1297,61 @@ export function ChatRoom({ projectId }: { projectId: string }) {
             )}
           </AnimatePresence>
 
-          {/* Pending Attachments List */}
+          {/* Pending Attachments List with Progress Bars */}
           {pendingAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
-              {pendingAttachments.map((att, i) => (
+              {pendingAttachments.map((att) => (
                 <div
-                  key={i}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-slate-300"
+                  key={att.id}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#090d22] border border-white/[0.1] text-xs text-slate-200 shadow-sm"
                 >
                   {att.type === "image" ? (
-                    <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                    <ImageIcon className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
                   ) : (
-                    <FileText className="w-3.5 h-3.5 text-violet-400" />
+                    <FileText className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                   )}
-                  <span className="truncate max-w-[140px]">{att.name}</span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    ({att.size})
-                  </span>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate max-w-[130px] font-medium">{att.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        ({att.sizeFormatted})
+                      </span>
+                    </div>
+
+                    {att.status === "uploading" && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="w-20 h-1 bg-white/[0.1] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-200"
+                            style={{ width: `${att.progress}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] font-mono text-cyan-300">
+                          {att.progress}%
+                        </span>
+                      </div>
+                    )}
+
+                    {att.status === "uploaded" && (
+                      <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-0.5">
+                        <Check className="w-2.5 h-2.5" /> Ready to send
+                      </span>
+                    )}
+
+                    {att.status === "error" && (
+                      <span className="text-[9px] font-mono text-rose-400">
+                        Upload failed
+                      </span>
+                    )}
+                  </div>
+
                   <button
+                    type="button"
                     onClick={() =>
-                      setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                      setPendingAttachments((prev) => prev.filter((p) => p.id !== att.id))
                     }
-                    className="p-0.5 hover:text-rose-400 transition-colors cursor-pointer"
+                    className="p-1 rounded-lg hover:bg-white/[0.1] hover:text-rose-400 text-slate-400 transition-colors cursor-pointer ml-1"
+                    title="Remove attachment"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -1160,7 +1387,7 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
-                  title="Attach file or image"
+                  title="Attach file or image (up to 25MB)"
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
@@ -1191,42 +1418,28 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                   <Hash className="w-4 h-4" />
                 </button>
 
-                {/* Emoji Picker Button */}
+                {/* Emoji Picker Popover Button */}
                 <div className="relative">
                   <button
                     type="button"
+                    aria-label="Open emoji picker"
                     onClick={() => setShowEmojiPicker((prev) => !prev)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                    className={cn(
+                      "p-1.5 rounded-lg transition-colors cursor-pointer",
+                      showEmojiPicker
+                        ? "bg-violet-500/20 text-violet-300"
+                        : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                    )}
                     title="Insert emoji"
                   >
                     <Smile className="w-4 h-4" />
                   </button>
 
-                  {/* Emoji Quick Popover */}
-                  <AnimatePresence>
-                    {showEmojiPicker && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: -6 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -6 }}
-                        className="absolute bottom-full left-0 mb-2 p-2 bg-[#090d1c] border border-white/[0.12] rounded-2xl shadow-2xl z-30 flex gap-1"
-                      >
-                        {COMMON_EMOJIS.map((emoji) => (
-                          <button
-                            key={emoji}
-                            onClick={() => {
-                              setNewMessage((prev) => prev + emoji);
-                              setShowEmojiPicker(false);
-                              textareaRef.current?.focus();
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-white/[0.08] text-base transition-transform hover:scale-125 cursor-pointer"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <EmojiPickerPopover
+                    isOpen={showEmojiPicker}
+                    onClose={() => setShowEmojiPicker(false)}
+                    onEmojiSelect={handleEmojiSelect}
+                  />
                 </div>
               </div>
 

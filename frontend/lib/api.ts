@@ -205,6 +205,23 @@ export const chatAPI = {
   markAsRead: (projectId: string, lastReadMessageId?: string) =>
     api.post(`/messages/${projectId}/read`, { lastReadMessageId }),
   markAllAsRead: () => api.post("/messages/read-all"),
+  uploadAttachment: (
+    projectId: string,
+    file: File,
+    onUploadProgress?: (progressEvent: any) => void
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post(`/messages/upload/${projectId}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      onUploadProgress,
+    });
+  },
+  getAttachmentUrl: (attachmentId: string, preview = false) => {
+    return `${API_BASE}/messages/attachments/${attachmentId}${preview ? "?preview=true" : ""}`;
+  },
 };
 
 // ─── Issues ───

@@ -30,6 +30,7 @@ import {
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore, Project } from "@/lib/store/projectStore";
 import { useSidebarStore } from "@/lib/store/sidebarStore";
+import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
 import { notificationAPI, taskAPI } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { cn, generateAvatar } from "@/lib/utils";
@@ -45,6 +46,7 @@ interface NavItem {
   icon: React.ComponentType<any>;
   badge?: number;
   shortcut?: string;
+  pulse?: boolean;
 }
 
 const mainNav = (taskCount: number, notifCount: number): NavItem[] => [
@@ -70,12 +72,18 @@ const mainNav = (taskCount: number, notifCount: number): NavItem[] => [
   },
 ];
 
-const projectNav = (id: string): NavItem[] => [
+const projectNav = (id: string, chatUnread = 0, isPulsing = false): NavItem[] => [
   { label: "Board", href: `/dashboard/projects/${id}/board`, icon: Columns3 },
   { label: "Backlog", href: `/dashboard/projects/${id}/backlog`, icon: AlignLeft },
   { label: "Sprints", href: `/dashboard/projects/${id}/sprints`, icon: Zap },
   { label: "Issues", href: `/dashboard/projects/${id}/issues`, icon: Bug },
-  { label: "Chat", href: `/dashboard/projects/${id}/chat`, icon: MessageSquare },
+  {
+    label: "Chat",
+    href: `/dashboard/projects/${id}/chat`,
+    icon: MessageSquare,
+    badge: chatUnread,
+    pulse: isPulsing,
+  },
   { label: "Analytics", href: `/dashboard/projects/${id}/analytics`, icon: BarChart3 },
   { label: "Team", href: `/dashboard/projects/${id}/team`, icon: Users },
   { label: "Wiki", href: `/dashboard/projects/${id}/wiki`, icon: BookOpen },
@@ -92,6 +100,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user } = useAuthStore();
   const { projects, currentProject, fetchProjects } = useProjectStore();
   const { isCollapsed, toggleCollapse } = useSidebarStore();
+  const { projectUnreadCounts, pulseProjects } = useChatUnreadStore();
 
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -312,26 +321,38 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 const isCurrentProject =
                   activeProjectIdFromUrl === project._id ||
                   currentProject?._id === project._id;
+                const unreadCount = projectUnreadCounts[project._id] || 0;
 
                 return (
                   <SidebarTooltip
                     key={project._id}
-                    content={`${project.name} (${project.key})`}
+                    content={`${project.name} (${project.key})${
+                      unreadCount > 0 ? ` • ${unreadCount > 99 ? "99+" : unreadCount} unread` : ""
+                    }`}
                     show={true}
                   >
-                    <Link
-                      href={`/dashboard/projects/${project._id}/board`}
-                      onClick={onClose}
-                      className={cn(
-                        "w-9 h-9 rounded-xl flex items-center justify-center text-xs font-mono font-bold transition-all",
-                        isCurrentProject
-                          ? "ring-2 ring-violet-500 shadow-md text-white"
-                          : "opacity-75 hover:opacity-100 hover:scale-105 text-white"
+                    <div className="relative">
+                      <Link
+                        href={`/dashboard/projects/${project._id}/board`}
+                        onClick={onClose}
+                        className={cn(
+                          "w-9 h-9 rounded-xl flex items-center justify-center text-xs font-mono font-bold transition-all",
+                          isCurrentProject
+                            ? "ring-2 ring-violet-500 shadow-md text-white"
+                            : "opacity-75 hover:opacity-100 hover:scale-105 text-white"
+                        )}
+                        style={{ backgroundColor: project.color || "#6366f1" }}
+                      >
+                        {project.key?.charAt(0) || "P"}
+                      </Link>
+
+                      {/* Collapsed Project Unread Indicator Dot */}
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-violet-500 border-2 border-[#070b1a] text-[9px] font-mono font-bold text-white flex items-center justify-center shadow-[0_0_8px_rgba(139,92,246,0.9)] animate-pulse">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
                       )}
-                      style={{ backgroundColor: project.color || "#6366f1" }}
-                    >
-                      {project.key?.charAt(0) || "P"}
-                    </Link>
+                    </div>
                   </SidebarTooltip>
                 );
               })}
@@ -344,6 +365,8 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 const isCurrentRouteInsideProject =
                   activeProjectIdFromUrl === project._id ||
                   currentProject?._id === project._id;
+                const projectUnread = projectUnreadCounts[project._id] || 0;
+                const isPulsing = !!pulseProjects[project._id];
 
                 return (
                   <div key={project._id} className="space-y-0.5">
@@ -378,6 +401,13 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                         <span className="truncate">{project.name}</span>
                       </Link>
 
+                      {/* Project Header Unread Badge (when collapsed) */}
+                      {!isExpanded && projectUnread > 0 && (
+                        <span className="mr-1.5 bg-violet-600/30 border border-violet-500/40 text-violet-200 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
+                          {projectUnread > 99 ? "99+" : projectUnread}
+                        </span>
+                      )}
+
                       {/* Expand / Collapse Chevron */}
                       <button
                         type="button"
@@ -404,7 +434,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                           transition={{ duration: 0.15, ease: "easeOut" }}
                           className="overflow-hidden ml-3.5 pl-2.5 border-l border-white/[0.08] space-y-0.5 py-0.5"
                         >
-                          {projectNav(project._id).map((item) => {
+                          {projectNav(project._id, projectUnread, isPulsing).map((item) => {
                             const active = isActive(item.href);
                             return (
                               <NavLink
@@ -466,6 +496,7 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onClick}
+      aria-label={item.badge && item.badge > 0 ? `${item.label}, ${item.badge} unread` : item.label}
       className={cn(
         "flex items-center gap-2.5 rounded-xl transition-all duration-150 group relative font-medium",
         isCollapsed
@@ -502,16 +533,32 @@ function NavLink({
         <>
           <span className="truncate">{item.label}</span>
           {item.badge !== undefined && item.badge > 0 && (
-            <span className="ml-auto bg-violet-600/30 border border-violet-500/30 text-violet-200 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shadow-sm">
+            <motion.span
+              initial={false}
+              animate={
+                item.pulse
+                  ? {
+                      scale: [1, 1.28, 1],
+                      boxShadow: [
+                        "0 0 0px rgba(139,92,246,0)",
+                        "0 0 14px rgba(139,92,246,0.85)",
+                        "0 0 0px rgba(139,92,246,0)",
+                      ],
+                    }
+                  : { scale: 1 }
+              }
+              transition={{ duration: 0.45, ease: "easeOut" }}
+              className="ml-auto bg-violet-600/30 border border-violet-500/40 text-violet-200 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shadow-sm min-w-[20px] text-center"
+            >
               {item.badge > 99 ? "99+" : item.badge}
-            </span>
+            </motion.span>
           )}
         </>
       )}
 
       {/* Mini Badge Dot (when collapsed) */}
       {isCollapsed && item.badge !== undefined && item.badge > 0 && (
-        <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-violet-500 shadow-[0_0_6px_rgba(124,92,255,0.8)]" />
+        <div className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-violet-500 ring-2 ring-[#070b1a] shadow-[0_0_8px_rgba(139,92,246,0.9)] animate-pulse" />
       )}
     </Link>
   );

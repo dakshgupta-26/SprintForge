@@ -4,7 +4,7 @@
   "description": "SprintForge API Server",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon --exec \"npx tsx src/server.ts\" --ext ts",
+    "dev": "nodemon --watch src --watch .env --exec \"npx tsx src/server.ts\" --ext ts,env",
     "build": "npx esbuild src/server.ts --bundle --platform=node --target=node20 --outfile=dist/server.js --packages=external",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts"

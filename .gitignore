@@ -23,13 +23,22 @@ frontend/.env*
 frontend/.env.local
 frontend/.env.example
 
-# Agent / AI Scratchpad files
+# Agent / AI Scratchpad & Implementation Reports (Keep only README.md)
 AGENTS.md
 agents.md
 CLAUDE.md
 claude.md
 */AGENTS.md
 */CLAUDE.md
+CHAT_UNREAD_IMPLEMENTATION.md
+CHAT_ATTACHMENT_EMOJI_IMPLEMENTATION.md
+*_IMPLEMENTATION.md
+*.report.md
+*.md
+!README.md
+!readme.md
+!**/README.md
+!**/readme.md
 
 # Production Build Outputs
 dist/

@@ -4,6 +4,7 @@ import cookie from 'cookie';
 import Message from '../models/Message';
 import Project from '../models/Project';
 import User from '../models/User';
+import ChatReadCursor from '../models/ChatReadCursor';
 import { encryptMessage } from '../utils/crypto';
 
 // Track socketId → { userId, projectId, name, email, avatar }
@@ -49,8 +50,7 @@ export const initSocket = (io: Server) => {
             }
           }
         } catch (jwtErr) {
-          // Token expired or invalid — allow unauthenticated connect for guest preview if needed,
-          // but socket operations will require authenticated identity
+          // Token expired or invalid
         }
       }
       next();
@@ -61,6 +61,10 @@ export const initSocket = (io: Server) => {
 
   io.on('connection', (socket: Socket) => {
     const authUser = (socket as any).user;
+    if (authUser?._id) {
+      socket.join(String(authUser._id));
+    }
+
     socketMeta[socket.id] = {
       userId: authUser?._id,
       name: authUser?.name,
@@ -72,8 +76,9 @@ export const initSocket = (io: Server) => {
     socket.on('join:user', (userId: string) => {
       const targetUserId = authUser?._id || userId;
       if (!targetUserId) return;
-      socket.join(targetUserId);
-      socketMeta[socket.id].userId = targetUserId;
+      socket.join(String(targetUserId));
+      if (!socketMeta[socket.id]) socketMeta[socket.id] = {};
+      socketMeta[socket.id].userId = String(targetUserId);
     });
 
     // Join project room — server-authoritative presence with membership check
@@ -170,27 +175,38 @@ export const initSocket = (io: Server) => {
     });
 
     // ─── Project Chat Rooms ───
-    socket.on('chat:message', async (data: { projectId: string; sender?: any; content: string }) => {
-      const { projectId, content } = data;
+    socket.on('chat:message', async (data: { projectId: string; sender?: any; content: string; attachments?: any[] }) => {
+      const { projectId, content, attachments = [] } = data;
       const senderInfo = authUser || data.sender || socketMeta[socket.id];
       const senderId = senderInfo?._id || senderInfo?.userId;
 
-      if (!projectId || !content || !senderId) return;
+      if (!projectId || (!content && attachments.length === 0) || !senderId) return;
 
       try {
         // Encrypt message content before saving
-        const { iv, encryptedData } = encryptMessage(content);
+        const { iv, encryptedData } = encryptMessage(content || '');
+
+        const formattedAttachments = (attachments || []).map((att: any) => ({
+          _id: att._id,
+          fileId: att.fileId,
+          originalName: att.originalName,
+          mimeType: att.mimeType,
+          size: att.size,
+          uploadedBy: senderId,
+          createdAt: att.createdAt || new Date(),
+        }));
 
         const newMessage = await Message.create({
           project: projectId,
           sender: senderId,
           content: encryptedData,
           iv,
-          readBy: [],
+          attachments: formattedAttachments,
+          readBy: [{ user: senderId, readAt: new Date() }], // Sender has implicitly read their own message
           reactions: {},
         });
 
-        // Broadcast to everyone in the project room
+        // 1. Broadcast to everyone in the project room
         io.to(`project:${projectId}`).emit('chat:message:receive', {
           _id: newMessage._id,
           project: projectId,
@@ -200,12 +216,51 @@ export const initSocket = (io: Server) => {
             avatar: senderInfo?.avatar || '',
             email: senderInfo?.email || '',
           },
-          content: content,
-          readBy: [],
+          content: content || '',
+          attachments: newMessage.attachments || [],
+          readBy: [{ user: senderId, readAt: newMessage.createdAt }],
           reactions: {},
           createdAt: newMessage.createdAt,
           updatedAt: newMessage.updatedAt,
         });
+
+        // 2. Deliver unread notifications to project members (excluding sender)
+        const project = await Project.findById(projectId).select('name key members owner').lean();
+        if (project) {
+          const recipientIds = new Set<string>();
+          if (project.owner && String(project.owner) !== String(senderId)) {
+            recipientIds.add(String(project.owner));
+          }
+          if (Array.isArray(project.members)) {
+            project.members.forEach((m: any) => {
+              const mId = String(m.user || m);
+              if (mId && mId !== String(senderId)) {
+                recipientIds.add(mId);
+              }
+            });
+          }
+
+          // Emit to each recipient's user room
+          recipientIds.forEach((recipientId) => {
+            io.to(recipientId).emit('chat:new_message_notification', {
+              projectId: String(projectId),
+              projectName: project.name,
+              projectKey: project.key,
+              messageId: String(newMessage._id),
+              sender: {
+                _id: String(senderId),
+                name: senderInfo?.name || 'Team Member',
+                avatar: senderInfo?.avatar || '',
+              },
+              createdAt: newMessage.createdAt,
+            });
+
+            io.to(recipientId).emit('chat:unread:update', {
+              projectId: String(projectId),
+              increment: 1,
+            });
+          });
+        }
       } catch (err) {
         console.error('Failed to save encrypted message:', err);
       }
@@ -236,6 +291,22 @@ export const initSocket = (io: Server) => {
           }
         );
 
+        // Update read cursor
+        const lastMsgId = messageIds[messageIds.length - 1];
+        await ChatReadCursor.findOneAndUpdate(
+          { user: effectiveUserId, project: projectId },
+          { $set: { lastReadAt: now, lastReadMessageId: lastMsgId } },
+          { upsert: true }
+        );
+
+        // Sync tabs of this user
+        io.to(String(effectiveUserId)).emit('chat:read_state:sync', {
+          projectId,
+          unreadCount: 0,
+          readAt: now.toISOString(),
+        });
+
+        // Broadcast checkmark updates to project room
         io.to(`project:${projectId}`).emit('chat:message:read:update', {
           projectId,
           messageIds,

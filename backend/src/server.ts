@@ -8,8 +8,12 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import path from 'path';
+import dns from 'dns';
 
 dotenv.config();
+
+// Ensure Node.js resolves MongoDB Atlas SRV records smoothly on all networks
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // Routes
 import authRoutes from './routes/auth';
