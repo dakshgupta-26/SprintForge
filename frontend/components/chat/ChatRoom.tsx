@@ -357,24 +357,27 @@ export function ChatRoom({ projectId }: { projectId: string }) {
       }
     };
 
-    const handleReadReceiptUpdate = ({
-      messageIds,
-      userId,
-      user: readerUser,
-      readAt,
-    }: {
-      messageIds: string[];
-      userId: string;
+    const handleReadReceiptUpdate = (data: {
+      messageIds?: string[];
+      userId?: string;
       user?: any;
-      readAt: string;
+      readAt?: string;
     }) => {
+      if (!data || !data.userId) return;
+      const targetIds = Array.isArray(data.messageIds) ? new Set(data.messageIds) : null;
+      const readTimestamp = data.readAt || new Date().toISOString();
+
       setMessages((prev) =>
         prev.map((msg) => {
-          if (messageIds.includes(msg._id)) {
+          const isTarget = targetIds
+            ? targetIds.has(msg._id)
+            : new Date(msg.createdAt).getTime() <= new Date(readTimestamp).getTime() + 1000;
+
+          if (isTarget) {
             const currentReadBy = msg.readBy || [];
             const exists = currentReadBy.some((r) => {
               const rId = typeof r.user === "object" ? r.user?._id : r.user;
-              return rId === userId;
+              return String(rId) === String(data.userId);
             });
             if (!exists) {
               return {
@@ -382,8 +385,8 @@ export function ChatRoom({ projectId }: { projectId: string }) {
                 readBy: [
                   ...currentReadBy,
                   {
-                    user: readerUser || { _id: userId },
-                    readAt: readAt || new Date().toISOString(),
+                    user: data.user || { _id: data.userId },
+                    readAt: readTimestamp,
                   },
                 ],
               };

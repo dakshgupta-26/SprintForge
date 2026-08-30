@@ -25,11 +25,11 @@ import { OtpVerificationView } from "@/components/auth/OtpVerificationView";
 import { AuthErrorAlert, normalizeAuthError, AuthErrorInfo } from "@/components/auth/AuthErrorAlert";
 
 const passwordRequirements = [
-  { id: "length", label: "At least 8 characters", test: (p: string) => p.length >= 8 },
-  { id: "number", label: "Contains a number", test: (p: string) => /\d/.test(p) },
-  { id: "uppercase", label: "Contains an uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
-  { id: "lowercase", label: "Contains a lowercase letter", test: (p: string) => /[a-z]/.test(p) },
-  { id: "special", label: "Contains a special character", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+  { id: "length", label: "8+ characters", test: (p: string) => p.length >= 8 },
+  { id: "number", label: "Number (0-9)", test: (p: string) => /\d/.test(p) },
+  { id: "uppercase", label: "Uppercase (A-Z)", test: (p: string) => /[A-Z]/.test(p) },
+  { id: "lowercase", label: "Lowercase (a-z)", test: (p: string) => /[a-z]/.test(p) },
+  { id: "special", label: "Special character", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ];
 
 function calculatePasswordStrength(password: string): {
@@ -157,27 +157,27 @@ function SignupForm() {
     show: {
       opacity: 1,
       transition: {
-        staggerChildren: shouldReduceMotion ? 0 : 0.04,
-        delayChildren: shouldReduceMotion ? 0 : 0.08,
+        staggerChildren: shouldReduceMotion ? 0 : 0.03,
+        delayChildren: shouldReduceMotion ? 0 : 0.05,
       },
     },
   };
 
   const itemVariants: Variants = {
-    hidden: { opacity: 0, y: shouldReduceMotion ? 0 : 8 },
+    hidden: { opacity: 0, y: shouldReduceMotion ? 0 : 6 },
     show: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] },
+      transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] },
     },
   };
 
   return (
     <div className="w-full">
       {/* Mobile-only Branding Header */}
-      <div className="mb-5 flex lg:hidden items-center justify-between">
+      <div className="mb-4 flex lg:hidden items-center justify-between">
         <SprintForgeLogo href="/" size="sm" showBadge={true} badgeText="Agile AI" />
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-semibold">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-semibold">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span>Sprint 24 • 95%</span>
         </div>
@@ -190,7 +190,7 @@ function SignupForm() {
         className="w-full"
       >
         {/* ── 1. Status Indicator ── */}
-        <motion.div variants={itemVariants} className="flex items-center gap-2 mb-3">
+        <motion.div variants={itemVariants} className="flex items-center gap-2 mb-1.5">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px] font-bold tracking-widest font-mono uppercase">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
             <span>SprintForge Workspace</span>
@@ -198,52 +198,52 @@ function SignupForm() {
         </motion.div>
 
         {/* ── 2. Form Header ── */}
-        <motion.div variants={itemVariants} className="space-y-1 mb-5 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight font-display">
+        <motion.div variants={itemVariants} className="space-y-0.5 mb-3.5 sm:mb-4">
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
             Create your account
           </h1>
-          <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed font-normal">
+          <p className="text-xs text-slate-400 leading-relaxed font-normal">
             Start building better software in minutes.
           </p>
         </motion.div>
 
         {/* ── 3. Google Single Sign-On Button ── */}
-        <motion.div variants={itemVariants} className="mb-4 sm:mb-5">
+        <motion.div variants={itemVariants} className="mb-3 sm:mb-3.5">
           <GoogleAuthButton nextUrl={nextUrl} text="signup_with" onError={setSignupError} />
         </motion.div>
 
         {/* ── 4. Clean Modern Hairline Divider ── */}
         <motion.div
           variants={itemVariants}
-          className="relative flex items-center justify-center my-4 sm:my-5"
+          className="relative flex items-center justify-center my-3 sm:my-3.5"
         >
           <div className="border-t border-white/[0.08] w-full" />
-          <span className="bg-[#090d1f] px-3 text-[11px] text-slate-500 font-medium tracking-normal absolute">
+          <span className="bg-[#090d1f] px-3 text-[10.5px] text-slate-400 font-medium tracking-normal absolute rounded-full">
             or register with email
           </span>
         </motion.div>
 
         {/* ── 5. Registration Form ── */}
-        <form onSubmit={handleSubmit} className="space-y-3.5">
+        <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3">
           {/* Full Name Field */}
-          <motion.div variants={itemVariants} className="space-y-1.5">
+          <motion.div variants={itemVariants} className="space-y-1">
             <label
               htmlFor="name"
-              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
+              className="block text-[10.5px] font-semibold text-slate-300 uppercase tracking-wider"
             >
               Full Name
             </label>
             <div
               className={`relative rounded-xl border transition-all duration-200 ${
                 isFocused === "name"
-                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  ? "border-violet-500 shadow-[0_0_16px_rgba(124,92,255,0.2)] bg-[#0b0f24]"
                   : signupError
                   ? "border-rose-500/45 bg-rose-500/[0.02]"
-                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16]"
               }`}
             >
               <div
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
                   signupError
                     ? "text-rose-400"
                     : isFocused === "name"
@@ -266,30 +266,30 @@ function SignupForm() {
                 placeholder="Your full name"
                 required
                 autoComplete="name"
-                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+                className="w-full pl-9 sm:pl-10 pr-3.5 py-2 sm:py-2.5 bg-transparent text-white placeholder:text-slate-500 text-xs sm:text-sm focus:outline-none rounded-xl"
               />
             </div>
           </motion.div>
 
           {/* Work Email Field */}
-          <motion.div variants={itemVariants} className="space-y-1.5">
+          <motion.div variants={itemVariants} className="space-y-1">
             <label
               htmlFor="email"
-              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
+              className="block text-[10.5px] font-semibold text-slate-300 uppercase tracking-wider"
             >
               Work Email
             </label>
             <div
               className={`relative rounded-xl border transition-all duration-200 ${
                 isFocused === "email"
-                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  ? "border-violet-500 shadow-[0_0_16px_rgba(124,92,255,0.2)] bg-[#0b0f24]"
                   : signupError
                   ? "border-rose-500/45 bg-rose-500/[0.02]"
-                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16]"
               }`}
             >
               <div
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
                   signupError
                     ? "text-rose-400"
                     : isFocused === "email"
@@ -312,30 +312,30 @@ function SignupForm() {
                 placeholder="you@company.com"
                 required
                 autoComplete="email"
-                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+                className="w-full pl-9 sm:pl-10 pr-3.5 py-2 sm:py-2.5 bg-transparent text-white placeholder:text-slate-500 text-xs sm:text-sm focus:outline-none rounded-xl"
               />
             </div>
           </motion.div>
 
           {/* Password Field */}
-          <motion.div variants={itemVariants} className="space-y-1.5">
+          <motion.div variants={itemVariants} className="space-y-1">
             <label
               htmlFor="password"
-              className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider"
+              className="block text-[10.5px] font-semibold text-slate-300 uppercase tracking-wider"
             >
               Password
             </label>
             <div
               className={`relative rounded-xl border transition-all duration-200 ${
                 isFocused === "password"
-                  ? "border-violet-500 shadow-[0_0_20px_rgba(124,92,255,0.22)] bg-[#0b0f24]"
+                  ? "border-violet-500 shadow-[0_0_16px_rgba(124,92,255,0.2)] bg-[#0b0f24]"
                   : signupError
                   ? "border-rose-500/45 bg-rose-500/[0.02]"
-                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]"
+                  : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16]"
               }`}
             >
               <div
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
                   signupError
                     ? "text-rose-400"
                     : isFocused === "password"
@@ -358,52 +358,49 @@ function SignupForm() {
                 placeholder="Create a strong password"
                 required
                 autoComplete="new-password"
-                className="w-full pl-10 pr-11 py-2.5 sm:py-3 bg-transparent text-white placeholder:text-slate-500 text-sm focus:outline-none rounded-xl"
+                className="w-full pl-9 sm:pl-10 pr-10 py-2 sm:py-2.5 bg-transparent text-white placeholder:text-slate-500 text-xs sm:text-sm focus:outline-none rounded-xl"
               />
               <button
                 type="button"
                 onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors focus:outline-none cursor-pointer"
                 aria-label={showPass ? "Hide password" : "Show password"}
               >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
 
-            {/* Live Password Requirements Area */}
-            <div className="mt-2.5 space-y-2 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-              <span className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                Password requirements
+            {/* Compact 2-Column Live Password Requirements Area */}
+            <div className="mt-1.5 space-y-1.5 p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Password Requirements
               </span>
-              <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10.5px]">
                 {passwordRequirements.map((r) => {
                   const met = r.test(password);
                   return (
                     <div
                       key={r.id}
-                      className={`flex items-center gap-2 text-xs transition-colors duration-200 ${
+                      className={`flex items-center gap-1.5 transition-colors duration-150 ${
                         met ? "text-emerald-400 font-medium" : "text-slate-500"
                       }`}
                     >
                       {met ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
                       ) : (
-                        <Circle className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+                        <Circle className="w-3 h-3 text-slate-600 flex-shrink-0" />
                       )}
-                      <span>{r.label}</span>
+                      <span className="truncate">{r.label}</span>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Live Password Strength Meter */}
+              {/* Compact Strength Meter */}
               {password.length > 0 && (
-                <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400 font-medium">Password strength</span>
-                    <span className={`font-semibold ${strength.color}`}>{strength.label}</span>
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="pt-1.5 mt-1 border-t border-white/[0.06] flex items-center justify-between gap-2.5 text-[10px]">
+                  <span className="text-slate-400 font-medium whitespace-nowrap">Strength:</span>
+                  <div className="flex-1 h-1 rounded-full bg-white/[0.06] overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${strength.widthPercent}%` }}
@@ -411,31 +408,32 @@ function SignupForm() {
                       className={`h-full rounded-full ${strength.barColor}`}
                     />
                   </div>
+                  <span className={`font-semibold whitespace-nowrap ${strength.color}`}>{strength.label}</span>
                 </div>
               )}
             </div>
           </motion.div>
 
           {/* ── Contextual Inline Error & CTA Button ── */}
-          <motion.div variants={itemVariants} className="space-y-2.5 pt-1">
+          <motion.div variants={itemVariants} className="space-y-2 pt-0.5">
             <AuthErrorAlert error={signupError} />
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full relative group flex items-center justify-center gap-2 py-3 sm:py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_24px_rgba(124,92,255,0.4)] hover:shadow-[0_0_34px_rgba(124,92,255,0.65)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:translate-y-0 cursor-pointer overflow-hidden"
+              className="w-full relative group flex items-center justify-center gap-2 py-2.5 sm:py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-[0_0_20px_rgba(124,92,255,0.35)] hover:shadow-[0_0_30px_rgba(124,92,255,0.6)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:translate-y-0 cursor-pointer overflow-hidden"
             >
               <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 pointer-events-none" />
 
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
                   <span>Creating your account...</span>
                 </>
               ) : (
                 <>
                   <span>Create Account</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform duration-200" />
                 </>
               )}
             </button>
@@ -445,7 +443,7 @@ function SignupForm() {
         {/* ── 6. Switch to Login ── */}
         <motion.div
           variants={itemVariants}
-          className="text-center text-xs sm:text-sm text-slate-400 mt-4 sm:mt-5 pt-3.5 sm:pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5"
+          className="text-center text-xs text-slate-400 mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-center gap-1.5"
         >
           <span>Already have an account?</span>
           <Link
@@ -453,14 +451,14 @@ function SignupForm() {
             className="group text-violet-400 hover:text-violet-300 font-semibold transition-colors inline-flex items-center gap-0.5 hover:underline"
           >
             <span>Sign in to workspace</span>
-            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform duration-150" />
+            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform duration-150" />
           </Link>
         </motion.div>
 
         {/* ── 7. Honest Security Notice ── */}
         <motion.div
           variants={itemVariants}
-          className="text-center text-[10px] sm:text-[11px] text-slate-500 mt-3 sm:mt-3.5 flex items-center justify-center gap-2.5 sm:gap-3"
+          className="text-center text-[10px] text-slate-500 mt-2 flex items-center justify-center gap-2 sm:gap-2.5"
         >
           <span className="flex items-center gap-1 text-slate-400 font-medium">
             <Shield className="w-3 h-3 text-emerald-400" />
@@ -486,7 +484,7 @@ export default function SignupPage() {
   return (
     <div className="min-h-svh lg:h-svh w-full bg-[#05070d] text-slate-100 flex flex-col overflow-x-hidden lg:overflow-hidden relative selection:bg-violet-500/30 selection:text-white">
       {/* ─── Top Navigation Bar (Logo + Sign In Link) ─── */}
-      <header className="w-full flex-shrink-0 z-30 px-6 sm:px-8 xl:px-12 py-3.5 sm:py-4 xl:py-5 flex items-center justify-between border-b border-white/[0.03] lg:border-none">
+      <header className="w-full flex-shrink-0 z-30 px-6 sm:px-8 xl:px-12 py-3 sm:py-3.5 xl:py-4 flex items-center justify-between border-b border-white/[0.03] lg:border-none">
         <SprintForgeLogo href="/" size="md" showBadge={true} badgeText="Agile AI" priority />
         <Link
           href="/login"
@@ -498,14 +496,14 @@ export default function SignupPage() {
       </header>
 
       {/* ─── Main Content Workspace ─── */}
-      <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-12 pb-4 sm:pb-6 lg:pb-6">
-        {/* ─── Left Side: Product Showcase & Visual Story (PRESERVED) ─── */}
+      <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-12 pb-3 sm:pb-4 lg:pb-4">
+        {/* ─── Left Side: Product Showcase & Visual Story (EXACTLY PRESERVED) ─── */}
         <section className="hidden lg:flex lg:w-[56%] xl:w-[58%] 2xl:w-[60%] h-full flex-col justify-center items-start min-h-0 relative">
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.6 }}
-            className="w-full max-w-xl mb-4 xl:mb-5 flex-shrink-0 pointer-events-none"
+            className="w-full max-w-xl mb-3 xl:mb-4 flex-shrink-0 pointer-events-none"
           >
             <span className="text-[10px] xl:text-[11px] font-bold text-violet-400 uppercase tracking-widest block mb-1 font-mono">
               Autonomous Agile Engine
@@ -523,8 +521,8 @@ export default function SignupPage() {
           </div>
         </section>
 
-        {/* ─── Right Side: Premium Floating Authentication Surface ─── */}
-        <section className="w-full lg:w-[44%] xl:w-[42%] 2xl:w-[40%] flex items-center justify-center relative z-20 min-h-0 py-2 sm:py-4">
+        {/* ─── Right Side: Premium Floating Authentication Surface (Compact & Balanced) ─── */}
+        <section className="w-full lg:w-[44%] xl:w-[42%] 2xl:w-[40%] flex items-center justify-center relative z-20 min-h-0 py-1 sm:py-2">
           {/* Subtle slow ambient breathing glow behind floating card */}
           <motion.div
             animate={{
@@ -552,12 +550,12 @@ export default function SignupPage() {
             className="absolute -bottom-10 -left-10 w-[300px] h-[300px] bg-indigo-600/15 rounded-full blur-[90px] pointer-events-none -z-10"
           />
 
-          {/* Floating Authentication Card */}
+          {/* Floating Authentication Card with internal scroll fallback for extreme heights */}
           <motion.div
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 16, scale: 0.98 }}
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.45, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-[430px] bg-[#090d1f]/85 bg-[radial-gradient(ellipse_at_top_right,rgba(124,58,237,0.09),transparent_60%)] border border-white/[0.08] dark:border-white/[0.08] backdrop-blur-2xl rounded-3xl p-6 sm:p-7 xl:p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(124,92,255,0.08)] relative overflow-hidden"
+            transition={{ duration: 0.4, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full max-w-[440px] sm:max-w-[450px] max-h-[calc(100dvh-4.5rem)] lg:max-h-[calc(100dvh-5rem)] overflow-y-auto bg-[#090d1f]/90 bg-[radial-gradient(ellipse_at_top_right,rgba(124,58,237,0.09),transparent_60%)] border border-white/[0.08] dark:border-white/[0.08] backdrop-blur-2xl rounded-3xl p-5 sm:p-6 xl:p-6 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(124,92,255,0.08)] relative custom-scrollbar"
           >
             {/* Subtle Top Card Highlight */}
             <div className="absolute top-0 inset-x-12 h-[1px] bg-gradient-to-r from-transparent via-violet-400/40 to-transparent pointer-events-none" />
