@@ -7,6 +7,7 @@ export const rateLimiter = rateLimit({
   message: { message: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // Targeted rate limiter for Login to protect against credential stuffing & brute-force
@@ -17,6 +18,7 @@ export const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Only count failed attempts towards lockout
+  validate: { xForwardedForHeader: false },
 });
 
 // Targeted rate limiter for OTP verification
@@ -26,6 +28,7 @@ export const otpVerifyLimiter = rateLimit({
   message: { message: 'Too many verification attempts. Please wait a few minutes before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // Targeted rate limiter for OTP generation & resend (anti-spam / email bombing defense)
@@ -35,6 +38,7 @@ export const otpResendLimiter = rateLimit({
   message: { message: 'Too many verification code requests. Please wait a few minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // Targeted rate limiter for Password Reset requests
@@ -44,4 +48,5 @@ export const passwordResetLimiter = rateLimit({
   message: { message: 'Too many password reset requests. Please wait a few minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });

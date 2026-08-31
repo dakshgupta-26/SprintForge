@@ -6,15 +6,16 @@ let transporter: nodemailer.Transporter | null = null;
 async function getTransporter() {
   if (transporter) return transporter;
 
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpService = process.env.SMTP_SERVICE;
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const rawPass = process.env.SMTP_PASS?.trim() || '';
+  const smtpPass = rawPass.replace(/\s+/g, '');
+  const smtpHost = process.env.SMTP_HOST?.trim();
+  const smtpService = process.env.SMTP_SERVICE?.trim();
 
   const timeoutConfig = {
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
   };
 
   if (smtpUser && smtpPass) {

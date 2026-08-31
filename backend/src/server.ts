@@ -39,6 +39,9 @@ import { csrfProtection, isOriginAllowed } from './middleware/csrf';
 const app = express();
 const server = http.createServer(app);
 
+// Enable trust proxy for Railway, Render, Vercel, and Cloudflare reverse proxies
+app.set('trust proxy', 1);
+
 const corsOriginCallback = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
   callback(null, isOriginAllowed(origin));
 };
