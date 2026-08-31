@@ -19,6 +19,8 @@ interface OtpVerificationViewProps {
   tempToken?: string;
   email: string;
   maskedEmail?: string;
+  /** True when account was created but the verification email could NOT be delivered */
+  emailSendFailed?: boolean;
   onSuccess: () => void;
   onBackToLogin: () => void;
 }
@@ -27,6 +29,7 @@ export function OtpVerificationView({
   tempToken,
   email,
   maskedEmail,
+  emailSendFailed = false,
   onSuccess,
   onBackToLogin,
 }: OtpVerificationViewProps) {
@@ -35,8 +38,10 @@ export function OtpVerificationView({
   const [otpValues, setOtpValues] = useState<string[]>(["", "", "", "", "", ""]);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [cooldown, setCooldown] = useState(60);
+  // If email already failed, start with cooldown = 0 so resend is immediately available
+  const [cooldown, setCooldown] = useState(emailSendFailed ? 0 : 60);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emailDeliveryFailed, setEmailDeliveryFailed] = useState(emailSendFailed);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -169,6 +174,7 @@ export function OtpVerificationView({
       toast.success(res.message || "New verification code sent! 📬");
       setCooldown(60);
       setOtpValues(["", "", "", "", "", ""]);
+      setEmailDeliveryFailed(false); // Email succeeded on retry
       inputRefs.current[0]?.focus();
     } catch (err: any) {
       const msg = err?.response?.data?.message || "Failed to resend verification code";
@@ -193,16 +199,31 @@ export function OtpVerificationView({
         <span>Back to login</span>
       </button>
 
+      {/* Email delivery failure banner */}
+      {emailDeliveryFailed && (
+        <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-amber-200 leading-tight">Verification email could not be delivered</p>
+            <p className="text-[11px] text-amber-300/80 mt-0.5 leading-relaxed">
+              Your account is ready. Click &ldquo;Resend code&rdquo; below to try sending the email again.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-5 text-center">
         <div className="w-12 h-12 rounded-2xl bg-violet-600/15 border border-violet-500/30 flex items-center justify-center text-violet-400 mx-auto mb-3 shadow-[0_0_20px_rgba(124,58,237,0.25)]">
           <KeyRound className="w-6 h-6" />
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
-          Verify your email
+          {emailDeliveryFailed ? "Resend verification code" : "Verify your email"}
         </h2>
         <p className="text-xs text-slate-400 mt-1">
-          We&apos;ve sent a 6-digit security code to
+          {emailDeliveryFailed
+            ? "We\u2019ll resend the code to"
+            : "We\u2019ve sent a 6-digit security code to"}
         </p>
         <p className="text-xs font-mono font-bold text-violet-300 mt-0.5 px-2 py-0.5 rounded-md bg-violet-500/10 inline-block border border-violet-500/20">
           {maskedEmail || email}

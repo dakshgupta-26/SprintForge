@@ -177,6 +177,82 @@ export const register = async (req: Request, res: Response) => {
 
     const cleanEmail = email.toLowerCase().trim();
     const existingUser = await User.findOne({ email: cleanEmail });
+
+    // ── Handle existing UNVERIFIED account: allow re-registration / resend OTP ──
+    if (existingUser && existingUser.emailVerified === false) {
+      // Enforce 60-second resend cooldown to prevent email spam
+      const existingChallenge = await EmailVerificationChallenge.findOne({ userId: existingUser._id });
+      if (existingChallenge?.lastSentAt) {
+        const elapsed = Date.now() - new Date(existingChallenge.lastSentAt).getTime();
+        if (elapsed < 60000) {
+          const remainingSeconds = Math.ceil((60000 - elapsed) / 1000);
+          return res.status(429).json({
+            message: `A verification code was recently sent. Please wait ${remainingSeconds}s before requesting a new one.`,
+            remainingSeconds,
+            unverifiedAccountExists: true,
+          });
+        }
+      }
+
+      const otp = generateOtp();
+      const otpHash = hashToken(otp);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await EmailVerificationChallenge.findOneAndUpdate(
+        { userId: existingUser._id },
+        {
+          userId: existingUser._id,
+          email: existingUser.email,
+          otpHash,
+          purpose: 'FIRST_LOGIN_EMAIL_VERIFICATION',
+          expiresAt,
+          attempts: 0,
+          lastSentAt: new Date(),
+        },
+        { upsert: true, new: true }
+      );
+
+      // Await email — only tell frontend it was sent if provider actually accepted it
+      const emailResult = await sendOtpEmail({
+        to: existingUser.email,
+        name: existingUser.name,
+        otp,
+      });
+
+      if (!emailResult.success) {
+        console.error('❌ Register resend OTP email failed:', emailResult.error);
+        return res.status(503).json({
+          message: 'Unable to send verification email. Please try again in a moment.',
+          emailSendFailed: true,
+        });
+      }
+
+      console.log(`📧 Re-registration OTP resent to ${existingUser.email} (messageId: ${emailResult.messageId})`);
+
+      await logSecurityEvent({
+        userId: existingUser._id,
+        email: existingUser.email,
+        event: 'OTP_REQUESTED',
+        req,
+        details: 'Re-registration: resent OTP to unverified account',
+      });
+
+      const tempToken = jwt.sign(
+        { userId: existingUser._id.toString(), email: existingUser.email, purpose: 'FIRST_LOGIN_EMAIL_VERIFICATION' },
+        process.env.JWT_SECRET || 'secret',
+        { expiresIn: '15m' }
+      );
+
+      return res.status(200).json({
+        verificationRequired: true,
+        tempToken,
+        email: existingUser.email,
+        maskedEmail: maskEmail(existingUser.email),
+        message: 'This email has a pending verification. A new code has been sent to your inbox.',
+      });
+    }
+
+    // ── Reject fully verified duplicate accounts ──
     if (existingUser) {
       return res.status(409).json({ message: 'An account with this email already exists' });
     }
@@ -208,19 +284,53 @@ export const register = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    // Send OTP email in background so registration response is swift and reliable
-    sendOtpEmail({
+    // Await email — only tell frontend it was sent if provider actually accepted it
+    const emailResult = await sendOtpEmail({
       to: user.email,
       name: user.name,
       otp,
-    }).catch((err) => console.error('Background OTP email dispatch error:', err));
+    });
+
+    if (!emailResult.success) {
+      // Email failed — the account is created and OTP is stored, but we must
+      // tell the frontend the email was NOT delivered so it can show a retry UI
+      console.error('❌ Registration OTP email failed:', emailResult.error);
+
+      await logSecurityEvent({
+        userId: user._id,
+        email: user.email,
+        event: 'OTP_REQUESTED',
+        req,
+        status: 'failure',
+        details: `Registration OTP email failed to send: ${emailResult.error}`,
+      });
+
+      const tempToken = jwt.sign(
+        { userId: user._id.toString(), email: user.email, purpose: 'FIRST_LOGIN_EMAIL_VERIFICATION' },
+        process.env.JWT_SECRET || 'secret',
+        { expiresIn: '15m' }
+      );
+
+      // Return 207 Multi-Status: account created, but email failed
+      // Frontend must show retry UI, not a success screen
+      return res.status(207).json({
+        verificationRequired: true,
+        emailSendFailed: true,
+        tempToken,
+        email: user.email,
+        maskedEmail: maskEmail(user.email),
+        message: 'Account created, but we could not send the verification email. Please try resending.',
+      });
+    }
+
+    console.log(`📧 Registration OTP sent to ${user.email} (messageId: ${emailResult.messageId})`);
 
     await logSecurityEvent({
       userId: user._id,
       email: user.email,
       event: 'OTP_REQUESTED',
       req,
-      details: 'Account registration OTP sent',
+      details: 'Account registration OTP sent successfully',
     });
 
     const tempToken = jwt.sign(
@@ -231,6 +341,7 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({
       verificationRequired: true,
+      emailSendFailed: false,
       tempToken,
       email: user.email,
       maskedEmail: maskEmail(user.email),
@@ -554,22 +665,42 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    sendOtpEmail({
+    // Await email — propagate failure honestly to the client
+    const emailResult = await sendOtpEmail({
       to: user.email,
       name: user.name,
       otp,
-    }).catch((err) => console.error('Background OTP email dispatch error on resend:', err));
+    });
+
+    if (!emailResult.success) {
+      console.error('❌ Resend OTP email failed:', emailResult.error);
+      await logSecurityEvent({
+        userId: user._id,
+        email: user.email,
+        event: 'OTP_REQUESTED',
+        req,
+        status: 'failure',
+        details: `Resend OTP email failed: ${emailResult.error}`,
+      });
+      return res.status(503).json({
+        message: 'Unable to send verification email. Please try again in a moment.',
+        emailSendFailed: true,
+      });
+    }
+
+    console.log(`📧 Resend OTP sent to ${user.email} (messageId: ${emailResult.messageId})`);
 
     await logSecurityEvent({
       userId: user._id,
       email: user.email,
       event: 'OTP_REQUESTED',
       req,
-      details: 'Resent verification code',
+      details: 'Resent verification code successfully',
     });
 
     res.json({
       message: `A new 6-digit verification code was sent to ${maskEmail(user.email)} 📬`,
+      emailSendFailed: false,
     });
   } catch (error: any) {
     console.error('Resend OTP error:', error);

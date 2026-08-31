@@ -5,6 +5,7 @@ import { motion, useReducedMotion, Variants } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
+import { authAPI } from "@/lib/api";
 import {
   Eye,
   EyeOff,
@@ -68,7 +69,8 @@ function SignupForm() {
   const prefillEmail = searchParams.get("email");
   const shouldReduceMotion = useReducedMotion();
 
-  const { register, isLoading } = useAuthStore();
+  const { setSession } = useAuthStore();
+  const [isLoading, setIsLoading] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState(prefillEmail || "");
   const [password, setPassword] = useState("");
@@ -79,6 +81,7 @@ function SignupForm() {
     tempToken?: string;
     email: string;
     maskedEmail?: string;
+    emailSendFailed?: boolean;
   } | null>(null);
 
   const strength = calculatePasswordStrength(password);
@@ -121,21 +124,32 @@ function SignupForm() {
     }
 
     try {
-      const result = await register(name.trim(), email.trim(), password);
+      setIsLoading(true);
+      // Use authAPI directly so we can read emailSendFailed from the raw response
+      const response = await authAPI.register({ name: name.trim(), email: email.trim(), password });
+      const result = response.data;
+
       if (result.verificationRequired) {
         setVerificationState({
           tempToken: result.tempToken,
           email: result.email || email.trim(),
           maskedEmail: result.maskedEmail,
+          emailSendFailed: result.emailSendFailed === true,
         });
         return;
       }
 
+      // Verified immediately (edge case — Google users etc)
+      if (result.user) {
+        setSession(result.user);
+      }
       toast.success("Account created! Welcome to SprintForge 🚀");
       router.push(nextUrl || "/dashboard");
     } catch (err: any) {
       const normalized = normalizeAuthError(err);
       setSignupError(normalized);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -145,6 +159,7 @@ function SignupForm() {
         tempToken={verificationState.tempToken}
         email={verificationState.email}
         maskedEmail={verificationState.maskedEmail}
+        emailSendFailed={verificationState.emailSendFailed}
         onSuccess={() => router.push(nextUrl || "/dashboard")}
         onBackToLogin={() => setVerificationState(null)}
       />

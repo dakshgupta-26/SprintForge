@@ -7,7 +7,10 @@ import { AlertCircle, WifiOff, Clock, ShieldAlert, AlertTriangle } from "lucide-
 export interface AuthErrorInfo {
   title: string;
   description?: string;
-  type?: "invalid_credentials" | "rate_limit" | "network" | "unverified" | "server" | "validation";
+  type?: "invalid_credentials" | "rate_limit" | "network" | "unverified" | "server" | "validation" | "email_send_failed";
+  /** For email_send_failed: the tempToken needed to call resend */
+  tempToken?: string;
+  email?: string;
 }
 
 /**
@@ -67,6 +70,20 @@ export function normalizeAuthError(err: any): AuthErrorInfo {
       title: "Account already exists",
       description: "An account with this email already exists. Please sign in instead.",
       type: "validation",
+    };
+  }
+
+  // 3b. Email delivery failed (207 Multi-Status or 503 with emailSendFailed flag)
+  if (
+    status === 207 ||
+    status === 503 ||
+    rawMsg.includes("unable to send verification email") ||
+    rawMsg.includes("could not send the verification email")
+  ) {
+    return {
+      title: "Couldn't send verification email",
+      description: "Your account is ready, but we couldn't deliver the code. Please retry.",
+      type: "email_send_failed",
     };
   }
 
@@ -184,12 +201,35 @@ export function AuthErrorAlert({ error, className = "" }: AuthErrorAlertProps) {
         return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />;
       case "unverified":
         return <ShieldAlert className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />;
+      case "email_send_failed":
+        return <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />;
       case "server":
         return <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />;
       default:
         return <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />;
     }
   };
+
+  const isEmailFailed = errorObj.type === "email_send_failed";
+  const isUnverified = errorObj.type === "unverified";
+
+  const containerClass = isEmailFailed || errorObj.type === "rate_limit" || errorObj.type === "network"
+    ? `p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 flex items-start gap-2.5 shadow-sm text-left ${className}`
+    : isUnverified
+    ? `p-3 rounded-xl bg-violet-500/10 border border-violet-500/25 text-violet-300 flex items-start gap-2.5 shadow-sm text-left ${className}`
+    : `p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 flex items-start gap-2.5 shadow-sm text-left ${className}`;
+
+  const titleClass = isEmailFailed || errorObj.type === "rate_limit" || errorObj.type === "network"
+    ? "text-xs font-bold text-amber-200 leading-tight"
+    : isUnverified
+    ? "text-xs font-bold text-violet-200 leading-tight"
+    : "text-xs font-bold text-rose-200 leading-tight";
+
+  const descClass = isEmailFailed || errorObj.type === "rate_limit" || errorObj.type === "network"
+    ? "text-[11px] text-amber-300/80 mt-0.5 leading-relaxed"
+    : isUnverified
+    ? "text-[11px] text-violet-300/80 mt-0.5 leading-relaxed"
+    : "text-[11px] text-rose-300/80 mt-0.5 leading-relaxed";
 
   return (
     <AnimatePresence mode="wait">
@@ -200,15 +240,15 @@ export function AuthErrorAlert({ error, className = "" }: AuthErrorAlertProps) {
         transition={{ duration: 0.2, ease: "easeOut" }}
         role="alert"
         aria-live="assertive"
-        className={`p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 flex items-start gap-2.5 shadow-sm text-left ${className}`}
+        className={containerClass}
       >
         {getIcon()}
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-rose-200 leading-tight">
+          <p className={titleClass}>
             {errorObj.title}
           </p>
           {errorObj.description && (
-            <p className="text-[11px] text-rose-300/80 mt-0.5 leading-relaxed">
+            <p className={descClass}>
               {errorObj.description}
             </p>
           )}
