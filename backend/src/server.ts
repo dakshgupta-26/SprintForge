@@ -34,35 +34,19 @@ import { initSocket } from './socket';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import { mongoSanitize } from './middleware/sanitize';
-import { csrfProtection } from './middleware/csrf';
+import { csrfProtection, isOriginAllowed } from './middleware/csrf';
 
 const app = express();
 const server = http.createServer(app);
 
-const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
-  .split(',')
-  .map((url) => url.trim())
-  .filter(Boolean);
-
-const isOriginAllowed = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-  if (!origin) return callback(null, true);
-  if (
-    configuredOrigins.includes(origin) ||
-    configuredOrigins.includes('*') ||
-    origin === 'https://sprint-forge-livid.vercel.app' ||
-    origin.endsWith('.vercel.app') ||
-    origin.startsWith('http://localhost:') ||
-    origin.startsWith('http://127.0.0.1:')
-  ) {
-    return callback(null, true);
-  }
-  return callback(new Error('Not allowed by CORS policy'));
+const corsOriginCallback = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  callback(null, isOriginAllowed(origin));
 };
 
 // Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: isOriginAllowed,
+    origin: corsOriginCallback,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -87,7 +71,7 @@ app.use(
 // CORS configuration with credentials support
 app.use(
   cors({
-    origin: isOriginAllowed,
+    origin: corsOriginCallback,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-CSRF-Token'],

@@ -1,20 +1,52 @@
 import { Request, Response, NextFunction } from 'express';
 
-const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
-  .split(',')
-  .map((url) => url.trim())
-  .filter(Boolean);
+const getConfiguredOrigins = (): string[] => {
+  return (process.env.CLIENT_URL || 'http://localhost:3000')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+};
 
 export const isOriginAllowed = (origin: string | undefined): boolean => {
-  if (!origin) return true;
-  return (
-    configuredOrigins.includes(origin) ||
-    configuredOrigins.includes('*') ||
-    origin === 'https://sprint-forge-livid.vercel.app' ||
-    origin.endsWith('.vercel.app') ||
-    origin.startsWith('http://localhost:') ||
-    origin.startsWith('http://127.0.0.1:')
-  );
+  if (!origin || origin === 'null') return true;
+
+  const configuredOrigins = getConfiguredOrigins();
+  const normalized = origin.trim().replace(/\/+$/, '').toLowerCase();
+
+  if (
+    configuredOrigins.some(
+      (allowed) => allowed === '*' || allowed.trim().replace(/\/+$/, '').toLowerCase() === normalized
+    )
+  ) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.vercel.app') ||
+      hostname.endsWith('.onrender.com') ||
+      hostname === 'sprint-forge-livid.vercel.app'
+    ) {
+      return true;
+    }
+  } catch {
+    if (
+      normalized.includes('.vercel.app') ||
+      normalized.includes('.onrender.com') ||
+      normalized.includes('localhost') ||
+      normalized.includes('127.0.0.1')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
