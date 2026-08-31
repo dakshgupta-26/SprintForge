@@ -1,21 +1,76 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
-// ─── Resend HTTPS Email Configuration ──────────────────────────────────────────
-// Communicates over standard outbound HTTPS (Port 443) to https://api.resend.com.
-// This completely resolves Render's outbound SMTP port blocking (ports 25, 465, 587).
+// ─── Transporter ───────────────────────────────────────────────────────────────
+let transporter: nodemailer.Transporter | null = null;
 
-function getResendClient(): { client: Resend | null; from: string } {
-  const apiKey = process.env.RESEND_API_KEY?.trim() || '';
-  const fromEmail = process.env.EMAIL_FROM?.trim() || 'SprintForge <onboarding@resend.dev>';
+async function getTransporter() {
+  if (transporter) return transporter;
 
-  if (!apiKey || !apiKey.startsWith('re_')) {
-    return { client: null, from: fromEmail };
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpService = process.env.SMTP_SERVICE;
+
+  const timeoutConfig = {
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  };
+
+  if (smtpUser && smtpPass) {
+    if (smtpService === 'gmail' || smtpHost === 'smtp.gmail.com' || (!smtpHost && smtpUser.endsWith('@gmail.com'))) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+        ...timeoutConfig,
+      });
+      console.log(`📧 Using Gmail SMTP: ${smtpUser}`);
+    } else {
+      transporter = nodemailer.createTransport({
+        host: smtpHost || 'smtp.gmail.com',
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+        ...timeoutConfig,
+      });
+      console.log(`📧 Using SMTP: ${smtpHost} (${smtpUser})`);
+    }
+  } else {
+    // Development fallback: Ethereal (fake SMTP when no real credentials in .env)
+    console.warn('⚠️ SMTP_USER / SMTP_PASS not set in .env. Falling back to temporary Ethereal test inbox.');
+    try {
+      const testAccount = await Promise.race([
+        nodemailer.createTestAccount(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ethereal createTestAccount timeout')), 4000)),
+      ]);
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+        ...timeoutConfig,
+      });
+      console.log('📧 Ethereal test email account:', testAccount.user);
+      console.log('📧 Preview emails at: https://ethereal.email');
+    } catch (e: any) {
+      console.warn('⚠️ Failed to initialize Ethereal test inbox:', e.message);
+      // Fallback to dummy mock transport
+      transporter = nodemailer.createTransport({
+        jsonTransport: true,
+      });
+    }
   }
 
-  return { client: new Resend(apiKey), from: fromEmail };
+  return transporter;
 }
 
-// ─── Invite Email Template ────────────────────────────────────────────────────
+// ─── Email Template ────────────────────────────────────────────────────────────
 function buildInviteEmail(opts: {
   inviterName: string;
   projectName: string;
@@ -207,6 +262,52 @@ This invite expires in 7 days. If you weren't expecting this, you can safely ign
   return { html, text };
 }
 
+// ─── Send Invite Email ─────────────────────────────────────────────────────────
+export async function sendInviteEmail(opts: {
+  to: string;
+  inviterName: string;
+  projectName: string;
+  projectColor: string;
+  role: string;
+  acceptUrl: string;
+  joinCode: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const t = await getTransporter();
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const joinPageUrl = `${clientUrl}/join`;
+
+    const { html, text } = buildInviteEmail({
+      ...opts,
+      joinPageUrl,
+      recipientEmail: opts.to,
+    });
+
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
+
+    const info = await safeSendMail(t, {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: opts.to,
+      subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
+      html,
+      text,
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 Invite Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 Invite sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
+    }
+
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ Invite email send failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // ─── OTP Email Template ────────────────────────────────────────────────────────
 function buildOtpEmail(opts: {
   name: string;
@@ -250,60 +351,65 @@ function buildOtpEmail(opts: {
               <!-- Gradient Top Accent Bar -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="height:4px;background:linear-gradient(90deg,#7c3aed,#6366f1,#3b82f6);"></td>
+                  <td style="height:4px;background:linear-gradient(90deg,#7c3aed,#6366f1,#38bdf8);"></td>
                 </tr>
               </table>
 
-              <!-- Body Content -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 36px;">
+              <!-- Body Padding -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:36px 36px 28px;">
                 <tr>
                   <td>
-                    <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0 0 12px;line-height:1.3;letter-spacing:-0.3px;">
-                      Verify your email address 🔐
+                    <!-- Verification Badge -->
+                    <div style="display:inline-block;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);border-radius:9999px;padding:4px 14px;margin-bottom:18px;">
+                      <span style="color:#818cf8;font-size:12px;font-weight:700;letter-spacing:0.5px;">🔐 Account Verification</span>
+                    </div>
+
+                    <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0 0 10px;letter-spacing:-0.5px;">
+                      Your verification code
                     </h1>
 
                     <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 24px;">
-                      Hello <strong style="color:#f1f5f9;">${opts.name || 'there'}</strong>,<br/>
-                      Please use the following 6-digit verification code to complete your registration and activate your SprintForge workspace account.
+                      Hi <strong style="color:#e2e8f0;">${opts.name || 'there'}</strong>,<br/>
+                      Use the 6-digit verification code below to complete your authentication with SprintForge.
                     </p>
 
-                    <!-- OTP Display Box -->
+                    <!-- ══ OTP Code Display Box ══ -->
                     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
                       <tr>
-                        <td style="background:#070a18;border:2px dashed #7c3aed;border-radius:16px;padding:24px 16px;text-align:center;">
-                          <p style="color:#a78bfa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 10px;">
-                            Your One-Time Verification Code
-                          </p>
-                          <p style="color:#ffffff;font-size:40px;font-weight:900;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;letter-spacing:10px;margin:0 0 8px;text-shadow:0 0 20px rgba(124,58,237,0.5);">
+                        <td style="background:rgba(99,102,241,0.08);border:2px dashed rgba(99,102,241,0.4);border-radius:16px;padding:24px 20px;text-align:center;">
+                          <div style="color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">
+                            One-Time Security Passcode
+                          </div>
+                          <div style="color:#ffffff;font-size:40px;font-weight:900;letter-spacing:10px;font-family:'Courier New',Courier,monospace;text-shadow:0 0 20px rgba(99,102,241,0.6);">
                             ${opts.otp}
-                          </p>
-                          <p style="color:#64748b;font-size:12px;margin:0;">
-                            ⏱️ Valid for <strong>10 minutes</strong>
-                          </p>
+                          </div>
+                          <div style="color:#818cf8;font-size:12px;font-weight:600;margin-top:10px;">
+                            ⏱️ Valid for 10 minutes
+                          </div>
                         </td>
                       </tr>
                     </table>
 
-                    <!-- Security Alert Callout -->
-                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                    <!-- Security Alert Note -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
                       <tr>
-                        <td style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:14px 16px;">
-                          <p style="color:#cbd5e1;font-size:12px;line-height:1.5;margin:0;">
-                            🔒 <strong>Security tip:</strong> SprintForge will never ask for your password or verification code in an unsolicited email or message. Never share this code with anyone.
+                        <td style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:12px 16px;">
+                          <p style="color:#fca5a5;font-size:12px;line-height:1.5;margin:0;">
+                            🛡️ <strong>Security Tip:</strong> Never share this code with anyone. SprintForge will never ask for your code over chat or call.
                           </p>
                         </td>
                       </tr>
                     </table>
 
-                    <p style="color:#64748b;font-size:12px;line-height:1.6;margin:0;">
-                      If you didn't create an account on SprintForge, you can safely ignore this email.
+                    <p style="color:#64748b;font-size:12px;line-height:1.5;margin:0;">
+                      If you did not request this verification, you can safely ignore this email. No changes will be made to your account.
                     </p>
                   </td>
                 </tr>
               </table>
 
               <!-- Footer -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="padding:20px 36px;border-top:1px solid rgba(255,255,255,0.06);background:#0a0e22;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:18px 36px;border-top:1px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.2);">
                 <tr>
                   <td>
                     <p style="color:#475569;font-size:11px;margin:0;line-height:1.5;">
@@ -329,7 +435,7 @@ Verify your SprintForge account 🔐
 
 Hello ${opts.name || 'there'},
 
-Your 6-digit verification code is:
+Your 6-digit one-time verification code is:
 
 ${opts.otp}
 
@@ -339,6 +445,69 @@ If you did not request this verification, you can safely ignore this email.
 `.trim();
 
   return { html, text };
+}
+
+async function safeSendMail(
+  t: nodemailer.Transporter,
+  mailOptions: nodemailer.SendMailOptions,
+  timeoutMs = 12000
+): Promise<any> {
+  return Promise.race([
+    t.sendMail(mailOptions),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`SMTP sendMail timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
+// ─── Send OTP Email ───────────────────────────────────────────────────────────
+export async function sendOtpEmail(opts: {
+  to: string;
+  name: string;
+  otp: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const t = await getTransporter();
+    const { html, text } = buildOtpEmail({
+      name: opts.name,
+      otp: opts.otp,
+      recipientEmail: opts.to,
+    });
+
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
+
+    const info = await safeSendMail(t, {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: opts.to,
+      subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
+      html,
+      text,
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 OTP Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 OTP sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
+    }
+
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ OTP email send failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Alias for sendOtpEmail to provide standard verification naming.
+ */
+export async function sendVerificationEmail(opts: {
+  to: string;
+  name: string;
+  otp: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  return sendOtpEmail(opts);
 }
 
 // ─── Password Reset Email Template ────────────────────────────────────────────
@@ -467,135 +636,41 @@ If you did not request this, you can safely ignore this email.
   return { html, text };
 }
 
-// ─── Helper: Send Email via Resend HTTPS API ──────────────────────────────────
-async function sendViaResend(msg: {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-}): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { client, from } = getResendClient();
-
-  if (!client) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`\n[Resend DEV SIMULATION] ──────────────────────────────────`);
-      console.log(`To: ${msg.to}`);
-      console.log(`From: ${from}`);
-      console.log(`Subject: ${msg.subject}`);
-      console.log(`Note: Valid RESEND_API_KEY starting with "re_" not configured in .env.`);
-      console.log(`──────────────────────────────────────────────────────────\n`);
-      return { success: true, messageId: 'simulated_dev_id' };
-    }
-    const errMsg = 'RESEND_API_KEY is not configured on the server. Please configure RESEND_API_KEY in Render environment variables.';
-    console.error(`❌ Resend Error: ${errMsg}`);
-    return { success: false, error: errMsg };
-  }
-
-  try {
-    console.log(`📧 [Resend HTTPS] Dispatching email to ${msg.to} (Subject: "${msg.subject}")...`);
-    const { data, error } = await client.emails.send({
-      from,
-      to: msg.to,
-      subject: msg.subject,
-      html: msg.html,
-      text: msg.text,
-    });
-
-    if (error) {
-      console.error(`❌ [Resend HTTPS Error]: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-
-    console.log(`✅ [Resend] Email successfully accepted (messageId: ${data?.id})`);
-    return { success: true, messageId: data?.id };
-  } catch (err: any) {
-    console.error(`❌ [Resend API Request failed]: ${err.message}`);
-    return { success: false, error: err.message };
-  }
-}
-
-// ─── Exported Email Service Methods ───────────────────────────────────────────
-
-/**
- * Sends a 6-digit OTP verification email via Resend HTTPS REST API.
- */
-export async function sendOtpEmail(opts: {
-  to: string;
-  name: string;
-  otp: string;
-}): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { html, text } = buildOtpEmail({
-    name: opts.name,
-    otp: opts.otp,
-    recipientEmail: opts.to,
-  });
-
-  return sendViaResend({
-    to: opts.to,
-    subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
-    html,
-    text,
-  });
-}
-
-/**
- * Alias for sendOtpEmail to provide standard verification naming.
- */
-export async function sendVerificationEmail(opts: {
-  to: string;
-  name: string;
-  otp: string;
-}): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  return sendOtpEmail(opts);
-}
-
-/**
- * Sends a password reset link email via Resend HTTPS REST API.
- */
+// ─── Send Password Reset Email ────────────────────────────────────────────────
 export async function sendPasswordResetEmail(opts: {
   to: string;
   name: string;
   resetUrl: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { html, text } = buildPasswordResetEmail({
-    name: opts.name,
-    resetUrl: opts.resetUrl,
-    recipientEmail: opts.to,
-  });
+  try {
+    const t = await getTransporter();
+    const { html, text } = buildPasswordResetEmail({
+      name: opts.name,
+      resetUrl: opts.resetUrl,
+      recipientEmail: opts.to,
+    });
 
-  return sendViaResend({
-    to: opts.to,
-    subject: `Reset your SprintForge password 🔒`,
-    html,
-    text,
-  });
-}
+    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
 
-/**
- * Sends a project invite email with join code and accept URL via Resend HTTPS REST API.
- */
-export async function sendInviteEmail(opts: {
-  to: string;
-  inviterName: string;
-  projectName: string;
-  projectColor: string;
-  role: string;
-  acceptUrl: string;
-  joinCode: string;
-}): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-  const joinPageUrl = `${clientUrl}/join`;
+    const info = await safeSendMail(t, {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: opts.to,
+      subject: `Reset your SprintForge password 🔒`,
+      html,
+      text,
+    });
 
-  const { html, text } = buildInviteEmail({
-    ...opts,
-    joinPageUrl,
-    recipientEmail: opts.to,
-  });
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 Password Reset Email preview: ${previewUrl}`);
+    } else {
+      console.log(`📧 Password reset email sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
+    }
 
-  return sendViaResend({
-    to: opts.to,
-    subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
-    html,
-    text,
-  });
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ Password reset email send failed:', err.message);
+    return { success: false, error: err.message };
+  }
 }
