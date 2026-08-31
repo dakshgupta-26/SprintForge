@@ -399,18 +399,10 @@ export const login = async (req: Request, res: Response) => {
         { upsert: true, new: true }
       );
 
-      sendOtpEmail({
+      const emailResult = await sendOtpEmail({
         to: user.email,
         name: user.name,
         otp,
-      }).catch((err) => console.error('Background OTP email dispatch error on login:', err));
-
-      await logSecurityEvent({
-        userId: user._id,
-        email: user.email,
-        event: 'OTP_REQUESTED',
-        req,
-        details: 'Login unverified email challenge triggered',
       });
 
       const tempToken = jwt.sign(
@@ -419,12 +411,46 @@ export const login = async (req: Request, res: Response) => {
         { expiresIn: '15m' }
       );
 
+      if (!emailResult.success) {
+        console.error('❌ Login OTP email dispatch failed:', emailResult.error);
+        await logSecurityEvent({
+          userId: user._id,
+          email: user.email,
+          event: 'OTP_REQUESTED',
+          req,
+          status: 'failure',
+          details: `Login OTP email failed: ${emailResult.error}`,
+        });
+
+        return res.status(200).json({
+          code: 'EMAIL_NOT_VERIFIED',
+          verificationRequired: true,
+          emailSendFailed: true,
+          tempToken,
+          email: user.email,
+          maskedEmail: maskEmail(user.email),
+          message: 'Please verify your email before signing in. We could not deliver the verification code automatically. Please click resend.',
+        });
+      }
+
+      console.log(`📧 Login OTP sent to ${user.email} (messageId: ${emailResult.messageId})`);
+
+      await logSecurityEvent({
+        userId: user._id,
+        email: user.email,
+        event: 'OTP_REQUESTED',
+        req,
+        details: 'Login unverified email challenge triggered and OTP dispatched',
+      });
+
       return res.json({
+        code: 'EMAIL_NOT_VERIFIED',
         verificationRequired: true,
+        emailSendFailed: false,
         tempToken,
         email: user.email,
         maskedEmail: maskEmail(user.email),
-        message: 'First-time verification required. A 6-digit code has been sent to your email.',
+        message: 'Please verify your email before signing in. A 6-digit code has been sent to your email.',
       });
     }
 

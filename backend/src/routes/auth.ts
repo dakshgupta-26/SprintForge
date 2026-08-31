@@ -37,7 +37,9 @@ router.post('/register', register);
 router.post('/login', loginLimiter, login);
 router.post('/google', googleAuth);
 router.post('/verify-email-otp', otpVerifyLimiter, verifyEmailOtp);
+router.post('/verify-otp', otpVerifyLimiter, verifyEmailOtp);
 router.post('/resend-email-otp', otpResendLimiter, resendEmailOtp);
+router.post('/resend-otp', otpResendLimiter, resendEmailOtp);
 router.post('/refresh', refreshToken);
 
 // Password Recovery
