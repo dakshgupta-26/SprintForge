@@ -308,7 +308,7 @@ export const markConversationAsRead = async (req: any, res: Response) => {
       }
     }
 
-    await ChatReadCursor.findOneAndUpdate(cursorQuery, { $set: cursorUpdate }, { upsert: true, new: true });
+    await ChatReadCursor.findOneAndUpdate(cursorQuery, { $set: cursorUpdate }, { upsert: true, returnDocument: 'after' });
 
     // 2. Mark all messages in this project as read by this user
     const messageFilter: any = {

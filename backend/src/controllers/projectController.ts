@@ -116,7 +116,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
-    const updated = await Project.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const updated = await Project.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
     res.json(updated);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

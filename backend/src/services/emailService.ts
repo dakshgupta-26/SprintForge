@@ -1,67 +1,189 @@
 import nodemailer from 'nodemailer';
 
-// ─── Transporter ───────────────────────────────────────────────────────────────
+// ─── Environment Helpers ──────────────────────────────────────────────────────
+function cleanEnvValue(val?: string): string {
+  if (!val) return '';
+  return val.trim().replace(/^["']|["']$/g, '').trim();
+}
+
+function cleanAppPassword(val?: string): string {
+  if (!val) return '';
+  // Strip outer quotes and any internal whitespace (e.g. "xxxx xxxx xxxx xxxx" -> "xxxxxxxxxxxxxxxx")
+  return val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+
+export interface SmtpCredentials {
+  user: string;
+  pass: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  fromEmail: string;
+  fromName: string;
+  isConfigured: boolean;
+}
+
+export function resolveSmtpConfig(): SmtpCredentials {
+  const user = cleanEnvValue(process.env.GMAIL_USER || process.env.SMTP_USER);
+  const pass = cleanAppPassword(process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS);
+  const host = cleanEnvValue(process.env.SMTP_HOST) || 'smtp.gmail.com';
+  const customPort = parseInt(cleanEnvValue(process.env.SMTP_PORT), 10);
+
+  // Preferred production config for Gmail on Railway / Cloud:
+  // Port 465 with direct SSL/TLS (secure: true) avoids port 587 STARTTLS round-trip issues and IPv6 hangs
+  const isGmail = host === 'smtp.gmail.com' || cleanEnvValue(process.env.SMTP_SERVICE) === 'gmail' || user.endsWith('@gmail.com');
+  const port = isGmail ? (customPort || 465) : (customPort || 587);
+  const secure = isGmail
+    ? (process.env.SMTP_SECURE === 'false' ? false : (port === 465))
+    : (process.env.SMTP_SECURE === 'true' || port === 465);
+
+  const fromEmail = cleanEnvValue(process.env.SMTP_FROM) || user || 'noreply@sprintforge.io';
+  const fromName = cleanEnvValue(process.env.SMTP_FROM_NAME) || 'SprintForge';
+
+  return {
+    user,
+    pass,
+    host,
+    port,
+    secure,
+    fromEmail,
+    fromName,
+    isConfigured: Boolean(user && pass),
+  };
+}
+
+// ─── Error Diagnostics (Sanitized - Never Logs Secrets) ───────────────────────
+export function sanitizeEmailError(err: any): { category: string; message: string; safeDiagnostic: string } {
+  const rawMessage = (err?.message || '').toLowerCase();
+  const code = (err?.code || '').toUpperCase();
+  const responseCode = err?.responseCode;
+
+  if (
+    code === 'EAUTH' ||
+    responseCode === 535 ||
+    rawMessage.includes('invalid login') ||
+    rawMessage.includes('badcredentials') ||
+    rawMessage.includes('username and password not accepted') ||
+    rawMessage.includes('application-specific password required')
+  ) {
+    return {
+      category: 'SMTP_AUTH_FAILED',
+      message: 'SMTP authentication failed. Please verify the Gmail App Password.',
+      safeDiagnostic: 'Email authentication failed',
+    };
+  }
+
+  if (
+    code === 'ETIMEDOUT' ||
+    code === 'ESOCKETTIMEDOUT' ||
+    rawMessage.includes('timed out') ||
+    rawMessage.includes('timeout')
+  ) {
+    return {
+      category: 'SMTP_CONNECTION_TIMEOUT',
+      message: 'SMTP connection timed out.',
+      safeDiagnostic: 'SMTP connection timed out',
+    };
+  }
+
+  if (
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ENETUNREACH'
+  ) {
+    return {
+      category: 'SMTP_CONNECTION_FAILED',
+      message: 'Unable to connect to SMTP server.',
+      safeDiagnostic: 'Email transport connection failed',
+    };
+  }
+
+  if (
+    code === 'ESOCKET' ||
+    rawMessage.includes('tls') ||
+    rawMessage.includes('ssl') ||
+    rawMessage.includes('certificate') ||
+    rawMessage.includes('handshake')
+  ) {
+    return {
+      category: 'SMTP_TLS_FAILED',
+      message: 'SMTP TLS handshake failed.',
+      safeDiagnostic: 'TLS connection failure',
+    };
+  }
+
+  if (responseCode === 550 || responseCode === 553 || rawMessage.includes('recipient')) {
+    return {
+      category: 'SMTP_RECIPIENT_REJECTED',
+      message: 'Recipient email was rejected.',
+      safeDiagnostic: 'Recipient address rejected',
+    };
+  }
+
+  if (responseCode === 554 || rawMessage.includes('sender')) {
+    return {
+      category: 'SMTP_SENDER_REJECTED',
+      message: 'Sender email was rejected.',
+      safeDiagnostic: 'Gmail rejected sender',
+    };
+  }
+
+  return {
+    category: 'SMTP_GENERAL_FAILURE',
+    message: 'Email delivery failed.',
+    safeDiagnostic: 'Email delivery failed',
+  };
+}
+
+// ─── Transporter Singleton ───────────────────────────────────────────────────
 let transporter: nodemailer.Transporter | null = null;
 
-async function getTransporter() {
+export async function getTransporter(): Promise<nodemailer.Transporter> {
   if (transporter) return transporter;
 
-  const smtpUser = process.env.SMTP_USER?.trim();
-  const rawPass = process.env.SMTP_PASS?.trim() || '';
-  const smtpPass = rawPass.replace(/\s+/g, '');
-  const smtpHost = process.env.SMTP_HOST?.trim();
-  const smtpService = process.env.SMTP_SERVICE?.trim();
+  const config = resolveSmtpConfig();
 
-  const timeoutConfig = {
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
-  };
-
-  if (smtpUser && smtpPass) {
-    if (smtpService === 'gmail' || smtpHost === 'smtp.gmail.com' || (!smtpHost && smtpUser.endsWith('@gmail.com'))) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        ...timeoutConfig,
-      });
-      console.log(`📧 Using Gmail SMTP: ${smtpUser}`);
-    } else {
-      transporter = nodemailer.createTransport({
-        host: smtpHost || 'smtp.gmail.com',
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        ...timeoutConfig,
-      });
-      console.log(`📧 Using SMTP: ${smtpHost} (${smtpUser})`);
-    }
+  if (config.isConfigured) {
+    transporter = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: {
+        user: config.user,
+        pass: config.pass,
+      },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
+    });
+    console.log(`📧 Email service configured: using Gmail SMTP (${config.user})`);
   } else {
     // Development fallback: Ethereal (fake SMTP when no real credentials in .env)
-    console.warn('⚠️ SMTP_USER / SMTP_PASS not set in .env. Falling back to temporary Ethereal test inbox.');
+    console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD not set in environment. Falling back to temporary Ethereal test inbox.');
     try {
       const testAccount = await Promise.race([
         nodemailer.createTestAccount(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ethereal createTestAccount timeout')), 4000)),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Ethereal createTestAccount timeout')), 4000)
+        ),
       ]);
       transporter = nodemailer.createTransport({
         host: 'smtp.ethereal.email',
         port: 587,
         secure: false,
         auth: { user: testAccount.user, pass: testAccount.pass },
-        ...timeoutConfig,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
       });
       console.log('📧 Ethereal test email account:', testAccount.user);
       console.log('📧 Preview emails at: https://ethereal.email');
     } catch (e: any) {
       console.warn('⚠️ Failed to initialize Ethereal test inbox:', e.message);
-      // Fallback to dummy mock transport
       transporter = nodemailer.createTransport({
         jsonTransport: true,
       });
@@ -71,7 +193,73 @@ async function getTransporter() {
   return transporter;
 }
 
-// ─── Email Template ────────────────────────────────────────────────────────────
+// ─── Startup Verification ────────────────────────────────────────────────────
+export async function verifyEmailTransporter(): Promise<{ success: boolean; message: string }> {
+  try {
+    const config = resolveSmtpConfig();
+    if (!config.isConfigured) {
+      console.warn('⚠️ Email service not configured: missing GMAIL_USER or GMAIL_APP_PASSWORD');
+      return { success: false, message: 'Missing environment variables' };
+    }
+
+    const t = await getTransporter();
+    await t.verify();
+    console.log('✅ Email service configured: SMTP connection verified');
+    return { success: true, message: 'SMTP connection verified' };
+  } catch (err: any) {
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ SMTP verification failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, message: diagnostic.safeDiagnostic };
+  }
+}
+
+// ─── Safe Health Check Status ─────────────────────────────────────────────────
+export async function getEmailHealthStatus(): Promise<{
+  configured: boolean;
+  provider: string;
+  status: 'healthy' | 'degraded' | 'unconfigured';
+}> {
+  const config = resolveSmtpConfig();
+  if (!config.isConfigured) {
+    return {
+      configured: false,
+      provider: 'gmail',
+      status: 'unconfigured',
+    };
+  }
+
+  try {
+    const t = await getTransporter();
+    await t.verify();
+    return {
+      configured: true,
+      provider: 'gmail',
+      status: 'healthy',
+    };
+  } catch {
+    return {
+      configured: true,
+      provider: 'gmail',
+      status: 'degraded',
+    };
+  }
+}
+
+// ─── Safe Send Helper with Sensible Production Timeout ─────────────────────────
+async function safeSendMail(
+  t: nodemailer.Transporter,
+  mailOptions: nodemailer.SendMailOptions,
+  timeoutMs = 30000
+): Promise<any> {
+  return Promise.race([
+    t.sendMail(mailOptions),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`SMTP sendMail timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
+// ─── Invite Email Template ────────────────────────────────────────────────────
 function buildInviteEmail(opts: {
   inviterName: string;
   projectName: string;
@@ -275,6 +463,7 @@ export async function sendInviteEmail(opts: {
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const t = await getTransporter();
+    const config = resolveSmtpConfig();
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     const joinPageUrl = `${clientUrl}/join`;
 
@@ -284,11 +473,8 @@ export async function sendInviteEmail(opts: {
       recipientEmail: opts.to,
     });
 
-    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
-
     const info = await safeSendMail(t, {
-      from: `"${fromName}" <${fromEmail}>`,
+      from: `"${config.fromName}" <${config.fromEmail}>`,
       to: opts.to,
       subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
       html,
@@ -304,8 +490,9 @@ export async function sendInviteEmail(opts: {
 
     return { success: true, messageId: info?.messageId };
   } catch (err: any) {
-    console.error('❌ Invite email send failed:', err.message);
-    return { success: false, error: err.message };
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ Invite email send failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, error: diagnostic.safeDiagnostic };
   }
 }
 
@@ -448,19 +635,6 @@ If you did not request this verification, you can safely ignore this email.
   return { html, text };
 }
 
-async function safeSendMail(
-  t: nodemailer.Transporter,
-  mailOptions: nodemailer.SendMailOptions,
-  timeoutMs = 12000
-): Promise<any> {
-  return Promise.race([
-    t.sendMail(mailOptions),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`SMTP sendMail timed out after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-}
-
 // ─── Send OTP Email ───────────────────────────────────────────────────────────
 export async function sendOtpEmail(opts: {
   to: string;
@@ -469,17 +643,16 @@ export async function sendOtpEmail(opts: {
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const t = await getTransporter();
+    const config = resolveSmtpConfig();
+
     const { html, text } = buildOtpEmail({
       name: opts.name,
       otp: opts.otp,
       recipientEmail: opts.to,
     });
 
-    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
-
     const info = await safeSendMail(t, {
-      from: `"${fromName}" <${fromEmail}>`,
+      from: `"${config.fromName}" <${config.fromEmail}>`,
       to: opts.to,
       subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
       html,
@@ -495,13 +668,25 @@ export async function sendOtpEmail(opts: {
 
     return { success: true, messageId: info?.messageId };
   } catch (err: any) {
-    console.error('❌ OTP email send failed:', err.message);
-    return { success: false, error: err.message };
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ OTP email send failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, error: diagnostic.safeDiagnostic };
   }
 }
 
 /**
- * Alias for sendOtpEmail to provide standard verification naming.
+ * Standard alias for sendOtpEmail
+ */
+export async function sendVerificationOtp(opts: {
+  to: string;
+  name: string;
+  otp: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  return sendOtpEmail(opts);
+}
+
+/**
+ * Backward compatibility alias for sendOtpEmail
  */
 export async function sendVerificationEmail(opts: {
   to: string;
@@ -645,17 +830,16 @@ export async function sendPasswordResetEmail(opts: {
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const t = await getTransporter();
+    const config = resolveSmtpConfig();
+
     const { html, text } = buildPasswordResetEmail({
       name: opts.name,
       resetUrl: opts.resetUrl,
       recipientEmail: opts.to,
     });
 
-    const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
-
     const info = await safeSendMail(t, {
-      from: `"${fromName}" <${fromEmail}>`,
+      from: `"${config.fromName}" <${config.fromEmail}>`,
       to: opts.to,
       subject: `Reset your SprintForge password 🔒`,
       html,
@@ -671,7 +855,51 @@ export async function sendPasswordResetEmail(opts: {
 
     return { success: true, messageId: info?.messageId };
   } catch (err: any) {
-    console.error('❌ Password reset email send failed:', err.message);
-    return { success: false, error: err.message };
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ Password reset email send failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, error: diagnostic.safeDiagnostic };
+  }
+}
+
+// ─── Send Security Notification Email ─────────────────────────────────────────
+export async function sendSecurityEmail(opts: {
+  to: string;
+  name: string;
+  subject: string;
+  message: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const t = await getTransporter();
+    const config = resolveSmtpConfig();
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>${opts.subject}</title></head>
+<body style="margin:0;padding:20px;background:#0f0f13;color:#e2e8f0;font-family:sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#1a1a24;border-radius:16px;padding:32px;border:1px solid #2a2a3a;">
+    <tr><td>
+      <h2 style="color:#ffffff;margin:0 0 16px;">Security Notice</h2>
+      <p style="color:#94a3b8;font-size:14px;line-height:1.6;">Hi ${opts.name || 'there'},</p>
+      <p style="color:#e2e8f0;font-size:14px;line-height:1.6;">${opts.message}</p>
+      <p style="color:#64748b;font-size:12px;margin-top:24px;">SprintForge Security Team</p>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const info = await safeSendMail(t, {
+      from: `"${config.fromName}" <${config.fromEmail}>`,
+      to: opts.to,
+      subject: opts.subject,
+      html,
+      text: opts.message,
+    });
+
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ Security email send failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, error: diagnostic.safeDiagnostic };
   }
 }

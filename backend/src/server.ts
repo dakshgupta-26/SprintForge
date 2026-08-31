@@ -111,11 +111,25 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/messages', messageRoutes);
 
 // Health checks
+import { verifyEmailTransporter, getEmailHealthStatus } from './services/emailService';
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+app.get('/api/health/email', async (req, res) => {
+  try {
+    const emailStatus = await getEmailHealthStatus();
+    res.json(emailStatus);
+  } catch {
+    res.status(500).json({
+      configured: false,
+      provider: 'gmail',
+      status: 'degraded',
+    });
+  }
 });
 
 // Centralized error handler
@@ -126,12 +140,17 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/sprint
 
 mongoose
   .connect(MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('✅ MongoDB connected');
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       console.log(`🚀 SprintForge API running on http://localhost:${PORT}`);
       console.log(`🔌 Socket.IO ready`);
+    });
+
+    // Verify SMTP connection on backend startup without blocking port listening
+    verifyEmailTransporter().catch((err) => {
+      console.warn('⚠️ Non-blocking SMTP startup check error:', err?.message || err);
     });
   })
   .catch((err) => {
@@ -140,3 +159,4 @@ mongoose
   });
 
 export default app;
+

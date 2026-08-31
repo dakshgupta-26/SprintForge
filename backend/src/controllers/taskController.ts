@@ -119,7 +119,7 @@ export const updateTask = async (req: AuthRequest, res: Response): Promise<void>
     const task = await Task.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     )
       .populate('assignees', 'name avatar email')
       .populate('reporter',  'name avatar');
@@ -147,7 +147,7 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response): Promise
         boardOrder,
         ...(status === 'done' ? { completedAt: new Date() } : {}),
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('assignees', 'name avatar');
 
     if (!task) { res.status(404).json({ message: 'Task not found' }); return; }

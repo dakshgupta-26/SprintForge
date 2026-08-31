@@ -9,7 +9,7 @@ import EmailVerificationChallenge from '../models/EmailVerificationChallenge';
 import Session from '../models/Session';
 import PasswordResetToken from '../models/PasswordResetToken';
 import SecurityLog, { SecurityEventType } from '../models/SecurityLog';
-import { sendOtpEmail, sendPasswordResetEmail } from '../services/emailService';
+import { sendOtpEmail, sendPasswordResetEmail, sendVerificationOtp } from '../services/emailService';
 import { parseDeviceInfo } from '../utils/deviceInfo';
 import {
   getProfileImagesBucket,
@@ -209,7 +209,7 @@ export const register = async (req: Request, res: Response) => {
           attempts: 0,
           lastSentAt: new Date(),
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       // Await email — only tell frontend it was sent if provider actually accepted it
@@ -281,7 +281,7 @@ export const register = async (req: Request, res: Response) => {
         attempts: 0,
         lastSentAt: new Date(),
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // Await email — only tell frontend it was sent if provider actually accepted it
@@ -396,7 +396,7 @@ export const login = async (req: Request, res: Response) => {
           attempts: 0,
           lastSentAt: new Date(),
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       const emailResult = await sendOtpEmail({
@@ -688,7 +688,7 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
         attempts: 0,
         lastSentAt: new Date(),
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // Await email — propagate failure honestly to the client
@@ -1260,7 +1260,7 @@ export const updateProfile = async (req: any, res: Response) => {
           timezone,
           language,
         },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
       return res.json(sanitizeUser(updated));
     }
@@ -1268,7 +1268,7 @@ export const updateProfile = async (req: any, res: Response) => {
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { name, bio, title, avatar, location, website, timezone, language },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
     res.json(sanitizeUser(user));
   } catch (error: any) {

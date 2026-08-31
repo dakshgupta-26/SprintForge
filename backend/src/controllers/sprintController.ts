@@ -46,7 +46,7 @@ export const updateSprint = async (req: AuthRequest, res: Response) => {
     if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
       return res.status(400).json({ message: 'End date must be after start date' });
     }
-    const sprint = await Sprint.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const sprint = await Sprint.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     if (!sprint) return res.status(404).json({ message: 'Sprint not found' });
     res.json(sprint);
   } catch (error: any) {
@@ -56,7 +56,7 @@ export const updateSprint = async (req: AuthRequest, res: Response) => {
 
 export const startSprint = async (req: AuthRequest, res: Response) => {
   try {
-    const sprint = await Sprint.findByIdAndUpdate(req.params.id, { status: 'active' }, { new: true });
+    const sprint = await Sprint.findByIdAndUpdate(req.params.id, { status: 'active' }, { returnDocument: 'after' });
     if (!sprint) return res.status(404).json({ message: 'Sprint not found' });
     // Calculate total story points
     const tasks = await Task.find({ sprint: sprint._id });

@@ -150,7 +150,7 @@ export function OtpVerificationView({
 
     try {
       await verifyEmailOtp(tempToken || "", code, email);
-      toast.success("Email verified! Welcome to SprintForge 🚀");
+      toast.success("Email verified! Your account is ready 🚀");
       onSuccess();
     } catch (err: any) {
       const msg = err?.response?.data?.message || "Invalid verification code. Please try again.";
@@ -171,13 +171,13 @@ export function OtpVerificationView({
 
     try {
       const res = await resendEmailOtp(tempToken || "", email);
-      toast.success(res.message || "New verification code sent! 📬");
+      toast.success(res.message || "We sent a 6-digit verification code to your email. 📬");
       setCooldown(60);
       setOtpValues(["", "", "", "", "", ""]);
       setEmailDeliveryFailed(false); // Email succeeded on retry
       inputRefs.current[0]?.focus();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to resend verification code";
+      const msg = err?.response?.data?.message || "We couldn't send the verification email. Please try again.";
       toast.error(msg);
       if (err?.response?.data?.remainingSeconds) {
         setCooldown(err.response.data.remainingSeconds);
@@ -204,9 +204,9 @@ export function OtpVerificationView({
         <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-amber-200 leading-tight">Verification email could not be delivered</p>
+            <p className="text-xs font-bold text-amber-200 leading-tight">We couldn&apos;t send the verification email</p>
             <p className="text-[11px] text-amber-300/80 mt-0.5 leading-relaxed">
-              Your account is ready. Click &ldquo;Resend code&rdquo; below to try sending the email again.
+              Please try again in a moment. Click &ldquo;Resend code&rdquo; below to send a new code.
             </p>
           </div>
         </div>
@@ -218,12 +218,12 @@ export function OtpVerificationView({
           <KeyRound className="w-6 h-6" />
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight font-display">
-          {emailDeliveryFailed ? "Resend verification code" : "Verify your email"}
+          {emailDeliveryFailed ? "Verify your email" : "Check your inbox"}
         </h2>
         <p className="text-xs text-slate-400 mt-1">
           {emailDeliveryFailed
-            ? "We\u2019ll resend the code to"
-            : "We\u2019ve sent a 6-digit security code to"}
+            ? "Please request a verification code for"
+            : "We sent a 6-digit verification code to"}
         </p>
         <p className="text-xs font-mono font-bold text-violet-300 mt-0.5 px-2 py-0.5 rounded-md bg-violet-500/10 inline-block border border-violet-500/20">
           {maskedEmail || email}

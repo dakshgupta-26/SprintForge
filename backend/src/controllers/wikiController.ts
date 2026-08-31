@@ -45,7 +45,7 @@ export const updateWiki = async (req: AuthRequest, res: Response) => {
     const wiki = await Wiki.findByIdAndUpdate(
       req.params.id,
       { ...req.body, lastEditedBy: req.user._id, $inc: { version: 1 } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!wiki) return res.status(404).json({ message: 'Wiki not found' });
     res.json(wiki);
