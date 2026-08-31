@@ -178,7 +178,7 @@ export const register = async (req: Request, res: Response) => {
     const cleanEmail = email.toLowerCase().trim();
     const existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
-      return res.status(400).json({ message: 'An account with this email already exists' });
+      return res.status(409).json({ message: 'An account with this email already exists' });
     }
 
     const user = await User.create({
@@ -208,11 +208,12 @@ export const register = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    await sendOtpEmail({
+    // Send OTP email in background so registration response is swift and reliable
+    sendOtpEmail({
       to: user.email,
       name: user.name,
       otp,
-    });
+    }).catch((err) => console.error('Background OTP email dispatch error:', err));
 
     await logSecurityEvent({
       userId: user._id,
@@ -287,11 +288,11 @@ export const login = async (req: Request, res: Response) => {
         { upsert: true, new: true }
       );
 
-      await sendOtpEmail({
+      sendOtpEmail({
         to: user.email,
         name: user.name,
         otp,
-      });
+      }).catch((err) => console.error('Background OTP email dispatch error on login:', err));
 
       await logSecurityEvent({
         userId: user._id,
@@ -553,11 +554,11 @@ export const resendEmailOtp = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    await sendOtpEmail({
+    sendOtpEmail({
       to: user.email,
       name: user.name,
       otp,
-    });
+    }).catch((err) => console.error('Background OTP email dispatch error on resend:', err));
 
     await logSecurityEvent({
       userId: user._id,

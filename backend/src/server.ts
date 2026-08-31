@@ -49,6 +49,7 @@ const isOriginAllowed = (origin: string | undefined, callback: (err: Error | nul
   if (
     configuredOrigins.includes(origin) ||
     configuredOrigins.includes('*') ||
+    origin === 'https://sprint-forge-livid.vercel.app' ||
     origin.endsWith('.vercel.app') ||
     origin.startsWith('http://localhost:') ||
     origin.startsWith('http://127.0.0.1:')
@@ -122,7 +123,10 @@ app.use('/api/wiki', wikiRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/messages', messageRoutes);
 
-// Health check
+// Health checks
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });

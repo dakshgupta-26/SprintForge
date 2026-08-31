@@ -11,6 +11,12 @@ async function getTransporter() {
   const smtpHost = process.env.SMTP_HOST;
   const smtpService = process.env.SMTP_SERVICE;
 
+  const timeoutConfig = {
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 7000,
+  };
+
   if (smtpUser && smtpPass) {
     if (smtpService === 'gmail' || smtpHost === 'smtp.gmail.com' || (!smtpHost && smtpUser.endsWith('@gmail.com'))) {
       transporter = nodemailer.createTransport({
@@ -19,6 +25,7 @@ async function getTransporter() {
           user: smtpUser,
           pass: smtpPass,
         },
+        ...timeoutConfig,
       });
       console.log(`📧 Using Gmail SMTP: ${smtpUser}`);
     } else {
@@ -30,21 +37,34 @@ async function getTransporter() {
           user: smtpUser,
           pass: smtpPass,
         },
+        ...timeoutConfig,
       });
       console.log(`📧 Using SMTP: ${smtpHost} (${smtpUser})`);
     }
   } else {
     // Development fallback: Ethereal (fake SMTP when no real credentials in .env)
     console.warn('⚠️ SMTP_USER / SMTP_PASS not set in .env. Falling back to temporary Ethereal test inbox.');
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-    });
-    console.log('📧 Ethereal test email account:', testAccount.user);
-    console.log('📧 Preview emails at: https://ethereal.email');
+    try {
+      const testAccount = await Promise.race([
+        nodemailer.createTestAccount(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ethereal createTestAccount timeout')), 4000)),
+      ]);
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+        ...timeoutConfig,
+      });
+      console.log('📧 Ethereal test email account:', testAccount.user);
+      console.log('📧 Preview emails at: https://ethereal.email');
+    } catch (e: any) {
+      console.warn('⚠️ Failed to initialize Ethereal test inbox:', e.message);
+      // Fallback to dummy mock transport
+      transporter = nodemailer.createTransport({
+        jsonTransport: true,
+      });
+    }
   }
 
   return transporter;
@@ -266,7 +286,7 @@ export async function sendInviteEmail(opts: {
     const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
     const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
 
-    const info = await t.sendMail({
+    const info = await safeSendMail(t, {
       from: `"${fromName}" <${fromEmail}>`,
       to: opts.to,
       subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
@@ -279,13 +299,13 @@ export async function sendInviteEmail(opts: {
     if (previewUrl) {
       console.log(`📧 Email preview: ${previewUrl}`);
     } else {
-      console.log(`📧 Email sent to ${opts.to} (messageId: ${info.messageId})`);
+      console.log(`📧 Email sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
     }
 
-    return { success: true, messageId: info.messageId };
-  } catch (err) {
-    console.error('❌ Email send failed:', err);
-    return { success: false };
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ Email send failed:', err.message);
+    return { success: false, error: err.message };
   }
 }
 
@@ -423,6 +443,19 @@ If you did not attempt to sign in to SprintForge, you can safely ignore this ema
   return { html, text };
 }
 
+async function safeSendMail(
+  t: nodemailer.Transporter,
+  mailOptions: nodemailer.SendMailOptions,
+  timeoutMs = 6000
+): Promise<any> {
+  return Promise.race([
+    t.sendMail(mailOptions),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`SMTP sendMail timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
 // ─── Send OTP Email ───────────────────────────────────────────────────────────
 export async function sendOtpEmail(opts: {
   to: string;
@@ -440,7 +473,7 @@ export async function sendOtpEmail(opts: {
     const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
     const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
 
-    const info = await t.sendMail({
+    const info = await safeSendMail(t, {
       from: `"${fromName}" <${fromEmail}>`,
       to: opts.to,
       subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
@@ -452,13 +485,13 @@ export async function sendOtpEmail(opts: {
     if (previewUrl) {
       console.log(`📧 OTP Email preview: ${previewUrl}`);
     } else {
-      console.log(`📧 OTP sent to ${opts.to} (messageId: ${info.messageId})`);
+      console.log(`📧 OTP sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
     }
 
-    return { success: true, messageId: info.messageId };
-  } catch (err) {
-    console.error('❌ OTP email send failed:', err);
-    return { success: false };
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ OTP email send failed:', err.message);
+    return { success: false, error: err.message };
   }
 }
 
@@ -605,7 +638,7 @@ export async function sendPasswordResetEmail(opts: {
     const fromName = process.env.SMTP_FROM_NAME || 'SprintForge';
     const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@sprintforge.io';
 
-    const info = await t.sendMail({
+    const info = await safeSendMail(t, {
       from: `"${fromName}" <${fromEmail}>`,
       to: opts.to,
       subject: `Reset your SprintForge password 🔒`,
@@ -617,13 +650,13 @@ export async function sendPasswordResetEmail(opts: {
     if (previewUrl) {
       console.log(`📧 Password Reset Email preview: ${previewUrl}`);
     } else {
-      console.log(`📧 Password reset email sent to ${opts.to} (messageId: ${info.messageId})`);
+      console.log(`📧 Password reset email sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
     }
 
-    return { success: true, messageId: info.messageId };
-  } catch (err) {
-    console.error('❌ Password reset email send failed:', err);
-    return { success: false };
+    return { success: true, messageId: info?.messageId };
+  } catch (err: any) {
+    console.error('❌ Password reset email send failed:', err.message);
+    return { success: false, error: err.message };
   }
 }
 

@@ -14,8 +14,8 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
 
   // Handle Mongoose duplicate key error (code 11000)
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue || {})[0] || 'field';
-    return res.status(400).json({
+    const field = Object.keys(err.keyValue || {})[0] || 'email';
+    return res.status(409).json({
       message: `An account with this ${field} already exists.`,
     });
   }

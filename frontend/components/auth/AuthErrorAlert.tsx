@@ -17,27 +17,29 @@ export interface AuthErrorInfo {
 export function normalizeAuthError(err: any): AuthErrorInfo {
   if (!err) {
     return {
-      title: "Invalid email or password",
-      description: "Check your credentials and try again.",
-      type: "invalid_credentials",
+      title: "Something went wrong",
+      description: "Please try again in a moment.",
+      type: "server",
     };
   }
 
   // If already normalized object
-  if (typeof err === "object" && err.title) {
+  if (typeof err === "object" && err.title && (err.type || err.description)) {
     return err;
   }
 
-  // Network connection failure
+  // 1. Network connection failure / Timeout
   if (
     err.code === "ERR_NETWORK" ||
+    err.code === "ECONNABORTED" ||
     err.message?.includes("Network Error") ||
     err.message?.includes("fetch failed") ||
+    err.message?.includes("timeout") ||
     (!err.response && (err.isAxiosError || err.request))
   ) {
     return {
       title: "Unable to connect",
-      description: "Check your internet connection and try again.",
+      description: "Unable to reach SprintForge. Check your connection and try again.",
       type: "network",
     };
   }
@@ -45,16 +47,30 @@ export function normalizeAuthError(err: any): AuthErrorInfo {
   const status = err.response?.status;
   const rawMsg = String(err.response?.data?.message || err.message || "").toLowerCase();
 
-  // Rate Limiting (429)
-  if (status === 429 || rawMsg.includes("too many") || rawMsg.includes("rate limit")) {
+  // 2. Rate Limiting (429)
+  if (status === 429 || rawMsg.includes("too many") || rawMsg.includes("rate limit") || rawMsg.includes("cooldown")) {
     return {
-      title: "Too many sign-in attempts",
+      title: "Too many attempts",
       description: "Please wait a few moments before trying again.",
       type: "rate_limit",
     };
   }
 
-  // Email verification required
+  // 3. Conflict: Account with this email already exists (409 or 400 with duplicate email)
+  if (
+    status === 409 ||
+    rawMsg.includes("already exists") ||
+    rawMsg.includes("already registered") ||
+    rawMsg.includes("account with this email")
+  ) {
+    return {
+      title: "Account already exists",
+      description: "An account with this email already exists. Please sign in instead.",
+      type: "validation",
+    };
+  }
+
+  // 4. Email verification required
   if (
     rawMsg.includes("verify your email") ||
     rawMsg.includes("email not verified") ||
@@ -67,12 +83,11 @@ export function normalizeAuthError(err: any): AuthErrorInfo {
     };
   }
 
-  // Account disabled or deactivated
+  // 5. Genuine Account Deactivation / Suspension (ONLY on 403 or explicit account deactivation message)
   if (
-    rawMsg.includes("disabled") ||
-    rawMsg.includes("deactivated") ||
-    rawMsg.includes("suspended") ||
-    rawMsg.includes("blocked")
+    (status === 403 && (rawMsg.includes("deactivated") || rawMsg.includes("suspended") || rawMsg.includes("account is disabled") || rawMsg.includes("account has been disabled"))) ||
+    rawMsg.includes("account has been deactivated") ||
+    rawMsg.includes("account has been suspended")
   ) {
     return {
       title: "Account unavailable",
@@ -81,16 +96,22 @@ export function normalizeAuthError(err: any): AuthErrorInfo {
     };
   }
 
-  // 400 / 401 Unauthorized / Invalid Credentials
+  // 6. Security / CSRF Forbidden (403 without account deactivation)
+  if (status === 403) {
+    return {
+      title: "Access denied",
+      description: "Security check could not be verified. Please refresh the page and try again.",
+      type: "server",
+    };
+  }
+
+  // 7. 401 Unauthorized / Invalid Credentials
   if (
-    status === 400 ||
     status === 401 ||
-    rawMsg.includes("invalid") ||
     rawMsg.includes("incorrect") ||
-    rawMsg.includes("credential") ||
-    rawMsg.includes("password") ||
-    rawMsg.includes("not found") ||
-    rawMsg.includes("unauthorized")
+    rawMsg.includes("invalid email or password") ||
+    rawMsg.includes("invalid credentials") ||
+    rawMsg.includes("password is incorrect")
   ) {
     return {
       title: "Invalid email or password",
@@ -99,20 +120,46 @@ export function normalizeAuthError(err: any): AuthErrorInfo {
     };
   }
 
-  // Server error (500+)
-  if (status >= 500) {
+  // 8. 400 Bad Request / Validation errors
+  if (status === 400) {
+    const customMsg = err.response?.data?.message;
+    if (customMsg && typeof customMsg === "string" && customMsg.length > 3 && customMsg.length < 120) {
+      return {
+        title: customMsg,
+        description: "Please check your details and try again.",
+        type: "validation",
+      };
+    }
     return {
-      title: "Something went wrong",
-      description: "Unable to complete sign-in right now. Please try again.",
+      title: "Invalid signup information",
+      description: "Please check all fields and try again.",
+      type: "validation",
+    };
+  }
+
+  // 9. Service Unavailable / Gateway Errors (502 / 503 / 504)
+  if (status === 502 || status === 503 || status === 504) {
+    return {
+      title: "Service temporarily unavailable",
+      description: "Authentication service temporarily unavailable. Please try again in a moment.",
       type: "server",
     };
   }
 
-  // Fallback generic
+  // 10. Server Error (500+)
+  if (status && status >= 500) {
+    return {
+      title: "Something went wrong",
+      description: "Something went wrong on our side. Please try again.",
+      type: "server",
+    };
+  }
+
+  // 11. Generic Fallback
   return {
-    title: "Invalid email or password",
-    description: "Check your credentials and try again.",
-    type: "invalid_credentials",
+    title: "Something went wrong",
+    description: "Please try again in a moment.",
+    type: "server",
   };
 }
 
