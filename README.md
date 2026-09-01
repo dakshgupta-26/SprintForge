@@ -23,64 +23,111 @@
 
 ---
 
-## 🏛️ System Architecture
+## 🏗️ System Architecture
 
-SprintForge is architected as an enterprise-grade, event-driven distributed system designed for high availability, sub-50ms real-time event dissemination, deterministic graph computing, and end-to-end type safety.
+SprintForge connects task execution, dependency intelligence, real-time collaboration, and communication through a modular production-oriented architecture.
 
-```mermaid
-graph TB
-    subgraph Client_Tier ["🌐 Client Tier (Next.js 16 App Router + Turbopack)"]
-        UI_Kanban["Interactive Kanban Board & Drag-Drop Engine"]
-        UI_Impact["Interactive DAG Visualizer & What-If Studio"]
-        UI_WebRTC["WebRTC Audio/Video Media Engine"]
-        UI_Chat["AES-256 Encrypted Real-Time Chat"]
-        Zustand_State["Zustand Reactive State Stores"]
-    end
+<div align="center">
+  <a href="./assets/architecture.svg" target="_blank">
+    <img src="./assets/architecture.svg" alt="SprintForge Enterprise Architecture" width="100%" />
+  </a>
+  <p><em>Click on the architecture diagram to inspect the high-resolution vector system map.</em></p>
+</div>
 
-    subgraph Edge_Gateway ["🛡️ Edge & Security Gateway"]
-        CORS["CORS & Origin Filtering"]
-        RateLimit["Token Bucket Rate Limiter"]
-        Helmet["Security Headers (CSP, HSTS)"]
-        Sanitize["NoSQL Injection & XSS Sanitizer"]
-    end
+<br />
 
-    subgraph API_Services ["⚙️ Core Backend Services (Node.js + Express + TypeScript)"]
-        Auth_Service["JWT & RBAC Authorization Engine (5 Tiers)"]
-        Project_Service["Project & Member Orchestrator"]
-        Sprint_Service["Sprint Lifecycle & Burndown Analyzer"]
-        Wiki_Service["Markdown Knowledgebase Service"]
-    end
+### ⚡ Core Engineering Systems
 
-    subgraph Intelligence_Kernel ["🧠 Impact Engine (Deterministic CS Algorithms)"]
-        DAG_Parser["Directed Graph Constructor"]
-        Cycle_Detector["Kahn's Topo Sort & DFS Cycle Tracer"]
-        CPM_Engine["Critical Path Method (Forward/Backward Pass)"]
-        Risk_Engine["Multi-Factor Mathematical Risk Engine (0-100)"]
-        WhatIf_Simulator["In-Memory Scenario Simulation Sandbox"]
-        Rec_Engine["Workload Rebalancer & Scope Optimizer"]
-    end
+<table width="100%">
+<tr>
+<td width="50%" valign="top">
 
-    subgraph RealTime_Mesh ["⚡ Real-Time & Signaling Mesh (Socket.IO Engine)"]
-        Socket_Registry["Multi-Tab Global Socket Registry"]
-        Presence_Engine["Distributed User Presence Tracker"]
-        WebRTC_Signaling["WebRTC SDP & ICE Candidate Exchange"]
-        Event_Broadcaster["Room-Based Mutation Dispatcher"]
-    end
+#### 🧠 1. Flagship Impact Engine & Simulator
+- **Mathematical CPM**: Calculates Earliest/Latest Start/Finish & Total Slack ($\text{Float} \le 0$) across sprint dependencies.
+- **Topological Sorting**: Kahn’s Algorithm for $\mathcal{O}(V+E)$ DAG evaluation + DFS circular back-edge chain tracing.
+- **In-Memory What-If Studio**: Deep graph cloning for zero-database-mutation delay forecasting & rebalancing.
+- **6-Vector Risk Radar**: Multi-factor scoring (Blast Radius, Depth, Assignee Overload, Proximity, Blocker Propagation).
 
-    subgraph Persistence_Layer ["💾 Persistence & Storage Tier"]
-        Mongo_DB[(MongoDB Document Database)]
-        Crypto_Engine["AES-256-CBC Field-Level Encryption"]
-        Multer_Storage["Secure File & Media Pipeline"]
-    end
+</td>
+<td width="50%" valign="top">
 
-    Client_Tier --> Edge_Gateway
-    Edge_Gateway --> API_Services
-    API_Services --> Intelligence_Kernel
-    Client_Tier <--> RealTime_Mesh
-    RealTime_Mesh <--> API_Services
-    API_Services --> Persistence_Layer
-    RealTime_Mesh --> Persistence_Layer
+#### ⚡ 2. Real-Time & WebSockets Mesh
+- **Global User Socket Registry**: Multi-tab user map (`Map<string, Set<string>>`) for cross-session state coherence.
+- **Sub-50ms Mutation Dispatch**: Room-based events for atomic Kanban column drops, chat messages & sprint changes.
+- **Presence & Live Telemetry**: Heartbeat presence tracking, live typing indicators, and synchronized call dismissals.
+- **Optimistic Reconciliation**: Instant client-side state mutation with rollback capability on server rejection.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+#### 📞 3. WebRTC Audio/Video Media Engine
+- **Full-Duplex SRTP Mesh**: Peer-to-peer audio and 720p/1080p video streaming without intermediate media relays.
+- **Asynchronous ICE Queueing**: Eliminates candidate-drop race conditions occurring before remote SDP description sets.
+- **Dynamic Hardware Controls**: Real-time microphone/camera mute negotiation, screen sharing, and graceful teardowns.
+- **Multi-Tab Presence Arbitration**: Synchronized ringtone broadcast with instant dismissal across duplicate sessions.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🔒 4. Zero-Trust Security & Auth Authority
+- **Federated & OTP Identity**: Google OAuth 2.0 PKCE (`google-auth-library`) + Cryptographic 6-digit email challenges.
+- **5-Tier Fine-Grained RBAC**: `Admin` > `Lead` > `Dev` > `QA` > `Viewer` enforced via express middleware pipelines.
+- **Field-Level Encryption**: AES-256-CBC cipher primitives for chat history and confidential workspace records.
+- **Defense in Depth**: Helmet CSP/HSTS policies, token-bucket rate limiting, and NoSQL query sanitization.
+
+</td>
+</tr>
+</table>
+
+<br />
+
+### 🔄 Request & Data Lifecycle
+
 ```
+[ Engineer / User Action ]
+           │
+           ▼
+[ Next.js 16 Client Tier ] ──( Optimistic Zustand Store Mutation )
+           │
+     ┌─────┴───────────────────────────────────────────────────────┐
+     │                                                             │
+(HTTPS REST API)                                          (Duplex WebSockets)
+     │                                                             │
+     ▼                                                             ▼
+[ Edge Security Gateway ]                                 [ Socket.IO Signaling Mesh ]
+  ├─ Token Bucket Rate Limiter                              ├─ Global Multi-Tab Socket Registry
+  ├─ Helmet CSP / HSTS Headers                              ├─ WebRTC SDP / ICE Negotiation
+  └─ JWT & 5-Tier RBAC Auth                                 └─ Room-Based Mutation Dispatcher
+     │                                                             │
+     ▼                                                             │
+[ Express.js Core Services ]                                      │
+  ├─ Project & Task Orchestrator                                   │
+  ├─ Sprint Burndown Telemetry                                     │
+  └─ Impact Engine (DAG / CPM / Risk) ─────────┐                   │
+     │                                         │                   │
+     ▼                                         ▼                   │
+[ MongoDB Document Store ]             [ In-Memory Sandbox ]       │
+  └─ AES-256-CBC Field Encryption        └─ What-If Simulation     │
+     │                                                             │
+     └─────────────────────────┬───────────────────────────────────┘
+                               │
+                               ▼
+              [ Live Broadcast to Connected Clients ]
+                   (Sub-50ms Global UI Update)
+```
+
+<br />
+
+### 🧠 Engineering Highlights
+
+- **Deterministic Graph Computing**: Dependency-aware schedule risk forecasting and Critical Path Method (CPM) calculated via rigorous discrete mathematics ($\mathcal{O}(V+E)$) instead of non-deterministic LLMs.
+- **In-Memory Scenario Simulation**: Sandboxed what-if modeling lets engineering leads test hypothetical delays and reassignments without mutating live database records.
+- **Zero-Drop WebRTC Signaling Mesh**: Queue-arbitrated ICE candidate exchange and multi-tab socket registries prevent connection drops across distributed devices.
+- **Sub-50ms Real-Time Synchronization**: Room-clustered Socket.IO engine synchronizes Kanban boards, chat channels, and user presence with optimistic UI reconciliation.
+- **Cryptographic Defense in Depth**: Strict 5-tier RBAC authorization, token-bucket rate limiting, HTTP-only cookie security, and hardware-accelerated AES-256-CBC field encryption.
+- **End-to-End Type Safety**: Unified TypeScript domain contracts shared across Next.js 16 Turbopack frontend and Express.js backend services.
 
 ---
 
@@ -92,25 +139,27 @@ Rather than relying on non-deterministic black-box LLMs, SprintForge includes a 
 flowchart LR
     A["Raw Sprint Tasks & Dependencies"] --> B["Dependency Graph (V, E)"]
     B --> C{"Cycle Detection"}
-    C -- "Cyclic" --> D["Trace Circular Chain (DFS Back-Edge)"]
-    C -- "Acyclic (DAG)" --> E["Kahn's Topological Sort"]
+    C -->|Cyclic| D["Trace Circular Chain (DFS Back-Edge)"]
+    C -->|Acyclic DAG| E["Kahn's Topological Sort"]
     
     E --> F["Forward Pass (ES & EF)"]
     F --> G["Backward Pass (LS & LF)"]
     G --> H["Float Calculation (Float = LS - ES)"]
     
-    H --> I["Critical Path Isolation (Float <= 0)"]
+    H --> I["Critical Path Isolation (Float &le; 0)"]
     H --> J["Downstream Blast Radius (BFS Depth & Width)"]
     H --> K["Assignee Capacity & Workload Utilization"]
     
-    I & J & K --> L["Multi-Factor Deterministic Risk Score (0 - 100)"]
+    I --> L["Multi-Factor Deterministic Risk Score (0 - 100)"]
+    J --> L
+    K --> L
     L --> M["Explainable Recommendations & Capacity Proofs"]
     
     subgraph Simulation_Sandbox ["In-Memory What-If Simulation Sandbox"]
         N["Hypothetical Scenario Delta"] --> O["Deep Graph Clone"]
-        O --> E
         O --> P["Side-by-Side Baseline vs Simulated Delta"]
     end
+    O -.-> E
 ```
 
 ### 1. Mathematical Algorithms & Formulations
@@ -181,7 +230,8 @@ sequenceDiagram
     WS-->>ClientB: call:ice-candidate
     
     Note over ClientA,ClientB: Peer-to-Peer Media Channel Established
-    ClientA<-->>ClientB: Full-Duplex SRTP Audio & Video Stream (P2P Mesh)
+    ClientA->>ClientB: Full-Duplex SRTP Audio & Video (P2P Media)
+    ClientB->>ClientA: Full-Duplex SRTP Audio & Video (P2P Media)
 ```
 
 ### Signaling Architecture Highlights

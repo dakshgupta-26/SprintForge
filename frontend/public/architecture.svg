@@ -1,0 +1,575 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 960" width="100%" height="100%" style="background: #080B14; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080B14" />
+      <stop offset="40%" stop-color="#0B0F1C" />
+      <stop offset="80%" stop-color="#080C17" />
+      <stop offset="100%" stop-color="#060911" />
+    </linearGradient>
+
+    <!-- Card Background Gradients -->
+    <linearGradient id="card-client" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111B33" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#0C1426" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="card-edge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B1633" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#130F24" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="card-service" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161530" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#0F0E24" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="card-impact" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#21123D" stop-opacity="0.98" />
+      <stop offset="50%" stop-color="#171033" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0F1738" stop-opacity="0.85" />
+    </linearGradient>
+
+    <linearGradient id="card-realtime" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D2433" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#081A26" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="card-data" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B261D" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#071C15" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="card-ext" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#131726" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0B0E1A" stop-opacity="0.75" />
+    </linearGradient>
+
+    <!-- Border Gradients -->
+    <linearGradient id="border-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#1D4ED8" stop-opacity="0.3" />
+    </linearGradient>
+
+    <linearGradient id="border-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A855F7" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+
+    <linearGradient id="border-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0.4" />
+    </linearGradient>
+
+    <linearGradient id="border-green" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#059669" stop-opacity="0.3" />
+    </linearGradient>
+
+    <linearGradient id="border-pink" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.4" />
+    </linearGradient>
+
+    <!-- Accent Header Gradients -->
+    <linearGradient id="title-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="40%" stop-color="#E2E8F0" />
+      <stop offset="70%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#60A5FA" />
+    </linearGradient>
+
+    <!-- Ambient Glow Filters -->
+    <filter id="glow-purple-lg" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="glow-cyan-sm" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Grid Pattern -->
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="16" cy="16" r="0.7" fill="#475569" fill-opacity="0.3" />
+    </pattern>
+
+    <!-- Arrow Markers -->
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3B82F6" />
+    </marker>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#06B6D4" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#A855F7" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10B981" />
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#EC4899" />
+    </marker>
+  </defs>
+
+  <style>
+    .flow-blue {
+      stroke: #3B82F6;
+      stroke-width: 1.8;
+      stroke-dasharray: 6, 6;
+      animation: dash 18s linear infinite;
+    }
+    .flow-cyan {
+      stroke: #06B6D4;
+      stroke-width: 1.8;
+      stroke-dasharray: 6, 6;
+      animation: dash 14s linear infinite;
+    }
+    .flow-purple {
+      stroke: #A855F7;
+      stroke-width: 2;
+      stroke-dasharray: 6, 6;
+      animation: dash 16s linear infinite;
+    }
+    .flow-green {
+      stroke: #10B981;
+      stroke-width: 1.8;
+      stroke-dasharray: 6, 6;
+      animation: dash 20s linear infinite;
+    }
+    .flow-pink {
+      stroke: #EC4899;
+      stroke-width: 1.8;
+      stroke-dasharray: 6, 6;
+      animation: dash 12s linear infinite;
+    }
+    @keyframes dash {
+      from { stroke-dashoffset: 240; }
+      to { stroke-dashoffset: 0; }
+    }
+    .node-card {
+      transition: transform 0.2s ease, filter 0.2s ease;
+      cursor: default;
+    }
+    .node-card:hover {
+      filter: brightness(1.15) drop-shadow(0 0 10px rgba(168, 85, 247, 0.35));
+    }
+    .impact-highlight {
+      animation: pulse-glow 4s ease-in-out infinite alternate;
+    }
+    @keyframes pulse-glow {
+      0% { filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.3)); }
+      100% { filter: drop-shadow(0 0 22px rgba(99, 102, 241, 0.6)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .flow-blue, .flow-cyan, .flow-purple, .flow-green, .flow-pink, .impact-highlight {
+        animation: none;
+      }
+    }
+  </style>
+
+  <!-- Background Base -->
+  <rect width="1200" height="960" fill="url(#bg-grad)" />
+  <rect width="1200" height="960" fill="url(#grid)" />
+
+  <!-- Ambient Glow Spots -->
+  <circle cx="680" cy="450" r="180" fill="#7C3AED" fill-opacity="0.08" filter="url(#glow-purple-lg)" />
+  <circle cx="220" cy="630" r="140" fill="#06B6D4" fill-opacity="0.06" filter="url(#glow-purple-lg)" />
+  <circle cx="200" cy="150" r="130" fill="#3B82F6" fill-opacity="0.05" filter="url(#glow-purple-lg)" />
+  <circle cx="480" cy="760" r="150" fill="#10B981" fill-opacity="0.05" filter="url(#glow-purple-lg)" />
+
+  <!-- ============================================================ -->
+  <!-- HEADER BAR                                                   -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 28)">
+    <!-- Badge -->
+    <rect x="0" y="0" width="220" height="22" rx="11" fill="#1E1B4B" stroke="#6366F1" stroke-width="1" />
+    <circle cx="10" cy="11" r="4" fill="#A855F7" />
+    <text x="22" y="15" fill="#C7D2FE" font-size="10.5" font-weight="700" letter-spacing="0.8">SPRINTFORGE ARCHITECTURE</text>
+
+    <!-- Main Title -->
+    <text x="0" y="44" fill="url(#title-grad)" font-size="20" font-weight="800" letter-spacing="-0.3">Enterprise Event-Driven &amp; Graph Computing Topology</text>
+    <text x="0" y="60" fill="#94A3B8" font-size="11.5" font-weight="400">Deterministic schedule risk forecasting, sub-50ms duplex WebSockets/WebRTC mesh, and strict end-to-end type safety.</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 1: CLIENT TIER (BLUE)                                 -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 105)">
+    <!-- Layer Frame -->
+    <rect x="0" y="0" width="840" height="95" rx="12" fill="url(#card-client)" stroke="url(#border-blue)" stroke-width="1" />
+    <rect x="12" y="-9" width="130" height="18" rx="5" fill="#0F172A" stroke="#3B82F6" stroke-width="0.8" />
+    <text x="20" y="3" fill="#60A5FA" font-size="9.5" font-weight="700" letter-spacing="0.8">CLIENT TIER</text>
+
+    <!-- Node 1: Next.js 16 App Router -->
+    <g class="node-card" transform="translate(16, 18)">
+      <rect width="185" height="64" rx="8" fill="#13203C" stroke="#2563EB" stroke-width="1" />
+      <circle cx="16" cy="18" r="5" fill="#3B82F6" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11.5" font-weight="700">Next.js 16 App Router</text>
+      <text x="14" y="38" fill="#93C5FD" font-size="9.5">Turbopack SSR + React 19</text>
+      <text x="14" y="52" fill="#64748B" font-size="8.5">Streaming UI &amp; Route Groups</text>
+    </g>
+
+    <!-- Node 2: Kanban & Drag-Drop Engine -->
+    <g class="node-card" transform="translate(216, 18)">
+      <rect width="195" height="64" rx="8" fill="#13203C" stroke="#2563EB" stroke-width="1" />
+      <circle cx="16" cy="18" r="5" fill="#38BDF8" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11.5" font-weight="700">Interactive Kanban</text>
+      <text x="14" y="38" fill="#93C5FD" font-size="9.5">@hello-pangea/dnd Engine</text>
+      <text x="14" y="52" fill="#64748B" font-size="8.5">Optimistic Column Mutations</text>
+    </g>
+
+    <!-- Node 3: Zustand State Stores -->
+    <g class="node-card" transform="translate(426, 18)">
+      <rect width="190" height="64" rx="8" fill="#13203C" stroke="#2563EB" stroke-width="1" />
+      <circle cx="16" cy="18" r="5" fill="#818CF8" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11.5" font-weight="700">Zustand State Stores</text>
+      <text x="14" y="38" fill="#93C5FD" font-size="9.5">Multi-Slice Reactive State</text>
+      <text x="14" y="52" fill="#64748B" font-size="8.5">Auth, Tasks, Calls &amp; Projects</text>
+    </g>
+
+    <!-- Node 4: WebRTC Media UI -->
+    <g class="node-card" transform="translate(631, 18)">
+      <rect width="193" height="64" rx="8" fill="#13203C" stroke="#2563EB" stroke-width="1" />
+      <circle cx="16" cy="18" r="5" fill="#F472B6" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11.5" font-weight="700">WebRTC Media Engine</text>
+      <text x="14" y="38" fill="#93C5FD" font-size="9.5">P2P Audio/Video Streams</text>
+      <text x="14" y="52" fill="#64748B" font-size="8.5">Multi-Tab Presence Arbitration</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 2: EDGE & SECURITY GATEWAY (VIOLET/ORANGE)             -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 225)">
+    <!-- Layer Frame -->
+    <rect x="0" y="0" width="840" height="74" rx="12" fill="url(#card-edge)" stroke="url(#border-purple)" stroke-width="1" />
+    <rect x="12" y="-9" width="180" height="18" rx="5" fill="#0F172A" stroke="#8B5CF6" stroke-width="0.8" />
+    <text x="20" y="3" fill="#C084FC" font-size="9.5" font-weight="700" letter-spacing="0.8">EDGE &amp; SECURITY GATEWAY</text>
+
+    <!-- Token Bucket Limiter -->
+    <g class="node-card" transform="translate(16, 14)">
+      <rect width="185" height="48" rx="7" fill="#1D153B" stroke="#7C3AED" stroke-width="0.9" />
+      <text x="12" y="20" fill="#E9D5FF" font-size="10.5" font-weight="700">Rate Limiter</text>
+      <text x="12" y="35" fill="#A855F7" font-size="8.5">Token-Bucket (express-rate-limit)</text>
+    </g>
+
+    <!-- Helmet & CSP -->
+    <g class="node-card" transform="translate(216, 14)">
+      <rect width="195" height="48" rx="7" fill="#1D153B" stroke="#7C3AED" stroke-width="0.9" />
+      <text x="12" y="20" fill="#E9D5FF" font-size="10.5" font-weight="700">Security Headers</text>
+      <text x="12" y="35" fill="#A855F7" font-size="8.5">Helmet (Strict CSP, HSTS, XSS)</text>
+    </g>
+
+    <!-- JWT & 5-Tier RBAC -->
+    <g class="node-card" transform="translate(426, 14)">
+      <rect width="190" height="48" rx="7" fill="#1D153B" stroke="#7C3AED" stroke-width="0.9" />
+      <text x="12" y="20" fill="#E9D5FF" font-size="10.5" font-weight="700">JWT &amp; 5-Tier RBAC</text>
+      <text x="12" y="35" fill="#A855F7" font-size="8.5">Admin, Lead, Dev, QA, Viewer</text>
+    </g>
+
+    <!-- Sanitizer -->
+    <g class="node-card" transform="translate(631, 14)">
+      <rect width="193" height="48" rx="7" fill="#1D153B" stroke="#7C3AED" stroke-width="0.9" />
+      <text x="12" y="20" fill="#E9D5FF" font-size="10.5" font-weight="700">Request Sanitizer</text>
+      <text x="12" y="35" fill="#A855F7" font-size="8.5">NoSQL Injection &amp; CORS Barrier</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 3: CORE BACKEND & FLAGSHIP IMPACT ENGINE               -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 325)">
+    <!-- 3A: Core Backend API Services -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="395" height="235" rx="12" fill="url(#card-service)" stroke="#4338CA" stroke-width="1" />
+      <rect x="12" y="-9" width="200" height="18" rx="5" fill="#0F172A" stroke="#6366F1" stroke-width="0.8" />
+      <text x="20" y="3" fill="#A5B4FC" font-size="9.5" font-weight="700" letter-spacing="0.8">CORE BACKEND (EXPRESS / TS)</text>
+
+      <!-- Sub-service 1 -->
+      <g class="node-card" transform="translate(14, 18)">
+        <rect width="367" height="46" rx="6" fill="#1A1838" stroke="#3730A3" stroke-width="0.8" />
+        <text x="14" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Project &amp; Member Orchestrator</text>
+        <text x="14" y="34" fill="#94A3B8" font-size="9">Workspace isolation, join codes, 3-day secure invites</text>
+      </g>
+
+      <!-- Sub-service 2 -->
+      <g class="node-card" transform="translate(14, 70)">
+        <rect width="367" height="46" rx="6" fill="#1A1838" stroke="#3730A3" stroke-width="0.8" />
+        <text x="14" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Sprint Lifecycle &amp; Burndown Analyzer</text>
+        <text x="14" y="34" fill="#94A3B8" font-size="9">Velocity telemetry, sprint transitions &amp; historical points</text>
+      </g>
+
+      <!-- Sub-service 3 -->
+      <g class="node-card" transform="translate(14, 122)">
+        <rect width="367" height="46" rx="6" fill="#1A1838" stroke="#3730A3" stroke-width="0.8" />
+        <text x="14" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Auth &amp; Session Authority</text>
+        <text x="14" y="34" fill="#94A3B8" font-size="9">Google OAuth, OTP verification &amp; HTTP-only cookies</text>
+      </g>
+
+      <!-- Sub-service 4 -->
+      <g class="node-card" transform="translate(14, 174)">
+        <rect width="367" height="46" rx="6" fill="#1A1838" stroke="#3730A3" stroke-width="0.8" />
+        <text x="14" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Markdown Docs &amp; Wiki Service</text>
+        <text x="14" y="34" fill="#94A3B8" font-size="9">Hierarchical engineering knowledgebase &amp; specs</text>
+      </g>
+    </g>
+
+    <!-- 3B: FLAGSHIP IMPACT ENGINE (PROMINENT GLOW CARD) -->
+    <g class="impact-highlight" transform="translate(415, 0)">
+      <rect x="0" y="0" width="425" height="235" rx="12" fill="url(#card-impact)" stroke="url(#border-purple)" stroke-width="1.8" />
+      <rect x="14" y="-10" width="240" height="20" rx="6" fill="#1E1035" stroke="#A855F7" stroke-width="1.2" />
+      <circle cx="26" cy="0" r="4.5" fill="#EC4899" />
+      <text x="36" y="3" fill="#F0ABFC" font-size="10" font-weight="800" letter-spacing="0.8">🧠 IMPACT ENGINE (GRAPH CS)</text>
+
+      <!-- Inner Module 1: DAG & Cycle Detection -->
+      <g class="node-card" transform="translate(14, 18)">
+        <rect width="397" height="46" rx="6" fill="#1B1336" stroke="#9333EA" stroke-width="0.9" />
+        <text x="14" y="18" fill="#FAF5FF" font-size="11" font-weight="700">Directed Graph (DAG) &amp; Cycle Tracer</text>
+        <text x="14" y="34" fill="#D8B4FE" font-size="9">Kahn's Topo Sort &amp; DFS Back-Edge Search (O(V+E))</text>
+      </g>
+
+      <!-- Inner Module 2: CPM Forward/Backward Pass -->
+      <g class="node-card" transform="translate(14, 70)">
+        <rect width="397" height="46" rx="6" fill="#1B1336" stroke="#9333EA" stroke-width="0.9" />
+        <text x="14" y="18" fill="#FAF5FF" font-size="11" font-weight="700">Critical Path Method (CPM Engine)</text>
+        <text x="14" y="34" fill="#D8B4FE" font-size="9">ES/EF Forward + LS/LF Backward Pass (Total Slack &le; 0)</text>
+      </g>
+
+      <!-- Inner Module 3: Deterministic Risk Radar -->
+      <g class="node-card" transform="translate(14, 122)">
+        <rect width="397" height="46" rx="6" fill="#1B1336" stroke="#9333EA" stroke-width="0.9" />
+        <text x="14" y="18" fill="#FAF5FF" font-size="11" font-weight="700">Mathematical Risk Radar (0 - 100)</text>
+        <text x="14" y="34" fill="#D8B4FE" font-size="9">6 Orthogonal Vectors: Blast Radius, Depth &amp; Workload</text>
+      </g>
+
+      <!-- Inner Module 4: In-Memory What-If Simulation Sandbox -->
+      <g class="node-card" transform="translate(14, 174)">
+        <rect width="397" height="46" rx="6" fill="#241445" stroke="#C084FC" stroke-width="1.1" />
+        <circle cx="16" cy="18" r="4" fill="#22D3EE" />
+        <text x="26" y="20" fill="#FFFFFF" font-size="11" font-weight="800">In-Memory What-If Simulator</text>
+        <text x="14" y="35" fill="#E9D5FF" font-size="9">Cloned Graph Scenarios without Database Mutations</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 4: REAL-TIME & SIGNALING MESH (CYAN/PINK)              -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 585)">
+    <!-- Layer Frame -->
+    <rect x="0" y="0" width="840" height="85" rx="12" fill="url(#card-realtime)" stroke="url(#border-cyan)" stroke-width="1" />
+    <rect x="12" y="-9" width="220" height="18" rx="5" fill="#082F49" stroke="#06B6D4" stroke-width="0.8" />
+    <text x="20" y="3" fill="#67E8F9" font-size="9.5" font-weight="700" letter-spacing="0.8">REAL-TIME &amp; SIGNALING MESH</text>
+
+    <!-- Node 1: Multi-Tab Socket Registry -->
+    <g class="node-card" transform="translate(16, 16)">
+      <rect width="255" height="54" rx="7" fill="#0C2538" stroke="#0284C7" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#06B6D4" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">Global Socket Registry</text>
+      <text x="14" y="34" fill="#7DD3FC" font-size="9">Multi-Tab User Map (Set&lt;socketId&gt;)</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">Synchronized Ringtone Dismissal</text>
+    </g>
+
+    <!-- Node 2: Presence & Mutation Broadcaster -->
+    <g class="node-card" transform="translate(287, 16)">
+      <rect width="255" height="54" rx="7" fill="#0C2538" stroke="#0284C7" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#38BDF8" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">Room Mutation Broadcaster</text>
+      <text x="14" y="34" fill="#7DD3FC" font-size="9">Sub-50ms Kanban &amp; Chat Dispatch</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">Typing Indicators &amp; Heartbeat Telemetry</text>
+    </g>
+
+    <!-- Node 3: WebRTC SDP/ICE Signaling -->
+    <g class="node-card" transform="translate(558, 16)">
+      <rect width="266" height="54" rx="7" fill="#0C2538" stroke="#0284C7" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#F472B6" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">WebRTC Signaling Pipeline</text>
+      <text x="14" y="34" fill="#7DD3FC" font-size="9">SDP Offer/Answer &amp; ICE Queueing</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">Full-Duplex SRTP Audio/Video Mesh</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 5: DATA & PERSISTENCE TIER (GREEN)                     -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 695)">
+    <!-- Layer Frame -->
+    <rect x="0" y="0" width="840" height="85" rx="12" fill="url(#card-data)" stroke="url(#border-green)" stroke-width="1" />
+    <rect x="12" y="-9" width="190" height="18" rx="5" fill="#064E3B" stroke="#10B981" stroke-width="0.8" />
+    <text x="20" y="3" fill="#6EE7B7" font-size="9.5" font-weight="700" letter-spacing="0.8">DATA &amp; PERSISTENCE TIER</text>
+
+    <!-- Node 1: MongoDB Cluster -->
+    <g class="node-card" transform="translate(16, 16)">
+      <rect width="255" height="54" rx="7" fill="#0C2D22" stroke="#059669" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#10B981" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">MongoDB 7.x Database</text>
+      <text x="14" y="34" fill="#A7F3D0" font-size="9">Compound Indexed Collections</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">Tasks, Sprints, Projects, Calls &amp; Wikis</text>
+    </g>
+
+    <!-- Node 2: AES-256-CBC Encryption Engine -->
+    <g class="node-card" transform="translate(287, 16)">
+      <rect width="255" height="54" rx="7" fill="#0C2D22" stroke="#059669" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#34D399" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">AES-256 Field Encryption</text>
+      <text x="14" y="34" fill="#A7F3D0" font-size="9">Node.js Hardware-Accelerated Cipher</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">Encrypted Chat Messages &amp; Project Keys</text>
+    </g>
+
+    <!-- Node 3: Multer Storage & Media Pipeline -->
+    <g class="node-card" transform="translate(558, 16)">
+      <rect width="266" height="54" rx="7" fill="#0C2D22" stroke="#059669" stroke-width="0.9" />
+      <circle cx="16" cy="16" r="4.5" fill="#6EE7B7" />
+      <text x="26" y="19" fill="#FFFFFF" font-size="11" font-weight="700">Multer Storage Pipeline</text>
+      <text x="14" y="34" fill="#A7F3D0" font-size="9">Secure File Validation &amp; Attachment Store</text>
+      <text x="14" y="46" fill="#64748B" font-size="8">MIME Verification &amp; Asset Streaming</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- RIGHT DOCK: EXTERNAL INTEGRATIONS & INFRASTRUCTURE           -->
+  <!-- ============================================================ -->
+  <g transform="translate(915, 105)">
+    <!-- Right Container Frame -->
+    <rect x="0" y="0" width="240" height="675" rx="12" fill="url(#card-ext)" stroke="#334155" stroke-width="1" />
+    <rect x="14" y="-9" width="180" height="18" rx="5" fill="#0F172A" stroke="#64748B" stroke-width="0.8" />
+    <text x="22" y="3" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="0.8">EXTERNAL INTEGRATIONS</text>
+
+    <!-- Ext Card 1: Google OAuth 2.0 -->
+    <g class="node-card" transform="translate(14, 20)">
+      <rect width="212" height="90" rx="8" fill="#151A2E" stroke="#3B82F6" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#EA4335" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">Google OAuth 2.0</text>
+      <text x="14" y="40" fill="#93C5FD" font-size="9.5">google-auth-library</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">Verified Identity Tokens</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">One-tap Federated Sign-In</text>
+    </g>
+
+    <!-- Ext Card 2: Transactional Email Gateway -->
+    <g class="node-card" transform="translate(14, 125)">
+      <rect width="212" height="90" rx="8" fill="#151A2E" stroke="#8B5CF6" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#A855F7" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">Email Dispatcher</text>
+      <text x="14" y="40" fill="#D8B4FE" font-size="9.5">Mailjet / Resend API</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">3-Day Invitation Tokens</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">Password Resets &amp; OTPs</text>
+    </g>
+
+    <!-- Ext Card 3: WebRTC STUN/TURN Network -->
+    <g class="node-card" transform="translate(14, 230)">
+      <rect width="212" height="90" rx="8" fill="#151A2E" stroke="#06B6D4" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#06B6D4" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">STUN / TURN Network</text>
+      <text x="14" y="40" fill="#67E8F9" font-size="9.5">Google STUN + ICE Relays</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">NAT Traversal &amp; P2P Handshake</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">Symmetric Firewall Fallback</text>
+    </g>
+
+    <!-- Ext Card 4: Docker Multi-Stage Topology -->
+    <g class="node-card" transform="translate(14, 335)">
+      <rect width="212" height="90" rx="8" fill="#151A2E" stroke="#2496ED" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#2496ED" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">Docker Infrastructure</text>
+      <text x="14" y="40" fill="#93C5FD" font-size="9.5">Multi-Stage Containerization</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">Isolated Frontend + API + Mongo</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">Docker Compose Healthchecks</text>
+    </g>
+
+    <!-- Ext Card 5: Security & Audit Log Ledger -->
+    <g class="node-card" transform="translate(14, 440)">
+      <rect width="212" height="95" rx="8" fill="#151A2E" stroke="#10B981" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#10B981" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">Audit &amp; Security Ledger</text>
+      <text x="14" y="40" fill="#A7F3D0" font-size="9.5">SecurityLog.ts Schema</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">IP Telemetry, User-Agent tracking</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">Failed Attempt Throttle Logging</text>
+    </g>
+
+    <!-- Ext Card 6: Live Cursors & Real-Time Sync -->
+    <g class="node-card" transform="translate(14, 550)">
+      <rect width="212" height="105" rx="8" fill="#151A2E" stroke="#F43F5E" stroke-width="0.9" />
+      <circle cx="16" cy="18" r="5" fill="#F43F5E" />
+      <text x="28" y="21" fill="#FFFFFF" font-size="11" font-weight="700">Live Collaboration Mesh</text>
+      <text x="14" y="40" fill="#FDA4AF" font-size="9.5">Collaborative Cursors</text>
+      <text x="14" y="56" fill="#94A3B8" font-size="8.5">Simultaneous Task Edits</text>
+      <text x="14" y="72" fill="#64748B" font-size="8.5">Optimistic Locking &amp; Sync</text>
+      <text x="14" y="88" fill="#64748B" font-size="8.5">Sub-50ms Broadcast Latency</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- ANIMATED FLOW PATHS / DATA CONNECTORS                        -->
+  <!-- ============================================================ -->
+  <!-- 1. Client Tier -> Edge Gateway (REST API Request Flow) -->
+  <path d="M 135 200 L 135 225" class="flow-blue" marker-end="url(#arrow-blue)" />
+  <path d="M 315 200 L 315 225" class="flow-blue" marker-end="url(#arrow-blue)" />
+  <path d="M 520 200 L 520 225" class="flow-blue" marker-end="url(#arrow-blue)" />
+
+  <!-- 2. Edge Gateway -> Core Backend (Authorized REST Dispatch) -->
+  <path d="M 135 299 L 135 325" class="flow-purple" marker-end="url(#arrow-purple)" />
+  <path d="M 315 299 L 315 325" class="flow-purple" marker-end="url(#arrow-purple)" />
+
+  <!-- 3. Core Backend -> Impact Engine (CPM & Simulation Compute) -->
+  <path d="M 440 400 L 460 400" class="flow-purple" marker-end="url(#arrow-purple)" />
+  <path d="M 440 450 L 460 450" class="flow-purple" marker-end="url(#arrow-purple)" />
+  <path d="M 440 500 L 460 500" class="flow-purple" marker-end="url(#arrow-purple)" />
+
+  <!-- 4. Client WebRTC -> Real-Time Mesh (Signaling Exchange) -->
+  <path d="M 725 200 L 725 585" class="flow-pink" marker-end="url(#arrow-pink)" />
+
+  <!-- 5. Real-Time Mesh <-> Client Tier (Duplex WebSocket Mutations) -->
+  <path d="M 240 585 L 240 200" class="flow-cyan" marker-end="url(#arrow-cyan)" />
+
+  <!-- 6. Core Backend -> Data Tier (Mongoose Query Pipeline) -->
+  <path d="M 200 560 L 200 695" class="flow-green" marker-end="url(#arrow-green)" />
+
+  <!-- 7. Impact Engine -> Data Tier (Graph Snapshot Cache) -->
+  <path d="M 620 560 L 620 695" class="flow-green" marker-end="url(#arrow-green)" />
+
+  <!-- 8. Backend <-> External Integrations -->
+  <path d="M 885 365 L 915 165" class="flow-blue" marker-end="url(#arrow-blue)" />
+  <path d="M 885 450 L 915 270" class="flow-purple" marker-end="url(#arrow-purple)" />
+  <path d="M 885 625 L 915 375" class="flow-cyan" marker-end="url(#arrow-cyan)" />
+
+  <!-- ============================================================ -->
+  <!-- BOTTOM LEGEND BAR                                            -->
+  <!-- ============================================================ -->
+  <g transform="translate(45, 805)">
+    <!-- Legend Container -->
+    <rect x="0" y="0" width="1110" height="42" rx="8" fill="#0C1021" stroke="#1E293B" stroke-width="1" />
+
+    <!-- Legend Items -->
+    <g transform="translate(25, 14)">
+      <circle cx="6" cy="7" r="5" fill="#3B82F6" />
+      <text x="18" y="11" fill="#E2E8F0" font-size="10.5" font-weight="600">REST API / HTTPS</text>
+      <text x="110" y="11" fill="#64748B" font-size="9.5">(Strict Type-Safe Contracts)</text>
+    </g>
+
+    <g transform="translate(260, 14)">
+      <circle cx="6" cy="7" r="5" fill="#06B6D4" />
+      <text x="18" y="11" fill="#E2E8F0" font-size="10.5" font-weight="600">Real-Time Signaling</text>
+      <text x="125" y="11" fill="#64748B" font-size="9.5">(Socket.IO Mutation Mesh)</text>
+    </g>
+
+    <g transform="translate(500, 14)">
+      <circle cx="6" cy="7" r="5" fill="#F472B6" />
+      <text x="18" y="11" fill="#E2E8F0" font-size="10.5" font-weight="600">P2P Media Channel</text>
+      <text x="125" y="11" fill="#64748B" font-size="9.5">(Full-Duplex SRTP WebRTC)</text>
+    </g>
+
+    <g transform="translate(740, 14)">
+      <circle cx="6" cy="7" r="5" fill="#A855F7" />
+      <text x="18" y="11" fill="#E2E8F0" font-size="10.5" font-weight="600">Impact Graph Compute</text>
+      <text x="135" y="11" fill="#64748B" font-size="9.5">(CPM &amp; Kahn's Algo)</text>
+    </g>
+
+    <g transform="translate(980, 14)">
+      <circle cx="6" cy="7" r="5" fill="#10B981" />
+      <text x="18" y="11" fill="#E2E8F0" font-size="10.5" font-weight="600">Encrypted Data</text>
+      <text x="100" y="11" fill="#64748B" font-size="9.5">(AES-256 + Mongo)</text>
+    </g>
+  </g>
+</svg>
