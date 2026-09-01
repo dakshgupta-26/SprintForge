@@ -4,9 +4,12 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
+import { useCallStore } from "@/lib/store/callStore";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Navbar } from "@/components/shared/Navbar";
 import { GlobalChatToastContainer } from "@/components/chat/GlobalChatToast";
+import { IncomingCallModal } from "@/components/call/IncomingCallModal";
+import { GlobalCallMiniBar } from "@/components/call/GlobalCallMiniBar";
 import { connectSocket } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isAuthenticated, initialize } = useAuthStore();
   const { fetchProjects } = useProjectStore();
   const { initialize: initializeChatUnread } = useChatUnreadStore();
+  const { initSocketListeners: initializeCallSocket } = useCallStore();
   const { isCollapsed } = useSidebarStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -36,8 +40,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       fetchProjects();
       connectSocket(user._id);
       initializeChatUnread(user._id);
+      initializeCallSocket(user._id);
     }
-  }, [initialized, isAuthenticated, user?._id]);
+  }, [initialized, isAuthenticated, user?._id, initializeCallSocket]);
 
   if (!initialized) {
     return (
@@ -59,6 +64,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-background">
       {/* Global Realtime Chat Notification Toast */}
       <GlobalChatToastContainer />
+
+      {/* Global Incoming Call Modal (pops up anywhere across dashboard) */}
+      <IncomingCallModal />
+
+      {/* Global Persistent Mini Bar (stays visible when navigating away during an active call) */}
+      <GlobalCallMiniBar />
 
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />

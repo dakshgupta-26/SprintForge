@@ -29,6 +29,7 @@ import teamRoutes from './routes/teams';
 import wikiRoutes from './routes/wiki';
 import analyticsRoutes from './routes/analytics';
 import messageRoutes from './routes/messages';
+import callRoutes from './routes/calls';
 
 // Socket handler
 import { initSocket } from './socket';
@@ -112,6 +113,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/wiki', wikiRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/calls', callRoutes);
 
 // Health checks
 import { verifyEmailTransporter, getEmailHealthStatus } from './services/emailService';

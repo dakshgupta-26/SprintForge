@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface INotification extends Document {
   recipient: mongoose.Types.ObjectId;
   sender?: mongoose.Types.ObjectId;
-  type: 'task_assigned' | 'task_updated' | 'comment_added' | 'sprint_started' | 'sprint_completed' | 'mention' | 'project_invite' | 'user_joined' | 'issue_created' | 'pr_linked';
+  type: 'task_assigned' | 'task_updated' | 'comment_added' | 'sprint_started' | 'sprint_completed' | 'mention' | 'project_invite' | 'user_joined' | 'issue_created' | 'pr_linked' | 'call_missed' | 'call_incoming';
   title: string;
   message: string;
   link?: string;

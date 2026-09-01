@@ -276,4 +276,16 @@ export const issueAPI = {
   create: (data: any) => api.post("/issues", data),
 };
 
+// ─── Calls ───
+export const callAPI = {
+  getProjectCalls: (projectId: string, page = 1, limit = 30) =>
+    api.get(`/calls/project/${projectId}`, { params: { page, limit } }),
+  getRecentCalls: (projectId: string) => api.get(`/calls/project/${projectId}/recent`),
+  getUnreadMissedCalls: () => api.get("/calls/unread"),
+  markCallAsRead: (callId: string) => api.patch(`/calls/${callId}/read`),
+  markAllProjectCallsAsRead: (projectId: string) =>
+    api.post(`/calls/project/${projectId}/read-all`),
+  endCall: (callId: string) => api.post(`/calls/${callId}/end`),
+};
+
 export default api;

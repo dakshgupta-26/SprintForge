@@ -23,6 +23,8 @@ import {
   AtSign,
   Clock,
   Sparkles,
+  PhoneMissed,
+  PhoneCall,
 } from "lucide-react";
 import { generateAvatar, formatDate, cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
@@ -161,6 +163,22 @@ const TYPE_CONFIG: Record<
     bg: "bg-orange-500/10",
     border: "border-orange-500/25",
     badgeColor: "bg-orange-500/15 text-orange-300 border-orange-500/30",
+  },
+  call_missed: {
+    icon: PhoneMissed,
+    label: "Missed Call",
+    color: "text-rose-400",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/25",
+    badgeColor: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  },
+  call_incoming: {
+    icon: PhoneCall,
+    label: "Incoming Call",
+    color: "text-violet-400",
+    bg: "bg-violet-500/10",
+    border: "border-violet-500/25",
+    badgeColor: "bg-violet-500/15 text-violet-300 border-violet-500/30",
   },
 };
 

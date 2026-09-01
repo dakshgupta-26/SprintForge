@@ -26,11 +26,13 @@ import {
   Search,
   Sparkles,
   Command,
+  PhoneCall,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore, Project } from "@/lib/store/projectStore";
 import { useSidebarStore } from "@/lib/store/sidebarStore";
 import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
+import { useCallStore } from "@/lib/store/callStore";
 import { notificationAPI, taskAPI } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { cn, generateAvatar } from "@/lib/utils";
@@ -72,7 +74,12 @@ const mainNav = (taskCount: number, notifCount: number): NavItem[] => [
   },
 ];
 
-const projectNav = (id: string, chatUnread = 0, isPulsing = false): NavItem[] => [
+const projectNav = (
+  id: string,
+  chatUnread = 0,
+  isPulsing = false,
+  callUnread = 0
+): NavItem[] => [
   { label: "Board", href: `/dashboard/projects/${id}/board`, icon: Columns3 },
   { label: "Backlog", href: `/dashboard/projects/${id}/backlog`, icon: AlignLeft },
   { label: "Sprints", href: `/dashboard/projects/${id}/sprints`, icon: Zap },
@@ -83,6 +90,12 @@ const projectNav = (id: string, chatUnread = 0, isPulsing = false): NavItem[] =>
     icon: MessageSquare,
     badge: chatUnread,
     pulse: isPulsing,
+  },
+  {
+    label: "Call",
+    href: `/dashboard/projects/${id}/call`,
+    icon: PhoneCall,
+    badge: callUnread,
   },
   { label: "Analytics", href: `/dashboard/projects/${id}/analytics`, icon: BarChart3 },
   { label: "Team", href: `/dashboard/projects/${id}/team`, icon: Users },
@@ -101,6 +114,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { projects, currentProject, fetchProjects } = useProjectStore();
   const { isCollapsed, toggleCollapse } = useSidebarStore();
   const { projectUnreadCounts, pulseProjects } = useChatUnreadStore();
+  const { missedCallsByProject } = useCallStore();
 
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -321,7 +335,8 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 const isCurrentProject =
                   activeProjectIdFromUrl === project._id ||
                   currentProject?._id === project._id;
-                const unreadCount = projectUnreadCounts[project._id] || 0;
+                const projectCallUnread = missedCallsByProject[project._id] || 0;
+                const unreadCount = (projectUnreadCounts[project._id] || 0) + projectCallUnread;
 
                 return (
                   <SidebarTooltip
@@ -366,6 +381,8 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   activeProjectIdFromUrl === project._id ||
                   currentProject?._id === project._id;
                 const projectUnread = projectUnreadCounts[project._id] || 0;
+                const projectCallUnread = missedCallsByProject[project._id] || 0;
+                const totalProjectUnread = projectUnread + projectCallUnread;
                 const isPulsing = !!pulseProjects[project._id];
 
                 return (
@@ -402,9 +419,9 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       </Link>
 
                       {/* Project Header Unread Badge (when collapsed) */}
-                      {!isExpanded && projectUnread > 0 && (
+                      {!isExpanded && totalProjectUnread > 0 && (
                         <span className="mr-1.5 bg-violet-600/30 border border-violet-500/40 text-violet-200 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
-                          {projectUnread > 99 ? "99+" : projectUnread}
+                          {totalProjectUnread > 99 ? "99+" : totalProjectUnread}
                         </span>
                       )}
 
@@ -434,7 +451,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                           transition={{ duration: 0.15, ease: "easeOut" }}
                           className="overflow-hidden ml-3.5 pl-2.5 border-l border-white/[0.08] space-y-0.5 py-0.5"
                         >
-                          {projectNav(project._id, projectUnread, isPulsing).map((item) => {
+                          {projectNav(project._id, projectUnread, isPulsing, projectCallUnread).map((item) => {
                             const active = isActive(item.href);
                             return (
                               <NavLink
