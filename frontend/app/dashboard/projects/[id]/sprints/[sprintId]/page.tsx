@@ -14,6 +14,7 @@ const statusColor: Record<string, string> = {
 
 import toast from "react-hot-toast";
 import { TaskDetailModal } from "@/components/board/TaskDetailModal";
+import { WorkspaceBootLoader } from "@/components/shared/WorkspaceBootLoader";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 
 export default function SprintDetailPage() {
@@ -30,12 +31,15 @@ export default function SprintDetailPage() {
   const loadSprint = async () => {
     try {
       setIsLoading(true);
-      const { data } = await sprintAPI.getOne(sprintId);
-      setSprint(data);
-      setEditForm({ name: data.name, startDate: data.startDate?.split("T")[0] || "", endDate: data.endDate?.split("T")[0] || "" });
+      const res = await sprintAPI.getOne(sprintId);
+      setSprint(res.data);
+      setEditForm({
+        name: res.data.name,
+        startDate: res.data.startDate ? res.data.startDate.split("T")[0] : "",
+        endDate: res.data.endDate ? res.data.endDate.split("T")[0] : "",
+      });
     } catch {
       toast.error("Failed to load sprint details");
-      router.push(`/dashboard/projects/${projectId}/sprints`);
     } finally {
       setIsLoading(false);
     }
@@ -72,8 +76,18 @@ export default function SprintDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="w-full min-h-[500px] flex items-center justify-center p-4">
+        <WorkspaceBootLoader
+          variant="embedded"
+          subtitle="SPRINT DETAIL"
+          stages={[
+            { id: "timeline", label: "Loading sprint timeline", completedLabel: "Timeline synced" },
+            { id: "tasks", label: "Syncing sprint tasks", completedLabel: "Sprint tasks synced" },
+            { id: "metrics", label: "Calculating burn-rate", completedLabel: "Sprint ready" },
+          ]}
+          currentStageIndex={1}
+          status="loading"
+        />
       </div>
     );
   }

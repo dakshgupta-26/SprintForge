@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 
 import { useSidebarStore } from "@/lib/store/sidebarStore";
 
+import { WorkspaceBootLoader } from "@/components/shared/WorkspaceBootLoader";
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, isAuthenticated, initialize } = useAuthStore();
@@ -46,15 +48,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!initialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-primary/20 animate-pulse" />
-          <div className="space-y-2">
-            <div className="h-2 w-32 skeleton" />
-            <div className="h-2 w-24 skeleton mx-auto" />
-          </div>
-        </div>
-      </div>
+      <WorkspaceBootLoader
+        variant="fullscreen"
+        title="SprintForge"
+        subtitle="AGILE WORKSPACE"
+        stages={[
+          { id: "auth", label: "Authenticating session", completedLabel: "Session verified" },
+          { id: "workspaces", label: "Loading workspaces", completedLabel: "Workspaces loaded" },
+          { id: "realtime", label: "Connecting realtime engine", completedLabel: "Realtime engine connected" },
+          { id: "ready", label: "Preparing dashboard", completedLabel: "Dashboard ready" },
+        ]}
+        currentStageIndex={0}
+        status="loading"
+      />
     );
   }
 

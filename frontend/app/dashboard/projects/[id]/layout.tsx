@@ -1,18 +1,26 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams, notFound } from "next/navigation";
+
+import React, { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useProjectStore } from "@/lib/store/projectStore";
-import { Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  WorkspaceBootLoader,
+  WorkspaceStage,
+} from "@/components/shared/WorkspaceBootLoader";
+
+const PROJECT_BOOT_STAGES: WorkspaceStage[] = [
+  { id: "connect", label: "Connecting to workspace", completedLabel: "Connected to workspace" },
+  { id: "project", label: "Loading project data", completedLabel: "Project verified" },
+  { id: "team", label: "Syncing project members", completedLabel: "Members synchronized" },
+  { id: "workspace", label: "Preparing workspace", completedLabel: "Workspace ready" },
+];
 
 /**
  * Project Layout
  *
- * This layout is REQUIRED so that Next.js App Router can resolve all
- * sub-routes under /dashboard/projects/[id]/* (board, backlog, team, etc.)
- *
- * It also acts as the single source-of-truth for loading the current project
- * into the Zustand store, so every child page gets `currentProject` populated
- * without each page needing its own fetch.
+ * Single source-of-truth for initializing and loading the active project workspace
+ * into the Zustand store, providing an animated boot experience during network transitions.
  */
 export default function ProjectLayout({
   children,
@@ -20,11 +28,13 @@ export default function ProjectLayout({
   children: React.ReactNode;
 }) {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { fetchProject, currentProject } = useProjectStore();
   const [loading, setLoading] = useState(true);
+  const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const loadProject = useCallback(async () => {
     if (!id) return;
 
     // Only re-fetch if we're switching to a different project
@@ -35,38 +45,52 @@ export default function ProjectLayout({
 
     setLoading(true);
     setError(false);
+    setStageIndex(0);
 
-    fetchProject(id)
-      .catch((err: any) => {
-        if (err?.response?.status === 404 || err?.response?.status === 403) {
-          setError(true);
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+    try {
+      setStageIndex(1);
+      await fetchProject(id);
+      setStageIndex(2);
+      // Small state tick for members sync and workspace readiness
+      setStageIndex(3);
+      setLoading(false);
+    } catch (err: any) {
+      setError(true);
+      setLoading(false);
+    }
+  }, [id, currentProject?._id, fetchProject]);
 
-  if (loading) {
+  useEffect(() => {
+    loadProject();
+  }, [loadProject]);
+
+  if (loading || error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading project…</p>
+      <div className="w-full min-h-[calc(100vh-140px)] flex items-center justify-center p-2 sm:p-4">
+        <WorkspaceBootLoader
+          variant="embedded"
+          title="SprintForge"
+          subtitle={currentProject?.name ? `${currentProject.name.toUpperCase()}` : "PROJECT WORKSPACE"}
+          stages={PROJECT_BOOT_STAGES}
+          currentStageIndex={stageIndex}
+          status={error ? "error" : "loading"}
+          errorTitle="Project Unavailable"
+          errorMessage="This project could not be found or you don't have access permissions."
+          onRetry={loadProject}
+          onBack={() => router.push("/dashboard")}
+        />
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
-        <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center">
-          <span className="text-3xl">🚧</span>
-        </div>
-        <h2 className="text-lg font-bold text-foreground">Project not found</h2>
-        <p className="text-sm text-muted-foreground max-w-xs text-center">
-          This project doesn&apos;t exist or you don&apos;t have permission to view it.
-        </p>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="w-full h-full"
+    >
+      {children}
+    </motion.div>
+  );
 }

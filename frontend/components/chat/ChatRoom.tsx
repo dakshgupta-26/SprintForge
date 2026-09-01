@@ -37,7 +37,15 @@ import { UserAvatar } from "@/components/shared/UserAvatar";
 import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
 import { AttachmentCard, AttachmentItem } from "./AttachmentCard";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
+import { WorkspaceBootLoader, WorkspaceStage } from "@/components/shared/WorkspaceBootLoader";
 import toast from "react-hot-toast";
+
+const CHAT_BOOT_STAGES: WorkspaceStage[] = [
+  { id: "connect", label: "Connecting to workspace channel", completedLabel: "Workspace channel connected" },
+  { id: "presence", label: "Loading team presence", completedLabel: "Team presence loaded" },
+  { id: "sync", label: "Syncing conversations", completedLabel: "Conversations synchronized" },
+  { id: "ready", label: "Preparing realtime collaboration", completedLabel: "Workspace ready" },
+];
 
 interface MessageSender {
   _id: string;
@@ -94,6 +102,8 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingStageIndex, setLoadingStageIndex] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [firstUnreadMessageId, setFirstUnreadMessageId] = useState<string | null>(null);
@@ -265,46 +275,56 @@ export function ChatRoom({ projectId }: { projectId: string }) {
   }, [messages, projectId, markMessagesAsRead, markProjectAsRead]);
 
   // ─── Fetch Messages & Socket Listeners ────────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
+  const fetchHistory = useCallback(async () => {
+    setLoadError(null);
+    setIsLoading(true);
+    setLoadingStageIndex(0);
+
     if (user?._id) {
       connectSocket(user._id);
     }
+    setLoadingStageIndex(1);
 
-    const fetchHistory = async () => {
-      try {
-        const { data } = await chatAPI.getMessages(projectId);
-        if (mounted) {
-          const list = data || [];
-          setMessages(list);
+    const socket = getSocket();
+    if (socket) {
+      socket.emit("join:project", { projectId, userId: user?._id });
+    }
 
-          // Locate first unread message for the "NEW MESSAGES" divider
-          const firstUnread = list.find((m: Message) => {
-            if (m.sender?._id === user?._id || m.isOptimistic) return false;
-            const read = (m.readBy || []).some((r) => {
-              const rUserId = typeof r.user === "object" ? r.user?._id : r.user;
-              return rUserId === user?._id;
-            });
-            return !read;
-          });
+    setLoadingStageIndex(2);
 
-          if (firstUnread) {
-            setFirstUnreadMessageId(firstUnread._id);
-          }
+    try {
+      const { data } = await chatAPI.getMessages(projectId);
+      const list = data || [];
+      setMessages(list);
 
-          markMessagesAsRead(list);
-          markProjectAsRead(projectId);
-        }
-      } catch (error) {
-        console.error("Failed to load project messages", error);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-          setTimeout(() => scrollToBottom(false), 50);
-        }
+      // Locate first unread message for the "NEW MESSAGES" divider
+      const firstUnread = list.find((m: Message) => {
+        if (m.sender?._id === user?._id || m.isOptimistic) return false;
+        const read = (m.readBy || []).some((r) => {
+          const rUserId = typeof r.user === "object" ? r.user?._id : r.user;
+          return rUserId === user?._id;
+        });
+        return !read;
+      });
+
+      if (firstUnread) {
+        setFirstUnreadMessageId(firstUnread._id);
       }
-    };
 
+      markMessagesAsRead(list);
+      markProjectAsRead(projectId);
+      setLoadingStageIndex(3);
+      setIsLoading(false);
+      setTimeout(() => scrollToBottom(false), 50);
+    } catch (error) {
+      console.error("Failed to load project messages", error);
+      setLoadError("Something went wrong while connecting to SprintForge.");
+      setIsLoading(false);
+    }
+  }, [projectId, user, markMessagesAsRead, markProjectAsRead, scrollToBottom]);
+
+  useEffect(() => {
+    let mounted = true;
     fetchHistory();
 
     const socket = getSocket();
@@ -750,18 +770,18 @@ export function ChatRoom({ projectId }: { projectId: string }) {
     );
   }, [messages, searchQuery]);
 
-  if (isLoading) {
+  if (isLoading || loadError) {
     return (
-      <div className="w-full h-full min-h-[500px] flex flex-col items-center justify-center bg-[#070a14] rounded-2xl border border-white/[0.08]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
-            <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
-          </div>
-          <p className="text-xs font-mono font-medium text-slate-400">
-            Initializing secure project channel...
-          </p>
-        </div>
-      </div>
+      <WorkspaceBootLoader
+        variant="embedded"
+        subtitle={project?.name ? `${project.name.toUpperCase()} CHAT` : "PROJECT WORKSPACE"}
+        stages={CHAT_BOOT_STAGES}
+        currentStageIndex={loadingStageIndex}
+        status={loadError ? "error" : "loading"}
+        errorTitle="Workspace Chat Unavailable"
+        errorMessage={loadError || undefined}
+        onRetry={fetchHistory}
+      />
     );
   }
 
