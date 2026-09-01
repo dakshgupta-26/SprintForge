@@ -8,9 +8,12 @@
 > **"See how one change affects your sprint before you make it."**  
 > A distributed, dependency-aware Agile orchestration platform combining real-time collaboration, WebRTC audio/video infrastructure, and deterministic engineering intelligence.
 
-<br />
+<p align="center">
+  <a href="https://sprint-forge-livid.vercel.app/" target="_blank">
+    <img src="https://img.shields.io/badge/⚡_LIVE_PRODUCTION_DEMO-LAUNCH_PLATFORM-6366f1?style=for-the-badge&logo=vercel&logoColor=white&labelColor=070a14" alt="Launch Live Platform" height="38" />
+  </a>
+</p>
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-sprint--forge--livid.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://sprint-forge-livid.vercel.app/)
 [![Next.js](https://img.shields.io/badge/Next.js_16-Turbopack-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript_5.x-Strict_Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Express.js](https://img.shields.io/badge/Express.js_4-REST_API-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
@@ -20,11 +23,12 @@
 [![Docker](https://img.shields.io/badge/Docker-Multi_Stage_Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-<br />
-
-**🔗 [Experience the Live Application &rarr; https://sprint-forge-livid.vercel.app/](https://sprint-forge-livid.vercel.app/)**
-
 </div>
+
+> [!TIP]
+> ### 🚀 **Live Production Deployment is Online!**
+> Explore real-time Kanban boards, DAG Impact Engine simulations, and WebRTC audio/video calling live in your browser:  
+> **👉 [https://sprint-forge-livid.vercel.app/](https://sprint-forge-livid.vercel.app/)**
 
 ---
 
@@ -34,9 +38,9 @@ SprintForge connects task execution, dependency intelligence, real-time collabor
 
 <div align="center">
 
-[![SprintForge Enterprise Architecture](https://raw.githubusercontent.com/dakshgupta-26/SprintForge/main/assets/architecture.svg)](https://sprint-forge-livid.vercel.app/)
+[![SprintForge Enterprise Architecture](assets/architecture.png)](https://sprint-forge-livid.vercel.app/)
 
-*Click on the architecture diagram to launch the interactive live deployment on Vercel.*
+<p><em>Click on the architecture topology diagram above to launch the interactive live deployment on Vercel.</em></p>
 
 </div>
 
