@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="100%" height="100%">
+  <defs>
+    <!-- Arrow Markers -->
+    <marker id="arr-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3B82F6" />
+    </marker>
+    <marker id="arr-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#06B6D4" />
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10B981" />
+    </marker>
+    <marker id="arr-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#A855F7" />
+    </marker>
+    <marker id="arr-pink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#EC4899" />
+    </marker>
+    <marker id="arr-amber" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#F59E0B" />
+    </marker>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1200" height="780" fill="#080B14" />
+
+  <!-- ==================== HEADER ==================== -->
+  <g transform="translate(30, 20)" font-family="'Inter', sans-serif">
+    <text x="0" y="20" fill="#F8FAFC" font-size="18" font-weight="800" letter-spacing="-0.3">SPRINTFORGE — PRODUCTION SYSTEM ARCHITECTURE</text>
+    <text x="0" y="38" fill="#64748B" font-size="11" font-weight="500">End-to-End System Design: Client Tier • Protocol Boundary • Security Gateway • Core Services • Realtime Mesh • Impact Engine • MongoDB</text>
+  </g>
+
+  <!-- ==================== LAYER 1: CLIENT TIER ==================== -->
+  <g transform="translate(30, 75)" font-family="'Inter', sans-serif">
+    <!-- Outer Boundary -->
+    <rect width="1140" height="110" rx="8" fill="#0C1222" stroke="#1D4ED8" stroke-width="1.2" />
+    <!-- Boundary Tag -->
+    <rect x="16" y="-11" width="220" height="22" rx="4" fill="#080B14" stroke="#2563EB" stroke-width="1" />
+    <text x="24" y="4" fill="#60A5FA" font-size="10" font-weight="700" letter-spacing="0.5">1. CLIENT TIER (WEB APPS)</text>
+    <text x="250" y="4" fill="#64748B" font-size="10">Next.js 16 (App Router) • React 19 • TypeScript • TailwindCSS 4</text>
+
+    <!-- Sub-containers -->
+    <!-- 1A: UI Domain Modules -->
+    <g transform="translate(16, 20)">
+      <rect width="360" height="74" rx="6" fill="#111827" stroke="#1E3A8A" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="12" font-weight="700">UI Domain Modules</text>
+      <text x="14" y="40" fill="#93C5FD" font-size="10.5">Workspace: Projects • Kanban Board • Sprints • Issues</text>
+      <text x="14" y="58" fill="#94A3B8" font-size="10">Collaboration: Realtime Chat • Video Calling • Wiki Docs</text>
+    </g>
+
+    <!-- 1B: Reactive State Management -->
+    <g transform="translate(392, 20)">
+      <rect width="350" height="74" rx="6" fill="#111827" stroke="#1E3A8A" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="12" font-weight="700">Zustand State Stores</text>
+      <text x="14" y="40" fill="#93C5FD" font-size="10.5">authStore (Session) • taskStore (Optimistic UI)</text>
+      <text x="14" y="58" fill="#94A3B8" font-size="10">projectStore (Members) • callStore (WebRTC Media)</text>
+    </g>
+
+    <!-- 1C: Network Adapters -->
+    <g transform="translate(758, 20)">
+      <rect width="366" height="74" rx="6" fill="#111827" stroke="#1E3A8A" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="12" font-weight="700">Network Transport Adapters</text>
+      <text x="14" y="40" fill="#67E8F9" font-size="10.5">Axios REST Client (Type-Safe API Contracts)</text>
+      <text x="14" y="58" fill="#F472B6" font-size="10">Socket.IO Client (Auto-Reconnect) • WebRTC Core</text>
+    </g>
+  </g>
+
+  <!-- ==================== PROTOCOL PIPELINES (CONNECTORS) ==================== -->
+  <!-- HTTPS REST -->
+  <path d="M 220 185 L 220 235" stroke="#3B82F6" stroke-width="2" marker-end="url(#arr-blue)" />
+  <rect x="140" y="198" width="160" height="22" rx="4" fill="#080B14" stroke="#2563EB" stroke-width="0.8" />
+  <text x="150" y="213" fill="#60A5FA" font-size="9.5" font-family="'Inter', sans-serif" font-weight="700">HTTPS / REST (Stateless)</text>
+
+  <!-- Socket.IO Duplex -->
+  <path d="M 600 185 L 600 235" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arr-cyan)" marker-start="url(#arr-cyan)" />
+  <rect x="510" y="198" width="180" height="22" rx="4" fill="#080B14" stroke="#06B6D4" stroke-width="0.8" />
+  <text x="520" y="213" fill="#67E8F9" font-size="9.5" font-family="'Inter', sans-serif" font-weight="700">WSS / Socket.IO (Duplex)</text>
+
+  <!-- WebRTC P2P Media -->
+  <path d="M 980 185 L 980 235" stroke="#EC4899" stroke-width="2.2" marker-end="url(#arr-pink)" marker-start="url(#arr-pink)" />
+  <rect x="895" y="198" width="170" height="22" rx="4" fill="#080B14" stroke="#EC4899" stroke-width="0.8" />
+  <text x="905" y="213" fill="#F472B6" font-size="9.5" font-family="'Inter', sans-serif" font-weight="700">Peer-to-Peer Media (SRTP)</text>
+
+  <!-- ==================== LAYER 2: BACKEND & SERVICES ==================== -->
+  <g transform="translate(30, 235)" font-family="'Inter', sans-serif">
+    <!-- Outer Boundary -->
+    <rect width="1140" height="345" rx="8" fill="#0B0F1E" stroke="#3730A3" stroke-width="1.2" />
+    <!-- Boundary Tag -->
+    <rect x="16" y="-11" width="260" height="22" rx="4" fill="#080B14" stroke="#4F46E5" stroke-width="1" />
+    <text x="24" y="4" fill="#A5B4FC" font-size="10" font-weight="700" letter-spacing="0.5">2. APPLICATION BACKEND (EXPRESS)</text>
+    <text x="290" y="4" fill="#64748B" font-size="10">Node.js 20+ Runtime • Modular Service Architecture</text>
+
+    <!-- Sub-Block 2A: Security & Middleware Pipeline -->
+    <g transform="translate(16, 20)">
+      <rect width="1108" height="48" rx="6" fill="#140E26" stroke="#6B21A8" stroke-width="1" />
+      <text x="14" y="18" fill="#E9D5FF" font-size="11" font-weight="700">Security Gateway &amp; Middleware Pipeline</text>
+      <text x="14" y="36" fill="#C084FC" font-size="9.5">Token-Bucket Rate Limiter (express-rate-limit) • Helmet Security Headers (CSP, HSTS) • JWT Cookie Verification • 5-Tier RBAC (Admin &gt; Lead &gt; Dev &gt; QA &gt; Viewer)</text>
+    </g>
+
+    <!-- Sub-Block 2B: Core Domain Services Grid (6 balanced nodes) -->
+    <g transform="translate(16, 80)">
+      <!-- Svc 1 -->
+      <rect x="0" y="0" width="174" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Auth &amp; Session</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• 6-Digit Email OTP</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• Google OAuth 2.0 PKCE</text>
+
+      <!-- Svc 2 -->
+      <rect x="186" y="0" width="174" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Project &amp; Team</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• Multi-Tenant Workspaces</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• 6-Char Join Codes &amp; Invites</text>
+
+      <!-- Svc 3 -->
+      <rect x="372" y="0" width="174" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Task Management</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• 5-Stage Kanban State</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• Task Dependencies Matrix</text>
+
+      <!-- Svc 4 -->
+      <rect x="558" y="0" width="174" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Sprint Lifecycle</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• Planning → Active → Done</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• Burndown &amp; Velocity Engine</text>
+
+      <!-- Svc 5 -->
+      <rect x="744" y="0" width="174" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Chat &amp; Storage</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• AES-256 Field Cipher</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• Multer Upload Pipeline</text>
+
+      <!-- Svc 6 -->
+      <rect x="930" y="0" width="178" height="62" rx="5" fill="#111827" stroke="#3730A3" stroke-width="0.9" />
+      <text x="10" y="18" fill="#FFFFFF" font-size="11" font-weight="700">Wiki &amp; Notifications</text>
+      <text x="10" y="34" fill="#94A3B8" font-size="9">• Markdown Knowledgebase</text>
+      <text x="10" y="48" fill="#94A3B8" font-size="9">• Mailjet / Resend SDK</text>
+    </g>
+
+    <!-- Sub-Block 2C: Specialized Subsystems (Impact Engine & Realtime Mesh) -->
+    <g transform="translate(16, 154)">
+      <!-- Impact Engine Box -->
+      <rect x="0" y="0" width="548" height="175" rx="6" fill="#130D24" stroke="#7C3AED" stroke-width="1.2" />
+      <text x="14" y="22" fill="#F3E8FF" font-size="12" font-weight="700">IMPACT ENGINE — Discrete Graph Algorithms Subsystem</text>
+      
+      <!-- 4 Sequential Impact Steps -->
+      <g transform="translate(14, 32)">
+        <rect x="0" y="0" width="520" height="28" rx="4" fill="#1E1438" stroke="#9333EA" stroke-width="0.8" />
+        <text x="10" y="18" fill="#FAF5FF" font-size="9.5" font-weight="600">1. DAG Constructor &amp; Cycle Check:</text>
+        <text x="210" y="18" fill="#D8B4FE" font-size="9">Kahn's Topological Sort + DFS Back-Edge Search O(V+E)</text>
+
+        <rect x="0" y="34" width="520" height="28" rx="4" fill="#1E1438" stroke="#9333EA" stroke-width="0.8" />
+        <text x="10" y="18" fill="#FAF5FF" font-size="9.5" font-weight="600">2. Critical Path Method (CPM):</text>
+        <text x="180" y="18" fill="#D8B4FE" font-size="9">Forward (ES/EF) + Backward (LS/LF) Pass → Float &lt;= 0</text>
+
+        <rect x="0" y="68" width="520" height="28" rx="4" fill="#1E1438" stroke="#9333EA" stroke-width="0.8" />
+        <text x="10" y="18" fill="#FAF5FF" font-size="9.5" font-weight="600">3. Multi-Vector Risk Radar:</text>
+        <text x="175" y="18" fill="#D8B4FE" font-size="9">Blast Radius, Tree Depth, Assignee Overload (0-100 Score)</text>
+
+        <rect x="0" y="102" width="520" height="28" rx="4" fill="#1E1438" stroke="#9333EA" stroke-width="0.8" />
+        <text x="10" y="18" fill="#FAF5FF" font-size="9.5" font-weight="600">4. In-Memory Simulation Sandbox:</text>
+        <text x="215" y="18" fill="#22D3EE" font-size="9">Deep Graph Clone Delay Forecasting (Zero DB Mutation)</text>
+      </g>
+
+      <!-- Realtime Mesh Box -->
+      <rect x="560" y="0" width="548" height="175" rx="6" fill="#081824" stroke="#0284C7" stroke-width="1.2" />
+      <text x="14" y="22" fill="#E0F2FE" font-size="12" font-weight="700">REALTIME SIGNALING MESH — Socket.IO 4.x Engine</text>
+
+      <g transform="translate(14, 32)">
+        <rect x="560" y="0" width="520" height="38" rx="4" fill="#0C2538" stroke="#0284C7" stroke-width="0.8" />
+        <text x="570" y="17" fill="#FFFFFF" font-size="10" font-weight="600">Global Multi-Tab Socket Registry (Map&lt;UserId, Set&lt;SocketId&gt;&gt;)</text>
+        <text x="570" y="31" fill="#7DD3FC" font-size="8.5">Synchronizes active session presence and ringtone dismissals across duplicate tabs</text>
+
+        <rect x="560" y="44" width="520" height="38" rx="4" fill="#0C2538" stroke="#0284C7" stroke-width="0.8" />
+        <text x="570" y="17" fill="#FFFFFF" font-size="10" font-weight="600">Room-Based Mutation Broadcaster</text>
+        <text x="570" y="31" fill="#7DD3FC" font-size="8.5">Dispatches sub-50ms atomic Kanban drops, chat messages, and typing telemetry</text>
+
+        <rect x="560" y="88" width="520" height="42" rx="4" fill="#0C2538" stroke="#0284C7" stroke-width="0.8" />
+        <text x="570" y="17" fill="#FFFFFF" font-size="10" font-weight="600">WebRTC SDP &amp; ICE Signaling Bridge</text>
+        <text x="570" y="31" fill="#F472B6" font-size="8.5">Handles asynchronous offer/answer negotiation and candidate queue arbitration</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ==================== CONNECTORS (BACKEND TO DB) ==================== -->
+  <path d="M 600 580 L 600 620" stroke="#10B981" stroke-width="2" marker-end="url(#arr-green)" />
+  <rect x="490" y="590" width="220" height="20" rx="4" fill="#080B14" stroke="#10B981" stroke-width="0.8" />
+  <text x="500" y="604" fill="#6EE7B7" font-size="9" font-family="'Inter', sans-serif" font-weight="700">Mongoose ODM Read / Write Operations</text>
+
+  <!-- ==================== LAYER 3: PERSISTENCE & DATA ==================== -->
+  <g transform="translate(30, 620)" font-family="'Inter', sans-serif">
+    <!-- Outer Boundary -->
+    <rect width="1140" height="130" rx="8" fill="#061B14" stroke="#059669" stroke-width="1.2" />
+    <!-- Boundary Tag -->
+    <rect x="16" y="-11" width="240" height="22" rx="4" fill="#080B14" stroke="#10B981" stroke-width="1" />
+    <text x="24" y="4" fill="#6EE7B7" font-size="10" font-weight="700" letter-spacing="0.5">3. PERSISTENCE TIER (MONGODB)</text>
+    <text x="270" y="4" fill="#64748B" font-size="10">MongoDB 7.x Database • Hardware-Accelerated AES-256-CBC Cryptography</text>
+
+    <!-- 3 Core Storage Blocks -->
+    <g transform="translate(16, 20)">
+      <!-- Collections Block -->
+      <rect x="0" y="0" width="600" height="92" rx="5" fill="#0B2B20" stroke="#059669" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="11.5" font-weight="700">Mongoose Document Collections</text>
+      <text x="14" y="40" fill="#A7F3D0" font-size="10">User • Project • Task • Sprint • Message • ChatReadCursor</text>
+      <text x="14" y="58" fill="#A7F3D0" font-size="10">Invitation • Call • Wiki • SecurityLog • Session • EmailVerificationChallenge</text>
+      <text x="14" y="78" fill="#6EE7B7" font-size="9.5">• Compound Indexes on (projectId, status, sprintId) for sub-5ms query resolution</text>
+
+      <!-- Security & Cryptography Block -->
+      <rect x="614" y="0" width="250" height="92" rx="5" fill="#0B2B20" stroke="#059669" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="11.5" font-weight="700">Security &amp; Encryption</text>
+      <text x="14" y="40" fill="#A7F3D0" font-size="10">• AES-256-CBC Field Cipher</text>
+      <text x="14" y="58" fill="#A7F3D0" font-size="10">• Session TTL Auto-Expiry</text>
+      <text x="14" y="76" fill="#A7F3D0" font-size="10">• SecurityLog.ts Audit Ledger</text>
+
+      <!-- Storage Pipeline Block -->
+      <rect x="878" y="0" width="230" height="92" rx="5" fill="#0B2B20" stroke="#059669" stroke-width="1" />
+      <text x="14" y="20" fill="#FFFFFF" font-size="11.5" font-weight="700">Attachment Storage</text>
+      <text x="14" y="40" fill="#A7F3D0" font-size="10">• Multer Multipart Uploads</text>
+      <text x="14" y="58" fill="#A7F3D0" font-size="10">• MIME-Type Verification</text>
+      <text x="14" y="76" fill="#A7F3D0" font-size="10">• File Chunking &amp; Local Stream</text>
+    </g>
+  </g>
+</svg>

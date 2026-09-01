@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 170" width="100%" height="100%">
+  <defs>
+    <marker id="imp-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#A855F7" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="170" fill="#080B14" />
+
+  <g transform="translate(30, 20)" font-family="'Inter', sans-serif">
+    <rect width="1140" height="130" rx="8" fill="#130D24" stroke="#7C3AED" stroke-width="1.2" />
+    <text x="16" y="20" fill="#D8B4FE" font-size="11" font-weight="800" letter-spacing="0.5">IMPACT ENGINE COMPUTATION PIPELINE — Deterministic Operations Research &amp; Graph Algorithms</text>
+
+    <!-- 6 Sequential Computational Stages -->
+    <g transform="translate(16, 34)">
+      <!-- Stage 1 -->
+      <rect x="0" y="0" width="165" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">1. Dependencies</text>
+      <text x="10" y="38" fill="#D8B4FE" font-size="9.5">Task Adjacency Matrix</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">Graph (V, E) Mapping</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">graph.ts Constructor</text>
+
+      <path d="M 165 37 L 187 37" stroke="#A855F7" stroke-width="2" marker-end="url(#imp-purple)" />
+
+      <!-- Stage 2 -->
+      <rect x="189" y="0" width="165" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">2. DAG Construction</text>
+      <text x="10" y="38" fill="#D8B4FE" font-size="9.5">Directed Acyclic Graph</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">In-Degree Calculation</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">Predecessor Links</text>
+
+      <path d="M 354 37 L 376 37" stroke="#A855F7" stroke-width="2" marker-end="url(#imp-purple)" />
+
+      <!-- Stage 3 -->
+      <rect x="378" y="0" width="165" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">3. Cycle Detection</text>
+      <text x="10" y="38" fill="#D8B4FE" font-size="9.5">Kahn's Topo Sort</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">DFS Back-Edge Tracer</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">Linear O(V+E) Complexity</text>
+
+      <path d="M 543 37 L 565 37" stroke="#A855F7" stroke-width="2" marker-end="url(#imp-purple)" />
+
+      <!-- Stage 4 -->
+      <rect x="567" y="0" width="165" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">4. Critical Path (CPM)</text>
+      <text x="10" y="38" fill="#D8B4FE" font-size="9.5">Forward Pass (ES/EF)</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">Backward Pass (LS/LF)</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">Total Slack (Float &lt;= 0)</text>
+
+      <path d="M 732 37 L 754 37" stroke="#A855F7" stroke-width="2" marker-end="url(#imp-purple)" />
+
+      <!-- Stage 5 -->
+      <rect x="756" y="0" width="165" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">5. Risk Radar</text>
+      <text x="10" y="38" fill="#D8B4FE" font-size="9.5">6-Vector Score (0-100)</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">Blast Radius &amp; Depth</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">Assignee Overload</text>
+
+      <path d="M 921 37 L 943 37" stroke="#A855F7" stroke-width="2" marker-end="url(#imp-purple)" />
+
+      <!-- Stage 6 -->
+      <rect x="945" y="0" width="163" height="74" rx="5" fill="#1E1438" stroke="#9333EA" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">6. What-If Sandbox</text>
+      <text x="10" y="38" fill="#22D3EE" font-size="9.5">In-Memory Graph Clone</text>
+      <text x="10" y="52" fill="#94A3B8" font-size="8.5">Delay &amp; Bottleneck Sim</text>
+      <text x="10" y="66" fill="#64748B" font-size="8">Zero DB Mutation</text>
+    </g>
+  </g>
+</svg>

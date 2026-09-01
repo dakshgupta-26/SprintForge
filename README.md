@@ -36,7 +36,7 @@ SprintForge uses a modular, layered software architecture separating client-side
 ### High-Level System Architecture
 
 <p align="center">
-  <img src="assets/arch-overview.png" alt="SprintForge High-Level System Architecture" width="100%" />
+  <img src="assets/master-architecture.png" alt="SprintForge High-Level System Architecture" width="100%" />
 </p>
 
 <br />
@@ -44,7 +44,7 @@ SprintForge uses a modular, layered software architecture separating client-side
 ### Core Data Flow
 
 <p align="center">
-  <img src="assets/arch-dataflow.png" alt="SprintForge Core Data Flow" width="100%" />
+  <img src="assets/master-dataflow.png" alt="SprintForge Core Data Flow" width="100%" />
 </p>
 
 <br />
@@ -52,7 +52,7 @@ SprintForge uses a modular, layered software architecture separating client-side
 ### Realtime Calling Architecture
 
 <p align="center">
-  <img src="assets/arch-calling.png" alt="SprintForge Realtime Calling Architecture" width="100%" />
+  <img src="assets/master-calling.png" alt="SprintForge Realtime Calling Architecture" width="100%" />
 </p>
 
 - **Signaling Plane**: Transports SDP session descriptions and ICE candidate discoveries over the Socket.IO server bridge.
@@ -63,7 +63,7 @@ SprintForge uses a modular, layered software architecture separating client-side
 ### Impact Engine Computation Pipeline
 
 <p align="center">
-  <img src="assets/arch-impact.png" alt="SprintForge Impact Engine Computation Pipeline" width="100%" />
+  <img src="assets/master-impact.png" alt="SprintForge Impact Engine Computation Pipeline" width="100%" />
 </p>
 
 <br />
@@ -71,7 +71,7 @@ SprintForge uses a modular, layered software architecture separating client-side
 ### Authentication & Security Architecture
 
 <p align="center">
-  <img src="assets/arch-auth.png" alt="SprintForge Authentication & Security Architecture" width="100%" />
+  <img src="assets/master-auth.png" alt="SprintForge Authentication & Security Architecture" width="100%" />
 </p>
 
 ---

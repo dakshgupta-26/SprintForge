@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 290" width="100%" height="100%">
+  <defs>
+    <marker id="df-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3B82F6" />
+    </marker>
+    <marker id="df-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#06B6D4" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="290" fill="#080B14" />
+
+  <!-- TRACK A: SYNCHRONOUS MUTATION FLOW (REST) -->
+  <g transform="translate(30, 20)" font-family="'Inter', sans-serif">
+    <rect width="1140" height="115" rx="8" fill="#0C1222" stroke="#1D4ED8" stroke-width="1.2" />
+    <text x="16" y="20" fill="#60A5FA" font-size="11" font-weight="800" letter-spacing="0.5">TRACK A: SYNCHRONOUS MUTATION PIPELINE (HTTPS / REST)</text>
+
+    <!-- 6 Horizontally Aligned Nodes -->
+    <g transform="translate(16, 32)">
+      <!-- Step 1 -->
+      <rect x="0" y="0" width="165" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">1. User Action</text>
+      <text x="10" y="38" fill="#94A3B8" font-size="9.5">Kanban Column Drag</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">or Form Field Update</text>
+
+      <path d="M 165 32 L 187 32" stroke="#3B82F6" stroke-width="2" marker-end="url(#df-blue)" />
+
+      <!-- Step 2 -->
+      <rect x="189" y="0" width="165" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">2. Next.js Client</text>
+      <text x="10" y="38" fill="#93C5FD" font-size="9.5">Optimistic State Update</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Zustand Instant Render</text>
+
+      <path d="M 354 32 L 376 32" stroke="#3B82F6" stroke-width="2" marker-end="url(#df-blue)" />
+
+      <!-- Step 3 -->
+      <rect x="378" y="0" width="165" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">3. Express Gateway</text>
+      <text x="10" y="38" fill="#94A3B8" font-size="9.5">Rate Limit Verification</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">JWT Cookie &amp; 5-Tier RBAC</text>
+
+      <path d="M 543 32 L 565 32" stroke="#3B82F6" stroke-width="2" marker-end="url(#df-blue)" />
+
+      <!-- Step 4 -->
+      <rect x="567" y="0" width="165" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">4. Domain Service</text>
+      <text x="10" y="38" fill="#94A3B8" font-size="9.5">Execute Business Rules</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Atomic State Validation</text>
+
+      <path d="M 732 32 L 754 32" stroke="#3B82F6" stroke-width="2" marker-end="url(#df-blue)" />
+
+      <!-- Step 5 -->
+      <rect x="756" y="0" width="165" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">5. MongoDB 7.x</text>
+      <text x="10" y="38" fill="#A7F3D0" font-size="9.5">Write to Collection</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Indexed Document Store</text>
+
+      <path d="M 921 32 L 943 32" stroke="#3B82F6" stroke-width="2" marker-end="url(#df-blue)" />
+
+      <!-- Step 6 -->
+      <rect x="945" y="0" width="163" height="64" rx="5" fill="#111827" stroke="#2563EB" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">6. JSON Response</text>
+      <text x="10" y="38" fill="#93C5FD" font-size="9.5">HTTP 200/201 Success</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Reconciliation Complete</text>
+    </g>
+  </g>
+
+  <!-- TRACK B: ASYNCHRONOUS REALTIME EVENT FLOW -->
+  <g transform="translate(30, 150)" font-family="'Inter', sans-serif">
+    <rect width="1140" height="115" rx="8" fill="#081824" stroke="#0284C7" stroke-width="1.2" />
+    <text x="16" y="20" fill="#67E8F9" font-size="11" font-weight="800" letter-spacing="0.5">TRACK B: ASYNCHRONOUS REALTIME BROADCAST PIPELINE (SOCKET.IO)</text>
+
+    <!-- 6 Horizontally Aligned Nodes -->
+    <g transform="translate(16, 32)">
+      <!-- Step 1 -->
+      <rect x="0" y="0" width="165" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">1. Service Event</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Emitted Post DB Persist</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">task:updated / chat:msg</text>
+
+      <path d="M 165 32 L 187 32" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#df-cyan)" />
+
+      <!-- Step 2 -->
+      <rect x="189" y="0" width="165" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">2. Socket.IO Core</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Server Event Dispatcher</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Room Namespace Router</text>
+
+      <path d="M 354 32 L 376 32" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#df-cyan)" />
+
+      <!-- Step 3 -->
+      <rect x="378" y="0" width="165" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">3. Socket Registry</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Multi-Tab User Lookup</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Map&lt;UserId, Set&lt;SocketId&gt;&gt;</text>
+
+      <path d="M 543 32 L 565 32" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#df-cyan)" />
+
+      <!-- Step 4 -->
+      <rect x="567" y="0" width="165" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">4. Room Broadcaster</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Targeted Channel Push</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">io.to(projectId).emit()</text>
+
+      <path d="M 732 32 L 754 32" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#df-cyan)" />
+
+      <!-- Step 5 -->
+      <rect x="756" y="0" width="165" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">5. Connected Clients</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Active Browser Clients</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">WebSocket Frame Stream</text>
+
+      <path d="M 921 32 L 943 32" stroke="#06B6D4" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#df-cyan)" />
+
+      <!-- Step 6 -->
+      <rect x="945" y="0" width="163" height="64" rx="5" fill="#0C2538" stroke="#06B6D4" stroke-width="1" />
+      <text x="10" y="20" fill="#FFFFFF" font-size="11" font-weight="700">6. Zustand Re-Render</text>
+      <text x="10" y="38" fill="#7DD3FC" font-size="9.5">Sub-50ms UI Update</text>
+      <text x="10" y="52" fill="#64748B" font-size="9">Zero Page Reload</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 270" width="100%" height="100%">
+  <defs>
+    <marker id="auth-amber" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#F59E0B" />
+    </marker>
+    <marker id="auth-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3B82F6" />
+    </marker>
+    <marker id="auth-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10B981" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="270" fill="#080B14" />
+
+  <g transform="translate(30, 20)" font-family="'Inter', sans-serif">
+    <!-- LEFT BOX: DUAL INGRESS FLOWS (Width: 800) -->
+    <rect width="800" height="230" rx="8" fill="#0C1222" stroke="#1E293B" stroke-width="1.2" />
+    <text x="16" y="20" fill="#E2E8F0" font-size="11" font-weight="800" letter-spacing="0.5">AUTHENTICATION INGRESS PIPELINES</text>
+
+    <!-- Path A: Email / OTP -->
+    <g transform="translate(16, 32)">
+      <rect width="768" height="85" rx="6" fill="#181206" stroke="#D97706" stroke-width="1" />
+      <text x="12" y="18" fill="#FDE68A" font-size="10.5" font-weight="700">Path A: Email / OTP Challenge Flow</text>
+
+      <g transform="translate(12, 28)">
+        <!-- A1 -->
+        <rect x="0" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">1. Email Registration</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">User Submits Email Address</text>
+
+        <path d="M 168 23 L 190 23" stroke="#F59E0B" stroke-width="1.8" marker-end="url(#auth-amber)" />
+
+        <!-- A2 -->
+        <rect x="192" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">2. 6-Digit OTP Gen</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">Cryptographic Expiry Challenge</text>
+
+        <path d="M 360 23 L 382 23" stroke="#F59E0B" stroke-width="1.8" marker-end="url(#auth-amber)" />
+
+        <!-- A3 -->
+        <rect x="384" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">3. SMTP Dispatch</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">Mailjet / Resend API Gateway</text>
+
+        <path d="M 552 23 L 574 23" stroke="#F59E0B" stroke-width="1.8" marker-end="url(#auth-amber)" />
+
+        <!-- A4 -->
+        <rect x="576" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">4. Challenge Verify</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">EmailVerificationChallenge Match</text>
+      </g>
+    </g>
+
+    <!-- Path B: Google OAuth -->
+    <g transform="translate(16, 128)">
+      <rect width="768" height="85" rx="6" fill="#0A1526" stroke="#2563EB" stroke-width="1" />
+      <text x="12" y="18" fill="#BFDBFE" font-size="10.5" font-weight="700">Path B: Google OAuth 2.0 PKCE Federated Flow</text>
+
+      <g transform="translate(12, 28)">
+        <!-- B1 -->
+        <rect x="0" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#3B82F6" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">1. Google Sign-In</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">One-Tap Browser Flow</text>
+
+        <path d="M 168 23 L 190 23" stroke="#3B82F6" stroke-width="1.8" marker-end="url(#auth-blue)" />
+
+        <!-- B2 -->
+        <rect x="192" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#3B82F6" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">2. PKCE Exchange</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">OAuth Token Retrieval</text>
+
+        <path d="M 360 23 L 382 23" stroke="#3B82F6" stroke-width="1.8" marker-end="url(#auth-blue)" />
+
+        <!-- B3 -->
+        <rect x="384" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#3B82F6" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">3. Token Verify</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">google-auth-library Verification</text>
+
+        <path d="M 552 23 L 574 23" stroke="#3B82F6" stroke-width="1.8" marker-end="url(#auth-blue)" />
+
+        <!-- B4 -->
+        <rect x="576" y="0" width="168" height="46" rx="4" fill="#0F172A" stroke="#3B82F6" stroke-width="0.8" />
+        <text x="8" y="18" fill="#FFFFFF" font-size="10" font-weight="600">4. User Provision</text>
+        <text x="8" y="34" fill="#94A3B8" font-size="8.5">Upsert Record in MongoDB</text>
+      </g>
+    </g>
+
+    <!-- Convergence Arrows into Session Gate -->
+    <path d="M 800 75 L 825 75 L 825 110 L 838 110" stroke="#10B981" stroke-width="2" marker-end="url(#auth-green)" />
+    <path d="M 800 170 L 825 170 L 825 120 L 838 120" stroke="#10B981" stroke-width="2" marker-end="url(#auth-green)" />
+
+    <!-- RIGHT BOX: SESSION & RBAC GATE (Width: 320) -->
+    <g transform="translate(840, 0)">
+      <rect width="300" height="230" rx="8" fill="#061B14" stroke="#059669" stroke-width="1.2" />
+      <text x="16" y="20" fill="#6EE7B7" font-size="11" font-weight="800" letter-spacing="0.5">SESSION &amp; RBAC ACCESS GATE</text>
+
+      <g transform="translate(16, 32)">
+        <rect x="0" y="0" width="268" height="50" rx="4" fill="#0A281E" stroke="#10B981" stroke-width="0.9" />
+        <text x="10" y="18" fill="#FFFFFF" font-size="10.5" font-weight="700">HTTP-Only JWT Cookie</text>
+        <text x="10" y="34" fill="#A7F3D0" font-size="9">Secure Session Storage with Secret Rotation</text>
+        <text x="10" y="44" fill="#6EE7B7" font-size="8">SameSite=Strict • Anti-XSS Protection</text>
+
+        <rect x="0" y="60" width="268" height="60" rx="4" fill="#0A281E" stroke="#10B981" stroke-width="0.9" />
+        <text x="10" y="18" fill="#FFFFFF" font-size="10.5" font-weight="700">5-Tier RBAC Access Gate</text>
+        <text x="10" y="34" fill="#A7F3D0" font-size="9">Admin &gt; Lead &gt; Dev &gt; QA &gt; Viewer</text>
+        <text x="10" y="48" fill="#6EE7B7" font-size="8.5">Enforced across all protected Express routes</text>
+
+        <rect x="0" y="128" width="268" height="52" rx="4" fill="#0A281E" stroke="#10B981" stroke-width="0.9" />
+        <text x="10" y="18" fill="#FFFFFF" font-size="10.5" font-weight="700">Security Audit &amp; Cipher</text>
+        <text x="10" y="34" fill="#A7F3D0" font-size="9">AES-256-CBC Field Encryption for Confidential Data</text>
+        <text x="10" y="46" fill="#6EE7B7" font-size="8">SecurityLog.ts IP &amp; User-Agent Audit Ledger</text>
+      </g>
+    </g>
+  </g>
+</svg>
