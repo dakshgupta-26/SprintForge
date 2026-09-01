@@ -10,6 +10,7 @@ import {
   Crown, Shield, Eye, Loader2, Mail, ChevronDown, ChevronUp
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { MemberProfileDrawer } from "@/components/team/MemberProfileDrawer";
 
 const ROLE_COLORS: Record<string, string> = {
   admin:  "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",
@@ -30,6 +31,9 @@ export default function GlobalTeamPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [selectedMemberForProfile, setSelectedMemberForProfile] = useState<any | null>(null);
+  const [profileProjectId, setProfileProjectId] = useState<string | undefined>(undefined);
+  const [profileProjectName, setProfileProjectName] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     fetchProjects();
@@ -243,14 +247,25 @@ export default function GlobalTeamPage() {
                     const roleName = (member.role || "member").toLowerCase();
                     const RoleIcon = ROLE_ICONS[roleName] || Shield;
                     return (
-                      <div key={user?._id || Math.random()} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-colors">
+                      <div
+                        key={user?._id || Math.random()}
+                        onClick={() => {
+                          setSelectedMemberForProfile(member);
+                          setProfileProjectId(project._id);
+                          setProfileProjectName(project.name);
+                        }}
+                        className="flex items-center gap-3 px-5 py-3 hover:bg-muted/40 transition-colors cursor-pointer group"
+                      >
                         <UserAvatar
                           src={user?.avatar}
                           name={user?.name || "Member"}
                           size="md"
+                          ringClassName="group-hover:ring-2 group-hover:ring-primary/40 transition-all"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{user?.name || "Unknown"}</p>
+                          <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                            {user?.name || "Unknown"}
+                          </p>
                           <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                         </div>
                         <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border capitalize ${ROLE_COLORS[roleName] || ROLE_COLORS.member}`}>
@@ -265,6 +280,21 @@ export default function GlobalTeamPage() {
           );
         })}
       </motion.div>
+
+      {/* ── Member Profile Drawer ── */}
+      <MemberProfileDrawer
+        isOpen={Boolean(selectedMemberForProfile)}
+        onClose={() => setSelectedMemberForProfile(null)}
+        userId={
+          selectedMemberForProfile?.user?._id ||
+          (typeof selectedMemberForProfile?.user === "string"
+            ? selectedMemberForProfile.user
+            : selectedMemberForProfile?._id || null)
+        }
+        initialMemberData={selectedMemberForProfile}
+        projectId={profileProjectId}
+        projectName={profileProjectName}
+      />
     </div>
   );
 }

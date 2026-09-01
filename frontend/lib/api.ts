@@ -236,6 +236,8 @@ export const analyticsAPI = {
 // ─── Teams ───
 export const teamsAPI = {
   search: (q: string) => api.get("/teams/search", { params: { q } }),
+  getMemberProfile: (userId: string, projectId?: string) =>
+    api.get(`/teams/members/${userId}/profile`, { params: { projectId } }),
 };
 
 // ─── Chat ───

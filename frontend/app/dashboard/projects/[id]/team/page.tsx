@@ -38,6 +38,7 @@ import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
 import { InviteMemberModal } from "@/components/team/InviteMemberModal";
 import { ManageMemberModal } from "@/components/team/ManageMemberModal";
+import { MemberProfileDrawer } from "@/components/team/MemberProfileDrawer";
 
 const ROLE_ICONS = { admin: Crown, member: Shield, viewer: Eye } as const;
 const ROLE_BADGES = {
@@ -52,9 +53,10 @@ export default function TeamPage() {
   const { currentProject, fetchProject, joinWithCode } = useProjectStore();
   const { user: currentUser } = useAuthStore();
 
-  // Modal states
+  // Modal & Drawer states
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [managingMember, setManagingMember] = useState<any | null>(null);
+  const [selectedMemberForProfile, setSelectedMemberForProfile] = useState<any | null>(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -462,7 +464,8 @@ export default function TeamPage() {
               return (
                 <div
                   key={u?._id || Math.random()}
-                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors group"
+                  onClick={() => setSelectedMemberForProfile(member)}
+                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.04] transition-all cursor-pointer group"
                 >
                   {/* Left: Identity */}
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
@@ -473,12 +476,12 @@ export default function TeamPage() {
                       shape="rounded-2xl"
                       showOnline={true}
                       isOnline={isUserOnline}
-                      ringClassName="border border-white/[0.1]"
+                      ringClassName="border border-white/[0.1] group-hover:ring-2 group-hover:ring-violet-500/40 transition-all"
                     />
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <h3 className="text-sm font-bold text-white truncate">
+                        <h3 className="text-sm font-bold text-white group-hover:text-violet-300 transition-colors truncate">
                           {u?.name}
                         </h3>
                         {currentUser?._id === u?._id && (
@@ -528,12 +531,23 @@ export default function TeamPage() {
                     {/* Action button */}
                     {isAdminOrOwner && !isMemberOwner && (
                       <button
-                        onClick={() => setManagingMember(member)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setManagingMember(member);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
                       >
                         Manage
                       </button>
                     )}
+
+                    {/* View Profile Affordance */}
+                    <div className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-slate-500 group-hover:text-violet-400 transition-colors">
+                      <span className="hidden lg:inline opacity-0 group-hover:opacity-100 transition-opacity">
+                        Profile
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
                   </div>
                 </div>
               );
@@ -770,6 +784,22 @@ export default function TeamPage() {
         currentUserId={currentUser?._id}
         onMemberUpdated={() => fetchProject(projectId)}
         onMemberRemoved={() => fetchProject(projectId)}
+      />
+
+      {/* ── Member Profile Drawer ── */}
+      <MemberProfileDrawer
+        isOpen={Boolean(selectedMemberForProfile)}
+        onClose={() => setSelectedMemberForProfile(null)}
+        userId={
+          selectedMemberForProfile?.user?._id ||
+          (typeof selectedMemberForProfile?.user === "string"
+            ? selectedMemberForProfile.user
+            : selectedMemberForProfile?._id || null)
+        }
+        initialMemberData={selectedMemberForProfile}
+        projectId={projectId}
+        projectName={currentProject?.name}
+        onlineUserIds={onlineUserIds}
       />
     </div>
   );
