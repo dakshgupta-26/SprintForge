@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" width="100%" height="100%">
+  <defs>
+    <marker id="arr-blue" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#3B82F6" />
+    </marker>
+    <marker id="arr-cyan" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#06B6D4" />
+    </marker>
+    <marker id="arr-green" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#10B981" />
+    </marker>
+    <marker id="arr-pink" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#EC4899" />
+    </marker>
+  </defs>
+
+  <rect width="1000" height="430" fill="#080B14" />
+
+  <!-- ==================== TIER 1: CLIENT LAYER ==================== -->
+  <g transform="translate(20, 15)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect width="960" height="74" rx="6" fill="#0A0E1A" stroke="#1E3A8A" stroke-width="1" />
+    <text x="14" y="16" fill="#60A5FA" font-size="10" font-weight="700" letter-spacing="0.4">CLIENT LAYER — Next.js 16 (App Router) • React 19 • TypeScript</text>
+    
+    <!-- 4 Balanced Nodes -->
+    <g transform="translate(14, 24)">
+      <rect x="0" y="0" width="222" height="40" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10.5" font-weight="600">Workspace UI</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Projects • Kanban • Sprints • Issues</text>
+
+      <rect x="236" y="0" width="222" height="40" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10.5" font-weight="600">Collaboration UI</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Chat • Video Calling • Team Drawer</text>
+
+      <rect x="472" y="0" width="222" height="40" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10.5" font-weight="600">Analytics &amp; Knowledge</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Burndown Charts • Wiki • Impact Studio</text>
+
+      <rect x="708" y="0" width="222" height="40" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10.5" font-weight="600">State &amp; Network Adapters</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Zustand Stores • Axios • Socket.IO Client</text>
+    </g>
+  </g>
+
+  <!-- Connectors (Client to Backend) -->
+  <path d="M 180 90 L 180 128" stroke="#3B82F6" stroke-width="1.4" marker-end="url(#arr-blue)" />
+  <text x="190" y="112" fill="#60A5FA" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">HTTPS / REST</text>
+
+  <path d="M 500 90 L 500 128" stroke="#06B6D4" stroke-width="1.4" stroke-dasharray="3,3" marker-end="url(#arr-cyan)" marker-start="url(#arr-cyan)" />
+  <text x="510" y="112" fill="#67E8F9" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">WSS / Socket.IO (Duplex)</text>
+
+  <path d="M 820 90 L 820 128" stroke="#EC4899" stroke-width="1.6" marker-end="url(#arr-pink)" marker-start="url(#arr-pink)" />
+  <text x="830" y="112" fill="#F472B6" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">P2P Media Channel</text>
+
+  <!-- ==================== TIER 2: APPLICATION BACKEND ==================== -->
+  <g transform="translate(20, 130)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect width="960" height="175" rx="6" fill="#0A0E1A" stroke="#3730A3" stroke-width="1" />
+    <text x="14" y="16" fill="#A5B4FC" font-size="10" font-weight="700" letter-spacing="0.4">APPLICATION LAYER — Express.js 4 • Node.js 20 Services</text>
+
+    <!-- Middleware Sub-Bar -->
+    <g transform="translate(14, 24)">
+      <rect width="932" height="26" rx="4" fill="#141026" stroke="#6B21A8" stroke-width="0.8" />
+      <text x="12" y="17" fill="#E9D5FF" font-size="9" font-weight="600">Middleware Pipeline: express-rate-limit • Helmet Security Headers &amp; CORS • JWT Auth, Cookie Parser &amp; 5-Tier RBAC Gate</text>
+    </g>
+
+    <!-- Domain Services Grid (4 nodes) -->
+    <g transform="translate(14, 56)">
+      <rect x="0" y="0" width="222" height="42" rx="4" fill="#0F172A" stroke="#4338CA" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Auth &amp; Session Service</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Email OTP • Google OAuth 2.0 PKCE</text>
+
+      <rect x="236" y="0" width="222" height="42" rx="4" fill="#0F172A" stroke="#4338CA" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Projects &amp; Team Service</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Workspaces • 6-Char Join Codes • Invites</text>
+
+      <rect x="472" y="0" width="222" height="42" rx="4" fill="#0F172A" stroke="#4338CA" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Task &amp; Sprint Service</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">Kanban State Machine • Burndown Engine</text>
+
+      <rect x="708" y="0" width="222" height="42" rx="4" fill="#0F172A" stroke="#4338CA" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Chat &amp; Storage Service</text>
+      <text x="10" y="30" fill="#94A3B8" font-size="8.5">AES-256 Field Cipher • Multer Uploads</text>
+    </g>
+
+    <!-- Subsystems Grid (2 wide balanced nodes) -->
+    <g transform="translate(14, 106)">
+      <rect x="0" y="0" width="458" height="56" rx="4" fill="#140E26" stroke="#7C3AED" stroke-width="0.9" />
+      <text x="12" y="17" fill="#F3E8FF" font-size="10.5" font-weight="700">Impact Engine Subsystem (Discrete Graph Computing)</text>
+      <text x="12" y="33" fill="#D8B4FE" font-size="8.5">• DAG Construction &amp; Kahn's / DFS Cycle Detection O(V+E)</text>
+      <text x="12" y="47" fill="#D8B4FE" font-size="8.5">• Critical Path Method (CPM Float) • 6-Vector Risk Radar • In-Memory What-If Sandbox</text>
+
+      <rect x="474" y="0" width="458" height="56" rx="4" fill="#081A26" stroke="#0284C7" stroke-width="0.9" />
+      <text x="12" y="17" fill="#E0F2FE" font-size="10.5" font-weight="700">Realtime Signaling Mesh (Socket.IO 4.x Engine)</text>
+      <text x="12" y="33" fill="#7DD3FC" font-size="8.5">• Global Multi-Tab User Registry (Map&lt;UserId, Set&lt;SocketId&gt;&gt;)</text>
+      <text x="12" y="47" fill="#7DD3FC" font-size="8.5">• Room-Based Mutation Broadcaster • WebRTC SDP Offer/Answer &amp; ICE Relay</text>
+    </g>
+  </g>
+
+  <!-- Connectors (Backend to Database) -->
+  <path d="M 500 305 L 500 333" stroke="#10B981" stroke-width="1.5" marker-end="url(#arr-green)" />
+  <text x="510" y="323" fill="#6EE7B7" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">Database Queries &amp; Persistence</text>
+
+  <!-- ==================== TIER 3: PERSISTENCE LAYER ==================== -->
+  <g transform="translate(20, 335)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect width="960" height="80" rx="6" fill="#0A0E1A" stroke="#065F46" stroke-width="1" />
+    <text x="14" y="16" fill="#6EE7B7" font-size="10" font-weight="700" letter-spacing="0.4">PERSISTENCE LAYER — MongoDB 7.x Database</text>
+    
+    <g transform="translate(14, 24)">
+      <rect x="0" y="0" width="480" height="46" rx="4" fill="#061B14" stroke="#059669" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Document Collections (Mongoose ODM Schemas)</text>
+      <text x="10" y="32" fill="#A7F3D0" font-size="8.5">Users • Projects • Tasks • Sprints • Messages • Invitations • Calls • Wikis • SecurityLogs</text>
+
+      <rect x="492" y="0" width="220" height="46" rx="4" fill="#061B14" stroke="#059669" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Compound Indexing</text>
+      <text x="10" y="32" fill="#A7F3D0" font-size="8.5">(projectId, status, sprintId) &amp; (userId, date)</text>
+
+      <rect x="724" y="0" width="208" height="46" rx="4" fill="#061B14" stroke="#059669" stroke-width="0.8" />
+      <text x="10" y="16" fill="#FFFFFF" font-size="10" font-weight="600">Security &amp; TTL Storage</text>
+      <text x="10" y="32" fill="#A7F3D0" font-size="8.5">AES-256-CBC Payloads • Session TTLs</text>
+    </g>
+  </g>
+</svg>

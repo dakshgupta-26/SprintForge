@@ -31,118 +31,29 @@
 
 ## 🏗️ System Architecture
 
-SprintForge uses a layered software architecture separating client-side state, synchronous REST communication, asynchronous realtime signaling, deterministic graph computation, and document persistence.
+SprintForge uses a modular, layered software architecture separating client-side state, synchronous REST communication, asynchronous realtime signaling, deterministic graph computation, and document persistence.
 
 ### High-Level System Architecture
 
-```mermaid
-flowchart TB
-    subgraph Client_Layer["Client Layer (Next.js 16 / React 19 / TypeScript)"]
-        direction TB
-        subgraph Client_UI["Application Modules"]
-            UI_Workspace["Workspace Modules\n(Projects, Tasks, Kanban Board, Sprints)"]
-            UI_Collab["Collaboration Modules\n(Realtime Chat, WebRTC Calling, Team)"]
-            UI_Analytics["Analytics & Knowledge\n(Burndown Charts, Impact Sandbox, Wiki)"]
-        end
-        subgraph Client_State["State & Transport Adapters"]
-            Store["Zustand Stores\n(authStore, taskStore, projectStore, callStore)"]
-            Adapters["Network Adapters\n(Axios REST Client, Socket.IO Client, WebRTC Engine)"]
-        end
-        Client_UI --> Store
-        Store --> Adapters
-    end
-
-    Adapters -->|"HTTPS / REST"| Middlewares
-    Adapters <-->|"WSS / Socket.IO"| Socket_Mesh
-    Adapters <===>|"Peer-to-Peer SRTP"| Peer_Client["Peer Browser (Client B)"]
-
-    subgraph Backend_Layer["Application Backend (Express.js 4 / Node.js 20)"]
-        direction TB
-        subgraph Middlewares["Middleware & Security Pipeline"]
-            MW_Rate["Rate Limiter (express-rate-limit)"]
-            MW_Sec["Security Headers (Helmet) & CORS"]
-            MW_Auth["JWT Auth, Cookie Parser & 5-Tier RBAC Gate"]
-        end
-
-        subgraph Domain_Services["Domain Services"]
-            Svc_Auth["Auth & Identity Service"]
-            Svc_Project["Project & Member Service"]
-            Svc_Task["Task & Sprint Service"]
-            Svc_Chat["Chat & Storage Service"]
-            Svc_Wiki["Wiki & Analytics Service"]
-            Svc_Email["Email Dispatcher (Mailjet / Resend)"]
-        end
-
-        subgraph Socket_Mesh["Realtime Signaling Mesh (Socket.IO 4)"]
-            Sock_Registry["Multi-Tab Socket Registry\nMap(UserId, Set(SocketId))"]
-            Sock_Rooms["Room Broadcaster\n(Kanban Shifts, Chat Messages, Presence)"]
-            Sock_Signal["WebRTC Signaling Bridge\n(SDP Offer/Answer & ICE Candidate Relay)"]
-        end
-
-        subgraph Impact_Subsystem["Impact Engine Subsystem"]
-            IE_Graph["DAG Constructor & Cycle Detector"]
-            IE_CPM["Critical Path Method (CPM Engine)"]
-            IE_Risk["Multi-Vector Risk Radar"]
-            IE_Sim["In-Memory Simulation Sandbox"]
-        end
-    end
-
-    Middlewares --> Domain_Services
-    Domain_Services <--> Socket_Mesh
-    Svc_Task <--> Impact_Subsystem
-
-    subgraph Data_Layer["Persistence Layer (MongoDB 7.x Database)"]
-        DB_Collections["Document Collections (Mongoose Schemas)\nUsers • Projects • Tasks • Sprints • Messages • Invitations • Calls • Wikis • SecurityLogs"]
-        DB_Security["AES-256-CBC Field Encryption & Session TTL"]
-    end
-
-    Domain_Services -->|"Database Read / Write"| DB_Collections
-    Sock_Signal <-->|"Relay Signaling"| Peer_Client
-```
+<p align="center">
+  <img src="assets/arch-overview.png" alt="SprintForge High-Level System Architecture" width="100%" />
+</p>
 
 <br />
 
 ### Core Data Flow
 
-```mermaid
-flowchart TB
-    subgraph Synchronous_Flow["Synchronous Mutation Flow (REST)"]
-        direction TB
-        U1["User Action in Browser"] --> U2["Next.js Client (Optimistic UI Update)"]
-        U2 -->|"HTTPS REST Request"| U3["Express API Gateway"]
-        U3 --> U4["Middleware Pipeline (Rate Limit, Helmet, JWT & RBAC)"]
-        U4 --> U5["Domain Service Execution"]
-        U5 --> U6["MongoDB 7.x (Document Persistence)"]
-        U6 --> U7["HTTP 200/201 JSON Response"]
-        U7 --> U8["Client State Reconciliation"]
-    end
-
-    subgraph Asynchronous_Flow["Asynchronous Realtime Dispatch Flow (WebSockets)"]
-        direction TB
-        U5 -.->|"Emit Realtime Mutation Event"| R1["Socket.IO Server"]
-        R1 -.->|"Lookup Target Sockets"| R2["Global Socket Registry"]
-        R2 -.->|"Broadcast WebSocket Event"| R3["Connected Team Clients"]
-        R3 -.->|"Update Zustand Store"| R4["Synchronized UI Across Devices"]
-    end
-```
+<p align="center">
+  <img src="assets/arch-dataflow.png" alt="SprintForge Core Data Flow" width="100%" />
+</p>
 
 <br />
 
-### Realtime Communication & Calling Architecture
+### Realtime Calling Architecture
 
-```mermaid
-flowchart TB
-    subgraph Signaling_Plane["Signaling Plane (Socket.IO Server Relay)"]
-        direction LR
-        Client_A_Sig["Client A (Caller)"] <-->|"1. SDP Offer / Answer\n2. ICE Candidates"| Socket_Bridge["Socket.IO Signaling Bridge\n(Express Server)"]
-        Socket_Bridge <-->|"1. SDP Offer / Answer\n2. ICE Candidates"| Client_B_Sig["Client B (Callee)"]
-    end
-
-    subgraph Media_Plane["Media Plane (Peer-to-Peer WebRTC)"]
-        direction LR
-        Client_A_Media["Client A (Local Audio/Video)"] <===>|"Full-Duplex SRTP Media Stream (Direct P2P, Zero Server Relay)"| Client_B_Media["Client B (Remote Audio/Video)"]
-    end
-```
+<p align="center">
+  <img src="assets/arch-calling.png" alt="SprintForge Realtime Calling Architecture" width="100%" />
+</p>
 
 - **Signaling Plane**: Transports SDP session descriptions and ICE candidate discoveries over the Socket.IO server bridge.
 - **Media Plane**: Direct browser-to-browser peer-to-peer SRTP audio and video streaming without intermediate server media relays.
@@ -151,41 +62,17 @@ flowchart TB
 
 ### Impact Engine Computation Pipeline
 
-```mermaid
-flowchart TB
-    In["1. Sprint Tasks & Dependency Matrix"] --> DAG["2. Directed Acyclic Graph (DAG) Construction"]
-    DAG --> Cycle["3. Cycle Detection & Topo Sort (Kahn's & DFS)"]
-    Cycle --> CPM["4. Critical Path Method (CPM Forward/Backward Pass)"]
-    CPM --> Risk["5. Multi-Vector Risk Calculation (0 - 100 Score)"]
-    Risk --> Sim["6. In-Memory What-If Simulation Sandbox"]
-    Sim --> Out["7. Explainable Schedule Risk & Workload Recommendations"]
-```
+<p align="center">
+  <img src="assets/arch-impact.png" alt="SprintForge Impact Engine Computation Pipeline" width="100%" />
+</p>
 
 <br />
 
 ### Authentication & Security Architecture
 
-```mermaid
-flowchart TB
-    subgraph Email_Auth["Email / OTP Authentication Flow"]
-        direction TB
-        E1["User Email Input"] --> E2["Generate 6-Digit Cryptographic OTP"]
-        E2 --> E3["Dispatch Email via Mailjet / Resend SDK"]
-        E3 --> E4["User Submits OTP Challenge"]
-        E4 --> E5["Verify Challenge against EmailVerificationChallenge"]
-        E5 --> E6["Issue JWT Session Cookie & User Record"]
-    end
-
-    subgraph Google_Auth["Google OAuth 2.0 PKCE Flow"]
-        direction TB
-        G1["User Google Sign-In"] --> G2["google-auth-library Token Verification"]
-        G2 --> G3["Match or Provision User in MongoDB"]
-        G3 --> G6["Issue JWT Session Cookie"]
-    end
-
-    E6 --> App_Access["Authenticated Application Access (5-Tier RBAC Enforced)"]
-    G6 --> App_Access
-```
+<p align="center">
+  <img src="assets/arch-auth.png" alt="SprintForge Authentication & Security Architecture" width="100%" />
+</p>
 
 ---
 

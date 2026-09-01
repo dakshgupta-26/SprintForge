@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 215" width="100%" height="100%">
+  <defs>
+    <marker id="arr-f-blue" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#3B82F6" />
+    </marker>
+    <marker id="arr-f-cyan" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 6 4 L 0 7 z" fill="#06B6D4" />
+    </marker>
+  </defs>
+
+  <rect width="1000" height="215" fill="#080B14" />
+
+  <!-- LANE 1: SYNCHRONOUS REST FLOW -->
+  <g transform="translate(20, 15)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect width="960" height="85" rx="6" fill="#0A0E1A" stroke="#1E3A8A" stroke-width="1" />
+    <text x="14" y="16" fill="#60A5FA" font-size="10" font-weight="700" letter-spacing="0.4">SYNCHRONOUS MUTATION FLOW (HTTPS / REST)</text>
+
+    <!-- 6 Horizontally Chained Nodes -->
+    <g transform="translate(14, 25)">
+      <!-- Node 1 -->
+      <rect x="0" y="0" width="138" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">1. User Action</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">Kanban Drag / Form Edit</text>
+
+      <!-- Arrow 1-2 -->
+      <path d="M 138 23 L 157 23" stroke="#3B82F6" stroke-width="1.3" marker-end="url(#arr-f-blue)" />
+
+      <!-- Node 2 -->
+      <rect x="159" y="0" width="138" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">2. Next.js Client</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">Optimistic Zustand Update</text>
+
+      <!-- Arrow 2-3 -->
+      <path d="M 297 23 L 316 23" stroke="#3B82F6" stroke-width="1.3" marker-end="url(#arr-f-blue)" />
+
+      <!-- Node 3 -->
+      <rect x="318" y="0" width="138" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">3. Express Gateway</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">Rate Limiter &amp; JWT RBAC</text>
+
+      <!-- Arrow 3-4 -->
+      <path d="M 456 23 L 475 23" stroke="#3B82F6" stroke-width="1.3" marker-end="url(#arr-f-blue)" />
+
+      <!-- Node 4 -->
+      <rect x="477" y="0" width="138" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">4. Domain Service</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">Business Logic Execution</text>
+
+      <!-- Arrow 4-5 -->
+      <path d="M 615 23 L 634 23" stroke="#3B82F6" stroke-width="1.3" marker-end="url(#arr-f-blue)" />
+
+      <!-- Node 5 -->
+      <rect x="636" y="0" width="138" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">5. MongoDB 7.x</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">Document Persistence</text>
+
+      <!-- Arrow 5-6 -->
+      <path d="M 774 23 L 793 23" stroke="#3B82F6" stroke-width="1.3" marker-end="url(#arr-f-blue)" />
+
+      <!-- Node 6 -->
+      <rect x="795" y="0" width="137" height="46" rx="4" fill="#0F172A" stroke="#2563EB" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">6. JSON Response</text>
+      <text x="8" y="32" fill="#94A3B8" font-size="8">HTTP 200 State Confirmed</text>
+    </g>
+  </g>
+
+  <!-- LANE 2: ASYNCHRONOUS REALTIME EVENT FLOW -->
+  <g transform="translate(20, 115)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect width="960" height="85" rx="6" fill="#0A0E1A" stroke="#0E3A4A" stroke-width="1" />
+    <text x="14" y="16" fill="#67E8F9" font-size="10" font-weight="700" letter-spacing="0.4">ASYNCHRONOUS REALTIME EVENT FLOW (SOCKET.IO)</text>
+
+    <!-- 6 Horizontally Chained Nodes -->
+    <g transform="translate(14, 25)">
+      <!-- Node 1 -->
+      <rect x="0" y="0" width="138" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">1. Service Event</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Emitted Post DB Write</text>
+
+      <!-- Arrow 1-2 -->
+      <path d="M 138 23 L 157 23" stroke="#06B6D4" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arr-f-cyan)" />
+
+      <!-- Node 2 -->
+      <rect x="159" y="0" width="138" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">2. Socket.IO Core</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Event Broker Gateway</text>
+
+      <!-- Arrow 2-3 -->
+      <path d="M 297 23 L 316 23" stroke="#06B6D4" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arr-f-cyan)" />
+
+      <!-- Node 3 -->
+      <rect x="318" y="0" width="138" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">3. Socket Registry</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Target Client Lookup</text>
+
+      <!-- Arrow 3-4 -->
+      <path d="M 456 23 L 475 23" stroke="#06B6D4" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arr-f-cyan)" />
+
+      <!-- Node 4 -->
+      <rect x="477" y="0" width="138" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">4. Room Broadcaster</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Targeted Room Emission</text>
+
+      <!-- Arrow 4-5 -->
+      <path d="M 615 23 L 634 23" stroke="#06B6D4" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arr-f-cyan)" />
+
+      <!-- Node 5 -->
+      <rect x="636" y="0" width="138" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">5. Team Clients</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Active Browser Tabs</text>
+
+      <!-- Arrow 5-6 -->
+      <path d="M 774 23 L 793 23" stroke="#06B6D4" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arr-f-cyan)" />
+
+      <!-- Node 6 -->
+      <rect x="795" y="0" width="137" height="46" rx="4" fill="#081A24" stroke="#0284C7" stroke-width="0.8" />
+      <text x="8" y="17" fill="#FFFFFF" font-size="10" font-weight="600">6. Store Sync</text>
+      <text x="8" y="32" fill="#7DD3FC" font-size="8">Instant UI Reconciliation</text>
+    </g>
+  </g>
+</svg>
