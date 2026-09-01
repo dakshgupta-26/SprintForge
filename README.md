@@ -123,7 +123,7 @@
 | **Socket.IO** | WebSocket server for real-time features |
 | **JWT + bcryptjs** | Authentication and password security |
 | **Multer** | File/image upload handling |
-| **Nodemailer** | Email delivery for invitations |
+| **Mailjet API (`node-mailjet`)** | Transactional email delivery (OTP, Password Reset, Invitations) |
 | **AES-256-CBC (crypto)** | End-to-end message encryption |
 | **express-rate-limit** | DDoS and brute-force protection |
 | **Helmet** | HTTP security headers |
@@ -206,7 +206,7 @@ sprintforge/
 │       ├── socket/
 │       │   └── index.ts              # Socket.IO event handlers
 │       ├── services/
-│       │   └── emailService.ts       # Nodemailer email templates
+│       │   └── emailService.ts       # Mailjet email delivery & templates
 │       └── utils/
 │           └── crypto.ts             # AES-256-CBC encrypt/decrypt
 │
@@ -302,11 +302,11 @@ ENCRYPTION_KEY=vOVH6sdmpNWjRRIqCc7rdxs01lwHzfr3
 # Frontend (for CORS)
 CLIENT_URL=http://localhost:3000
 
-# Email (for invitation emails)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
+# Email (Mailjet API)
+MAILJET_API_KEY=your_mailjet_api_key
+MAILJET_SECRET_KEY=your_mailjet_secret_key
+MAILJET_FROM_EMAIL=your_verified_email@domain.com
+MAILJET_FROM_NAME=SprintForge
 
 # Optional OAuth
 GOOGLE_CLIENT_ID=

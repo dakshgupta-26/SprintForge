@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import Mailjet, { Client } from 'node-mailjet';
 
 // ─── Environment Helpers ──────────────────────────────────────────────────────
 function cleanEnvValue(val?: string): string {
@@ -6,209 +6,180 @@ function cleanEnvValue(val?: string): string {
   return val.trim().replace(/^["']|["']$/g, '').trim();
 }
 
-function cleanAppPassword(val?: string): string {
-  if (!val) return '';
-  // Strip outer quotes and any internal whitespace (e.g. "xxxx xxxx xxxx xxxx" -> "xxxxxxxxxxxxxxxx")
-  return val.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
-}
-
-export interface SmtpCredentials {
-  user: string;
-  pass: string;
-  host: string;
-  port: number;
-  secure: boolean;
+export interface MailjetConfig {
+  apiKey: string;
+  apiSecret: string;
   fromEmail: string;
   fromName: string;
   isConfigured: boolean;
 }
 
-export function resolveSmtpConfig(): SmtpCredentials {
-  const user = cleanEnvValue(process.env.GMAIL_USER || process.env.SMTP_USER);
-  const pass = cleanAppPassword(process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS);
-  const host = cleanEnvValue(process.env.SMTP_HOST) || 'smtp.gmail.com';
-  const customPort = parseInt(cleanEnvValue(process.env.SMTP_PORT), 10);
-
-  // Preferred production config for Gmail on Railway / Cloud:
-  // Port 465 with direct SSL/TLS (secure: true) avoids port 587 STARTTLS round-trip issues and IPv6 hangs
-  const isGmail = host === 'smtp.gmail.com' || cleanEnvValue(process.env.SMTP_SERVICE) === 'gmail' || user.endsWith('@gmail.com');
-  const port = isGmail ? (customPort || 465) : (customPort || 587);
-  const secure = isGmail
-    ? (process.env.SMTP_SECURE === 'false' ? false : (port === 465))
-    : (process.env.SMTP_SECURE === 'true' || port === 465);
-
-  const fromEmail = cleanEnvValue(process.env.SMTP_FROM) || user || 'noreply@sprintforge.io';
-  const fromName = cleanEnvValue(process.env.SMTP_FROM_NAME) || 'SprintForge';
+export function resolveMailjetConfig(): MailjetConfig {
+  const apiKey = cleanEnvValue(process.env.MAILJET_API_KEY);
+  const apiSecret = cleanEnvValue(process.env.MAILJET_SECRET_KEY);
+  const fromEmail = cleanEnvValue(process.env.MAILJET_FROM_EMAIL) || cleanEnvValue(process.env.SMTP_FROM) || 'team.eduaccess@gmail.com';
+  const fromName = cleanEnvValue(process.env.MAILJET_FROM_NAME) || cleanEnvValue(process.env.SMTP_FROM_NAME) || 'SprintForge';
 
   return {
-    user,
-    pass,
-    host,
-    port,
-    secure,
+    apiKey,
+    apiSecret,
     fromEmail,
     fromName,
-    isConfigured: Boolean(user && pass),
+    isConfigured: Boolean(apiKey && apiSecret),
+  };
+}
+
+/**
+ * Backward compatibility alias for resolveSmtpConfig
+ */
+export function resolveSmtpConfig() {
+  const config = resolveMailjetConfig();
+  return {
+    user: config.fromEmail,
+    pass: '',
+    host: 'api.mailjet.com',
+    port: 443,
+    secure: true,
+    fromEmail: config.fromEmail,
+    fromName: config.fromName,
+    isConfigured: config.isConfigured,
   };
 }
 
 // ─── Error Diagnostics (Sanitized - Never Logs Secrets) ───────────────────────
 export function sanitizeEmailError(err: any): { category: string; message: string; safeDiagnostic: string } {
   const rawMessage = (err?.message || '').toLowerCase();
-  const code = (err?.code || '').toUpperCase();
-  const responseCode = err?.responseCode;
+  const statusCode = err?.statusCode || err?.status || err?.response?.status;
+  const errorMessage = (err?.response?.data?.ErrorMessage || err?.response?.data?.message || err?.message || '').toLowerCase();
 
   if (
-    code === 'EAUTH' ||
-    responseCode === 535 ||
-    rawMessage.includes('invalid login') ||
-    rawMessage.includes('badcredentials') ||
-    rawMessage.includes('username and password not accepted') ||
-    rawMessage.includes('application-specific password required')
+    statusCode === 401 ||
+    errorMessage.includes('unauthorized') ||
+    errorMessage.includes('invalid api key') ||
+    errorMessage.includes('check your api key and secret key') ||
+    rawMessage.includes('unauthorized')
   ) {
     return {
-      category: 'SMTP_AUTH_FAILED',
-      message: 'SMTP authentication failed. Please verify the Gmail App Password.',
-      safeDiagnostic: 'Email authentication failed',
-    };
-  }
-
-  if (
-    code === 'ETIMEDOUT' ||
-    code === 'ESOCKETTIMEDOUT' ||
-    rawMessage.includes('timed out') ||
-    rawMessage.includes('timeout')
-  ) {
-    return {
-      category: 'SMTP_CONNECTION_TIMEOUT',
-      message: 'SMTP connection timed out.',
-      safeDiagnostic: 'SMTP connection timed out',
+      category: 'MAILJET_AUTH_FAILED',
+      message: 'Mailjet API authentication failed. Please verify MAILJET_API_KEY and MAILJET_SECRET_KEY.',
+      safeDiagnostic: 'Mailjet authentication failed',
     };
   }
 
   if (
-    code === 'ECONNREFUSED' ||
-    code === 'ENOTFOUND' ||
-    code === 'EHOSTUNREACH' ||
-    code === 'ENETUNREACH'
+    statusCode === 403 ||
+    errorMessage.includes('forbidden') ||
+    errorMessage.includes('account is deactivated') ||
+    errorMessage.includes('sender not allowed') ||
+    errorMessage.includes('sender address')
   ) {
     return {
-      category: 'SMTP_CONNECTION_FAILED',
-      message: 'Unable to connect to SMTP server.',
-      safeDiagnostic: 'Email transport connection failed',
+      category: 'MAILJET_SENDER_REJECTED',
+      message: 'Mailjet rejected the sender address. Ensure MAILJET_FROM_EMAIL is a verified sender in Mailjet.',
+      safeDiagnostic: 'Mailjet rejected sender address (unverified sender)',
     };
   }
 
   if (
-    code === 'ESOCKET' ||
-    rawMessage.includes('tls') ||
-    rawMessage.includes('ssl') ||
-    rawMessage.includes('certificate') ||
-    rawMessage.includes('handshake')
+    statusCode === 400 ||
+    errorMessage.includes('bad request') ||
+    errorMessage.includes('illegal') ||
+    errorMessage.includes('invalid email')
   ) {
     return {
-      category: 'SMTP_TLS_FAILED',
-      message: 'SMTP TLS handshake failed.',
-      safeDiagnostic: 'TLS connection failure',
+      category: 'MAILJET_BAD_REQUEST',
+      message: 'Mailjet rejected the email request payload.',
+      safeDiagnostic: 'Mailjet request payload invalid or recipient rejected',
     };
   }
 
-  if (responseCode === 550 || responseCode === 553 || rawMessage.includes('recipient')) {
+  if (
+    statusCode === 429 ||
+    errorMessage.includes('rate limit') ||
+    errorMessage.includes('too many requests')
+  ) {
     return {
-      category: 'SMTP_RECIPIENT_REJECTED',
-      message: 'Recipient email was rejected.',
-      safeDiagnostic: 'Recipient address rejected',
+      category: 'MAILJET_RATE_LIMITED',
+      message: 'Mailjet API rate limit reached.',
+      safeDiagnostic: 'Mailjet rate limit exceeded',
     };
   }
 
-  if (responseCode === 554 || rawMessage.includes('sender')) {
+  if (
+    rawMessage.includes('timeout') ||
+    rawMessage.includes('etimedout') ||
+    rawMessage.includes('esockettimedout')
+  ) {
     return {
-      category: 'SMTP_SENDER_REJECTED',
-      message: 'Sender email was rejected.',
-      safeDiagnostic: 'Gmail rejected sender',
+      category: 'MAILJET_TIMEOUT',
+      message: 'Mailjet API connection timed out.',
+      safeDiagnostic: 'Mailjet connection timed out',
+    };
+  }
+
+  if (
+    rawMessage.includes('econnrefused') ||
+    rawMessage.includes('enotfound') ||
+    rawMessage.includes('ehostunreach') ||
+    rawMessage.includes('enetunreach')
+  ) {
+    return {
+      category: 'MAILJET_CONNECTION_FAILED',
+      message: 'Unable to connect to Mailjet API server.',
+      safeDiagnostic: 'Mailjet API connection failed',
     };
   }
 
   return {
-    category: 'SMTP_GENERAL_FAILURE',
-    message: 'Email delivery failed.',
+    category: 'MAILJET_GENERAL_FAILURE',
+    message: 'Mailjet email delivery failed.',
     safeDiagnostic: 'Email delivery failed',
   };
 }
 
-// ─── Transporter Singleton ───────────────────────────────────────────────────
-let transporter: nodemailer.Transporter | null = null;
+// ─── Mailjet Client Singleton ────────────────────────────────────────────────
+let mailjetClient: Client | null = null;
 
-export async function getTransporter(): Promise<nodemailer.Transporter> {
-  if (transporter) return transporter;
+export function getMailjetClient(): Client {
+  if (mailjetClient) return mailjetClient;
 
-  const config = resolveSmtpConfig();
-
-  if (config.isConfigured) {
-    transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: {
-        user: config.user,
-        pass: config.pass,
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      connectionTimeout: 20000,
-      greetingTimeout: 20000,
-      socketTimeout: 30000,
-    });
-    console.log(`📧 Email service configured: using Gmail SMTP (${config.user})`);
-  } else {
-    // Development fallback: Ethereal (fake SMTP when no real credentials in .env)
-    console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD not set in environment. Falling back to temporary Ethereal test inbox.');
-    try {
-      const testAccount = await Promise.race([
-        nodemailer.createTestAccount(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Ethereal createTestAccount timeout')), 4000)
-        ),
-      ]);
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      });
-      console.log('📧 Ethereal test email account:', testAccount.user);
-      console.log('📧 Preview emails at: https://ethereal.email');
-    } catch (e: any) {
-      console.warn('⚠️ Failed to initialize Ethereal test inbox:', e.message);
-      transporter = nodemailer.createTransport({
-        jsonTransport: true,
-      });
-    }
+  const config = resolveMailjetConfig();
+  if (!config.isConfigured) {
+    throw new Error('Mailjet credentials not configured. Missing MAILJET_API_KEY or MAILJET_SECRET_KEY.');
   }
 
-  return transporter;
+  mailjetClient = new Mailjet({
+    apiKey: config.apiKey,
+    apiSecret: config.apiSecret,
+  });
+
+  return mailjetClient;
+}
+
+/**
+ * Backward compatibility alias for getTransporter
+ */
+export async function getTransporter() {
+  return getMailjetClient();
 }
 
 // ─── Startup Verification ────────────────────────────────────────────────────
 export async function verifyEmailTransporter(): Promise<{ success: boolean; message: string }> {
   try {
-    const config = resolveSmtpConfig();
+    const config = resolveMailjetConfig();
     if (!config.isConfigured) {
-      console.warn('⚠️ Email service not configured: missing GMAIL_USER or GMAIL_APP_PASSWORD');
-      return { success: false, message: 'Missing environment variables' };
+      console.warn('⚠️ Mailjet email service not configured: missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
+      return { success: false, message: 'Missing Mailjet environment variables' };
     }
 
-    const t = await getTransporter();
-    await t.verify();
-    console.log('✅ Email service configured: SMTP connection verified');
-    return { success: true, message: 'SMTP connection verified' };
+    const client = getMailjetClient();
+    // Validate credentials against Mailjet REST API
+    await client.get('user', { version: 'v3' }).request();
+    console.log('✅ Email service configured: Mailjet API credentials verified');
+    return { success: true, message: 'Mailjet API credentials verified' };
   } catch (err: any) {
     const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ SMTP verification failed: ${diagnostic.safeDiagnostic}`);
+    console.error(`❌ Mailjet API verification failed: ${diagnostic.safeDiagnostic}`);
     return { success: false, message: diagnostic.safeDiagnostic };
   }
 }
@@ -219,44 +190,96 @@ export async function getEmailHealthStatus(): Promise<{
   provider: string;
   status: 'healthy' | 'degraded' | 'unconfigured';
 }> {
-  const config = resolveSmtpConfig();
+  const config = resolveMailjetConfig();
   if (!config.isConfigured) {
     return {
       configured: false,
-      provider: 'gmail',
+      provider: 'mailjet',
       status: 'unconfigured',
     };
   }
 
   try {
-    const t = await getTransporter();
-    await t.verify();
+    const client = getMailjetClient();
+    await client.get('user', { version: 'v3' }).request();
     return {
       configured: true,
-      provider: 'gmail',
+      provider: 'mailjet',
       status: 'healthy',
     };
   } catch {
     return {
       configured: true,
-      provider: 'gmail',
+      provider: 'mailjet',
       status: 'degraded',
     };
   }
 }
 
-// ─── Safe Send Helper with Sensible Production Timeout ─────────────────────────
-async function safeSendMail(
-  t: nodemailer.Transporter,
-  mailOptions: nodemailer.SendMailOptions,
-  timeoutMs = 30000
-): Promise<any> {
-  return Promise.race([
-    t.sendMail(mailOptions),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`SMTP sendMail timed out after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
+// ─── Core Send Function via Mailjet API v3.1 ──────────────────────────────────
+export async function sendEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  fromEmail?: string;
+  fromName?: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const config = resolveMailjetConfig();
+    if (!config.isConfigured) {
+      console.warn('⚠️ Mailjet email service not configured: missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
+      return { success: false, error: 'Mailjet credentials not configured' };
+    }
+
+    const client = getMailjetClient();
+    const fromEmail = opts.fromEmail || config.fromEmail;
+    const fromName = opts.fromName || config.fromName;
+
+    const request = client.post('send', { version: 'v3.1' }).request({
+      Messages: [
+        {
+          From: {
+            Email: fromEmail,
+            Name: fromName,
+          },
+          To: [
+            {
+              Email: opts.to,
+            },
+          ],
+          Subject: opts.subject,
+          TextPart: opts.text || '',
+          HTMLPart: opts.html,
+        },
+      ],
+    });
+
+    const result: any = await Promise.race([
+      request,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Mailjet API send request timed out after 30000ms')), 30000)
+      ),
+    ]);
+
+    const messages = result?.body?.Messages || [];
+    const firstMsg = messages[0];
+
+    if (firstMsg?.Status === 'success') {
+      const messageId = firstMsg?.To?.[0]?.MessageID ? String(firstMsg.To[0].MessageID) : 'mailjet_sent';
+      console.log(`📧 Mailjet email sent to ${opts.to} (MessageID: ${messageId})`);
+      return { success: true, messageId };
+    } else {
+      const errorList = (firstMsg?.Errors || []).map((e: any) => e.ErrorMessage || e.ErrorIdentifier).join('; ');
+      const errorMsg = errorList || 'Mailjet message delivery status was not successful';
+      console.error(`❌ Mailjet delivery failed for ${opts.to}: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+  } catch (err: any) {
+    const diagnostic = sanitizeEmailError(err);
+    console.error(`❌ Mailjet send failed: ${diagnostic.safeDiagnostic}`);
+    return { success: false, error: diagnostic.safeDiagnostic };
+  }
 }
 
 // ─── Invite Email Template ────────────────────────────────────────────────────
@@ -461,39 +484,21 @@ export async function sendInviteEmail(opts: {
   acceptUrl: string;
   joinCode: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    const t = await getTransporter();
-    const config = resolveSmtpConfig();
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const joinPageUrl = `${clientUrl}/join`;
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const joinPageUrl = `${clientUrl}/join`;
 
-    const { html, text } = buildInviteEmail({
-      ...opts,
-      joinPageUrl,
-      recipientEmail: opts.to,
-    });
+  const { html, text } = buildInviteEmail({
+    ...opts,
+    joinPageUrl,
+    recipientEmail: opts.to,
+  });
 
-    const info = await safeSendMail(t, {
-      from: `"${config.fromName}" <${config.fromEmail}>`,
-      to: opts.to,
-      subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
-      html,
-      text,
-    });
-
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log(`📧 Invite Email preview: ${previewUrl}`);
-    } else {
-      console.log(`📧 Invite sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
-    }
-
-    return { success: true, messageId: info?.messageId };
-  } catch (err: any) {
-    const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ Invite email send failed: ${diagnostic.safeDiagnostic}`);
-    return { success: false, error: diagnostic.safeDiagnostic };
-  }
+  return sendEmail({
+    to: opts.to,
+    subject: `You're invited to join ${opts.projectName} on SprintForge 🚀`,
+    html,
+    text,
+  });
 }
 
 // ─── OTP Email Template ────────────────────────────────────────────────────────
@@ -641,37 +646,18 @@ export async function sendOtpEmail(opts: {
   name: string;
   otp: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    const t = await getTransporter();
-    const config = resolveSmtpConfig();
+  const { html, text } = buildOtpEmail({
+    name: opts.name,
+    otp: opts.otp,
+    recipientEmail: opts.to,
+  });
 
-    const { html, text } = buildOtpEmail({
-      name: opts.name,
-      otp: opts.otp,
-      recipientEmail: opts.to,
-    });
-
-    const info = await safeSendMail(t, {
-      from: `"${config.fromName}" <${config.fromEmail}>`,
-      to: opts.to,
-      subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
-      html,
-      text,
-    });
-
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log(`📧 OTP Email preview: ${previewUrl}`);
-    } else {
-      console.log(`📧 OTP sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
-    }
-
-    return { success: true, messageId: info?.messageId };
-  } catch (err: any) {
-    const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ OTP email send failed: ${diagnostic.safeDiagnostic}`);
-    return { success: false, error: diagnostic.safeDiagnostic };
-  }
+  return sendEmail({
+    to: opts.to,
+    subject: `Verify your SprintForge account: ${opts.otp} 🔐`,
+    html,
+    text,
+  });
 }
 
 /**
@@ -828,37 +814,18 @@ export async function sendPasswordResetEmail(opts: {
   name: string;
   resetUrl: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    const t = await getTransporter();
-    const config = resolveSmtpConfig();
+  const { html, text } = buildPasswordResetEmail({
+    name: opts.name,
+    resetUrl: opts.resetUrl,
+    recipientEmail: opts.to,
+  });
 
-    const { html, text } = buildPasswordResetEmail({
-      name: opts.name,
-      resetUrl: opts.resetUrl,
-      recipientEmail: opts.to,
-    });
-
-    const info = await safeSendMail(t, {
-      from: `"${config.fromName}" <${config.fromEmail}>`,
-      to: opts.to,
-      subject: `Reset your SprintForge password 🔒`,
-      html,
-      text,
-    });
-
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log(`📧 Password Reset Email preview: ${previewUrl}`);
-    } else {
-      console.log(`📧 Password reset email sent to ${opts.to} (messageId: ${info?.messageId || 'sent'})`);
-    }
-
-    return { success: true, messageId: info?.messageId };
-  } catch (err: any) {
-    const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ Password reset email send failed: ${diagnostic.safeDiagnostic}`);
-    return { success: false, error: diagnostic.safeDiagnostic };
-  }
+  return sendEmail({
+    to: opts.to,
+    subject: `Reset your SprintForge password 🔒`,
+    html,
+    text,
+  });
 }
 
 // ─── Send Security Notification Email ─────────────────────────────────────────
@@ -868,11 +835,7 @@ export async function sendSecurityEmail(opts: {
   subject: string;
   message: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    const t = await getTransporter();
-    const config = resolveSmtpConfig();
-
-    const html = `
+  const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8" /><title>${opts.subject}</title></head>
@@ -888,18 +851,10 @@ export async function sendSecurityEmail(opts: {
 </body>
 </html>`;
 
-    const info = await safeSendMail(t, {
-      from: `"${config.fromName}" <${config.fromEmail}>`,
-      to: opts.to,
-      subject: opts.subject,
-      html,
-      text: opts.message,
-    });
-
-    return { success: true, messageId: info?.messageId };
-  } catch (err: any) {
-    const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ Security email send failed: ${diagnostic.safeDiagnostic}`);
-    return { success: false, error: diagnostic.safeDiagnostic };
-  }
+  return sendEmail({
+    to: opts.to,
+    subject: opts.subject,
+    html,
+    text: opts.message,
+  });
 }

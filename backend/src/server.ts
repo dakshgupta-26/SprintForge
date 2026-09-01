@@ -12,8 +12,11 @@ import dns from 'dns';
 
 dotenv.config();
 
-// Ensure Node.js resolves MongoDB Atlas SRV records smoothly on all networks
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+// Ensure Node.js resolves MongoDB Atlas SRV records smoothly on local Windows dev networks
+// On Linux/Docker (Railway), preserve container default DNS (/etc/resolv.conf)
+if (process.platform === 'win32') {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+}
 
 // Routes
 import authRoutes from './routes/auth';
@@ -126,7 +129,7 @@ app.get('/api/health/email', async (req, res) => {
   } catch {
     res.status(500).json({
       configured: false,
-      provider: 'gmail',
+      provider: 'mailjet',
       status: 'degraded',
     });
   }
@@ -148,9 +151,9 @@ mongoose
       console.log(`🔌 Socket.IO ready`);
     });
 
-    // Verify SMTP connection on backend startup without blocking port listening
+    // Verify email service on backend startup without blocking port listening
     verifyEmailTransporter().catch((err) => {
-      console.warn('⚠️ Non-blocking SMTP startup check error:', err?.message || err);
+      console.warn('⚠️ Non-blocking email startup check error:', err?.message || err);
     });
   })
   .catch((err) => {
