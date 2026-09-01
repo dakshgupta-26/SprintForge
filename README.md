@@ -10,6 +10,7 @@
 
 <br />
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-sprint--forge--livid.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://sprint-forge-livid.vercel.app/)
 [![Next.js](https://img.shields.io/badge/Next.js_16-Turbopack-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript_5.x-Strict_Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Express.js](https://img.shields.io/badge/Express.js_4-REST_API-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
@@ -18,6 +19,10 @@
 [![MongoDB](https://img.shields.io/badge/MongoDB-Document_Store-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![Docker](https://img.shields.io/badge/Docker-Multi_Stage_Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+
+<br />
+
+**🔗 [Experience the Live Application &rarr; https://sprint-forge-livid.vercel.app/](https://sprint-forge-livid.vercel.app/)**
 
 </div>
 
@@ -28,10 +33,11 @@
 SprintForge connects task execution, dependency intelligence, real-time collaboration, and communication through a modular production-oriented architecture.
 
 <div align="center">
-  <a href="./assets/architecture.svg" target="_blank">
-    <img src="./assets/architecture.svg" alt="SprintForge Enterprise Architecture" width="100%" />
-  </a>
-  <p><em>Click on the architecture diagram to inspect the high-resolution vector system map.</em></p>
+
+[![SprintForge Enterprise Architecture](https://raw.githubusercontent.com/dakshgupta-26/SprintForge/main/assets/architecture.svg)](https://sprint-forge-livid.vercel.app/)
+
+*Click on the architecture diagram to launch the interactive live deployment on Vercel.*
+
 </div>
 
 <br />
