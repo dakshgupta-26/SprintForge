@@ -9,6 +9,7 @@ import {
   Columns3,
   AlignLeft,
   Zap,
+  Activity,
   Bug,
   MessageSquare,
   BarChart3,
@@ -83,6 +84,7 @@ const projectNav = (
   { label: "Board", href: `/dashboard/projects/${id}/board`, icon: Columns3 },
   { label: "Backlog", href: `/dashboard/projects/${id}/backlog`, icon: AlignLeft },
   { label: "Sprints", href: `/dashboard/projects/${id}/sprints`, icon: Zap },
+  { label: "Impact", href: `/dashboard/projects/${id}/impact`, icon: Activity },
   { label: "Issues", href: `/dashboard/projects/${id}/issues`, icon: Bug },
   {
     label: "Chat",

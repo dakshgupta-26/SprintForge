@@ -290,4 +290,14 @@ export const callAPI = {
   endCall: (callId: string) => api.post(`/calls/${callId}/end`),
 };
 
+// ─── Impact Engine ───
+export const impactAPI = {
+  getProjectImpact: (projectId: string, sprintId?: string) =>
+    api.get(`/projects/${projectId}/impact`, { params: { sprintId } }),
+  simulate: (projectId: string, scenario: any, sprintId?: string) =>
+    api.post(`/projects/${projectId}/impact/simulate`, { scenario, sprintId }),
+  getTaskImpact: (projectId: string, taskId: string) =>
+    api.get(`/projects/${projectId}/impact/tasks/${taskId}`),
+};
+
 export default api;

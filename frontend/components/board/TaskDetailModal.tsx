@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Loader2, MessageCircle, Paperclip, Flag, Clock, User, Tag, Send, ExternalLink, Edit2, Trash2, CheckCircle2 } from "lucide-react";
-import { taskAPI } from "@/lib/api";
+import { X, Loader2, MessageCircle, Paperclip, Flag, Clock, User, Tag, Send, ExternalLink, Edit2, Trash2, CheckCircle2, Activity, Sparkles } from "lucide-react";
+import { taskAPI, impactAPI } from "@/lib/api";
+import { useRouter } from "next/navigation";
 import { cn, PRIORITY_BG, STATUS_LABELS, formatDate, generateAvatar } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import toast from "react-hot-toast";
@@ -15,6 +16,7 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalProps) {
+  const router = useRouter();
   const { user } = useAuthStore();
   const [task, setTask] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +25,7 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
   const [activeTab, setActiveTab] = useState<"details" | "comments" | "activity">("details");
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", description: "", priority: "" });
+  const [impactData, setImpactData] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -30,6 +33,11 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
         const { data } = await taskAPI.getOne(taskId);
         setTask(data);
         setEditForm({ title: data.title, description: data.description || "", priority: data.priority });
+
+        if (data.project) {
+          const pId = typeof data.project === "object" ? data.project._id : data.project;
+          impactAPI.getTaskImpact(pId, taskId).then((res) => setImpactData(res.data)).catch(() => {});
+        }
       } catch {
         toast.error("Failed to load task");
       } finally {
@@ -291,6 +299,58 @@ export function TaskDetailModal({ taskId, onClose, onUpdate }: TaskDetailModalPr
                             />
                             <span className="text-xs text-foreground">{task.reporter.name}</span>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Engineering Impact Section */}
+                      {impactData && (
+                        <div className="p-3.5 rounded-2xl bg-violet-600/10 border border-violet-500/25 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-violet-400 flex items-center gap-1.5">
+                              <Activity className="w-3.5 h-3.5" />
+                              Impact Analysis
+                            </span>
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.2 rounded text-[10px] font-mono font-bold border",
+                                impactData.risk?.level === "critical"
+                                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                                  : impactData.risk?.level === "high"
+                                  ? "bg-orange-500/20 text-orange-300 border-orange-500/40"
+                                  : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                              )}
+                            >
+                              Risk: {impactData.risk?.score || 0}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-300 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Critical Path:</span>
+                              <span className={cn("font-bold font-mono", impactData.isCriticalPath ? "text-rose-400" : "text-slate-300")}>
+                                {impactData.isCriticalPath ? "Yes (0 float)" : "No"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Downstream:</span>
+                              <span className="font-bold font-mono text-cyan-400">
+                                {impactData.downstreamCount || 0} tasks
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pId = typeof task.project === "object" ? task.project._id : task.project;
+                              onClose();
+                              router.push(`/dashboard/projects/${pId}/impact`);
+                            }}
+                            className="w-full py-1.5 rounded-xl bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white border border-violet-500/30 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>Explore in Impact Engine</span>
+                          </button>
                         </div>
                       )}
 

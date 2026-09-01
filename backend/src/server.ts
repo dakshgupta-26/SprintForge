@@ -30,6 +30,7 @@ import wikiRoutes from './routes/wiki';
 import analyticsRoutes from './routes/analytics';
 import messageRoutes from './routes/messages';
 import callRoutes from './routes/calls';
+import impactRoutes from './routes/impact';
 
 // Socket handler
 import { initSocket } from './socket';
@@ -114,6 +115,7 @@ app.use('/api/wiki', wikiRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/calls', callRoutes);
+app.use('/api/projects', impactRoutes);
 
 // Health checks
 import { verifyEmailTransporter, getEmailHealthStatus } from './services/emailService';

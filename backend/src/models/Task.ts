@@ -22,6 +22,8 @@ export interface ITask extends Document {
   attachments: Array<{ name: string; url: string; size: number; uploadedBy: mongoose.Types.ObjectId; uploadedAt: Date }>;
   comments: mongoose.Types.ObjectId[];
   linkedIssues: mongoose.Types.ObjectId[];
+  dependencies: mongoose.Types.ObjectId[];
+  blockedBy: mongoose.Types.ObjectId[];
   githubPRs: string[];
   boardColumn?: string;
   boardOrder: number;
@@ -62,6 +64,8 @@ const taskSchema = new Schema<ITask>(
     ],
     comments: [{ type: Schema.Types.ObjectId, ref: 'Comment' }],
     linkedIssues: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
+    dependencies: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
+    blockedBy: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
     githubPRs: [{ type: String }],
     boardColumn: { type: String },
     boardOrder: { type: Number, default: 0 },
