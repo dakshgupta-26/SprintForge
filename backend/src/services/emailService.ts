@@ -6,6 +6,18 @@ function cleanEnvValue(val?: string): string {
   return val.trim().replace(/^["']|["']$/g, '').trim();
 }
 
+function maskEmailForLogs(email: string): string {
+  if (!email) return 'unknown';
+  const parts = email.split('@');
+  if (parts.length !== 2) return email.slice(0, 3) + '***';
+  const [local, domain] = parts;
+  const maskedLocal =
+    local.length > 2
+      ? local[0] + '*'.repeat(Math.min(local.length - 2, 4)) + local[local.length - 1]
+      : local[0] + '***';
+  return `${maskedLocal}@${domain}`;
+}
+
 export interface MailjetConfig {
   apiKey: string;
   apiSecret: string;
@@ -15,10 +27,29 @@ export interface MailjetConfig {
 }
 
 export function resolveMailjetConfig(): MailjetConfig {
-  const apiKey = cleanEnvValue(process.env.MAILJET_API_KEY);
-  const apiSecret = cleanEnvValue(process.env.MAILJET_SECRET_KEY);
-  const fromEmail = cleanEnvValue(process.env.MAILJET_FROM_EMAIL) || cleanEnvValue(process.env.SMTP_FROM) || 'team.eduaccess@gmail.com';
-  const fromName = cleanEnvValue(process.env.MAILJET_FROM_NAME) || cleanEnvValue(process.env.SMTP_FROM_NAME) || 'SprintForge';
+  const apiKey = cleanEnvValue(
+    process.env.MAILJET_API_KEY ||
+    process.env.MJ_APIKEY_PUBLIC ||
+    process.env.MAILJET_PUBLIC_KEY
+  );
+  const apiSecret = cleanEnvValue(
+    process.env.MAILJET_SECRET_KEY ||
+    process.env.MJ_APIKEY_PRIVATE ||
+    process.env.MAILJET_SECRET ||
+    process.env.MAILJET_PRIVATE_KEY
+  );
+  const fromEmail = cleanEnvValue(
+    process.env.MAILJET_FROM_EMAIL ||
+    process.env.MAILJET_SENDER_EMAIL ||
+    process.env.SMTP_FROM ||
+    'team.eduaccess@gmail.com'
+  );
+  const fromName = cleanEnvValue(
+    process.env.MAILJET_FROM_NAME ||
+    process.env.MAILJET_SENDER_NAME ||
+    process.env.SMTP_FROM_NAME ||
+    'SprintForge'
+  );
 
   return {
     apiKey,
@@ -50,58 +81,66 @@ export function resolveSmtpConfig() {
 export function sanitizeEmailError(err: any): { category: string; message: string; safeDiagnostic: string } {
   const rawMessage = (err?.message || '').toLowerCase();
   const statusCode = err?.statusCode || err?.status || err?.response?.status;
-  const errorMessage = (err?.response?.data?.ErrorMessage || err?.response?.data?.message || err?.message || '').toLowerCase();
+  const errorData = err?.response?.data;
+  const innerErrorMsg = (
+    errorData?.ErrorMessage ||
+    errorData?.message ||
+    (Array.isArray(errorData?.Messages) && errorData.Messages[0]?.Errors?.map((e: any) => e.ErrorMessage).join('; ')) ||
+    err?.message ||
+    ''
+  ).toLowerCase();
 
   if (
     statusCode === 401 ||
-    errorMessage.includes('unauthorized') ||
-    errorMessage.includes('invalid api key') ||
-    errorMessage.includes('check your api key and secret key') ||
+    innerErrorMsg.includes('unauthorized') ||
+    innerErrorMsg.includes('invalid api key') ||
+    innerErrorMsg.includes('check your api key and secret key') ||
     rawMessage.includes('unauthorized')
   ) {
     return {
       category: 'MAILJET_AUTH_FAILED',
-      message: 'Mailjet API authentication failed. Please verify MAILJET_API_KEY and MAILJET_SECRET_KEY.',
-      safeDiagnostic: 'Mailjet authentication failed',
+      message: 'Mailjet API authentication failed. Please verify MAILJET_API_KEY and MAILJET_SECRET_KEY in your environment.',
+      safeDiagnostic: 'Mailjet authentication failed (HTTP 401: Invalid API keys)',
     };
   }
 
   if (
     statusCode === 403 ||
-    errorMessage.includes('forbidden') ||
-    errorMessage.includes('account is deactivated') ||
-    errorMessage.includes('sender not allowed') ||
-    errorMessage.includes('sender address')
+    innerErrorMsg.includes('forbidden') ||
+    innerErrorMsg.includes('account is deactivated') ||
+    innerErrorMsg.includes('sender not allowed') ||
+    innerErrorMsg.includes('sender address') ||
+    innerErrorMsg.includes('not verified')
   ) {
     return {
       category: 'MAILJET_SENDER_REJECTED',
-      message: 'Mailjet rejected the sender address. Ensure MAILJET_FROM_EMAIL is a verified sender in Mailjet.',
-      safeDiagnostic: 'Mailjet rejected sender address (unverified sender)',
+      message: 'Mailjet rejected the sender address. Ensure MAILJET_FROM_EMAIL is a verified Active sender in your Mailjet account.',
+      safeDiagnostic: 'Mailjet sender rejected (HTTP 403: Sender address unverified or account deactivated)',
     };
   }
 
   if (
     statusCode === 400 ||
-    errorMessage.includes('bad request') ||
-    errorMessage.includes('illegal') ||
-    errorMessage.includes('invalid email')
+    innerErrorMsg.includes('bad request') ||
+    innerErrorMsg.includes('illegal') ||
+    innerErrorMsg.includes('invalid email')
   ) {
     return {
       category: 'MAILJET_BAD_REQUEST',
       message: 'Mailjet rejected the email request payload.',
-      safeDiagnostic: 'Mailjet request payload invalid or recipient rejected',
+      safeDiagnostic: `Mailjet bad request (HTTP 400: ${errorData?.ErrorMessage || 'Invalid payload or recipient address'})`,
     };
   }
 
   if (
     statusCode === 429 ||
-    errorMessage.includes('rate limit') ||
-    errorMessage.includes('too many requests')
+    innerErrorMsg.includes('rate limit') ||
+    innerErrorMsg.includes('too many requests')
   ) {
     return {
       category: 'MAILJET_RATE_LIMITED',
       message: 'Mailjet API rate limit reached.',
-      safeDiagnostic: 'Mailjet rate limit exceeded',
+      safeDiagnostic: 'Mailjet rate limit exceeded (HTTP 429)',
     };
   }
 
@@ -126,14 +165,14 @@ export function sanitizeEmailError(err: any): { category: string; message: strin
     return {
       category: 'MAILJET_CONNECTION_FAILED',
       message: 'Unable to connect to Mailjet API server.',
-      safeDiagnostic: 'Mailjet API connection failed',
+      safeDiagnostic: 'Mailjet network connection failed (Host unreachable)',
     };
   }
 
   return {
     category: 'MAILJET_GENERAL_FAILURE',
     message: 'Mailjet email delivery failed.',
-    safeDiagnostic: 'Email delivery failed',
+    safeDiagnostic: statusCode ? `Mailjet API error (HTTP ${statusCode})` : 'Email delivery failed',
   };
 }
 
@@ -145,7 +184,7 @@ export function getMailjetClient(): Client {
 
   const config = resolveMailjetConfig();
   if (!config.isConfigured) {
-    throw new Error('Mailjet credentials not configured. Missing MAILJET_API_KEY or MAILJET_SECRET_KEY.');
+    throw new Error('Mailjet credentials not configured. Missing MAILJET_API_KEY or MAILJET_SECRET_KEY in environment variables.');
   }
 
   mailjetClient = new Mailjet({
@@ -168,18 +207,17 @@ export async function verifyEmailTransporter(): Promise<{ success: boolean; mess
   try {
     const config = resolveMailjetConfig();
     if (!config.isConfigured) {
-      console.warn('⚠️ Mailjet email service not configured: missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
+      console.warn('⚠️ [EMAIL] Mailjet not configured: missing MAILJET_API_KEY or MAILJET_SECRET_KEY environment variables.');
       return { success: false, message: 'Missing Mailjet environment variables' };
     }
 
     const client = getMailjetClient();
-    // Validate credentials against Mailjet REST API
     await client.get('user', { version: 'v3' }).request();
-    console.log('✅ Email service configured: Mailjet API credentials verified');
+    console.log(`✅ [EMAIL] Mailjet API credentials verified successfully (Sender: ${config.fromEmail})`);
     return { success: true, message: 'Mailjet API credentials verified' };
   } catch (err: any) {
     const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ Mailjet API verification failed: ${diagnostic.safeDiagnostic}`);
+    console.error(`❌ [EMAIL] Mailjet API startup verification failed: ${diagnostic.safeDiagnostic}`);
     return { success: false, message: diagnostic.safeDiagnostic };
   }
 }
@@ -225,12 +263,17 @@ export async function sendEmail(opts: {
   fromEmail?: string;
   fromName?: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const maskedRecipient = maskEmailForLogs(opts.to);
+
   try {
     const config = resolveMailjetConfig();
     if (!config.isConfigured) {
-      console.warn('⚠️ Mailjet email service not configured: missing MAILJET_API_KEY or MAILJET_SECRET_KEY');
-      return { success: false, error: 'Mailjet credentials not configured' };
+      console.error('❌ [EMAIL] Cannot send email: MAILJET_API_KEY or MAILJET_SECRET_KEY is missing in environment variables.');
+      return { success: false, error: 'Mailjet credentials not configured in environment variables' };
     }
+
+    console.log(`[EMAIL] Dispatching email to: ${maskedRecipient} | Subject: "${opts.subject}"`);
+    console.log(`[EMAIL] Provider: Mailjet (v3.1) | From: "${opts.fromName || config.fromName}" <${opts.fromEmail || config.fromEmail}>`);
 
     const client = getMailjetClient();
     const fromEmail = opts.fromEmail || config.fromEmail;
@@ -245,7 +288,7 @@ export async function sendEmail(opts: {
           },
           To: [
             {
-              Email: opts.to,
+              Email: opts.to.trim().toLowerCase(),
             },
           ],
           Subject: opts.subject,
@@ -267,17 +310,17 @@ export async function sendEmail(opts: {
 
     if (firstMsg?.Status === 'success') {
       const messageId = firstMsg?.To?.[0]?.MessageID ? String(firstMsg.To[0].MessageID) : 'mailjet_sent';
-      console.log(`📧 Mailjet email sent to ${opts.to} (MessageID: ${messageId})`);
+      console.log(`✅ [EMAIL] Mailjet delivered successfully to ${maskedRecipient} (MessageID: ${messageId})`);
       return { success: true, messageId };
     } else {
       const errorList = (firstMsg?.Errors || []).map((e: any) => e.ErrorMessage || e.ErrorIdentifier).join('; ');
-      const errorMsg = errorList || 'Mailjet message delivery status was not successful';
-      console.error(`❌ Mailjet delivery failed for ${opts.to}: ${errorMsg}`);
+      const errorMsg = errorList || 'Mailjet message status was not successful';
+      console.error(`❌ [EMAIL] Mailjet delivery failed for ${maskedRecipient}: ${errorMsg}`);
       return { success: false, error: errorMsg };
     }
   } catch (err: any) {
     const diagnostic = sanitizeEmailError(err);
-    console.error(`❌ Mailjet send failed: ${diagnostic.safeDiagnostic}`);
+    console.error(`❌ [EMAIL] Mailjet send error for ${maskedRecipient}: ${diagnostic.safeDiagnostic}`);
     return { success: false, error: diagnostic.safeDiagnostic };
   }
 }
