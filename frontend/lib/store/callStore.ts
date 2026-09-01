@@ -266,6 +266,7 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // 1. Incoming Call Event (receives when another user calls)
     socket.on('call:incoming', (incomingData: IncomingCallData) => {
+      console.log('[CALL] Received call:incoming event:', incomingData);
       // If user is caller, ignore
       if (incomingData.caller._id === userId) return;
 
@@ -287,8 +288,18 @@ export const useCallStore = create<CallState>((set, get) => ({
       socket.emit('call:ringing', { callId: incomingData.callId });
     });
 
+    // 1b. Dismiss Incoming Call Event (e.g. call accepted/declined on another tab or cancelled)
+    socket.on('call:dismiss_incoming', ({ callId }: { callId: string }) => {
+      console.log('[CALL] Received call:dismiss_incoming event for callId:', callId);
+      SoundEffects.stopIncomingRingtone();
+      if (get().incomingCall?.callId === callId) {
+        set({ incomingCall: null, showConflictWarning: false });
+      }
+    });
+
     // 2. Caller receives "ringing" confirmation
     socket.on('call:ringing', ({ callId }) => {
+      console.log('[CALL] Received call:ringing event for callId:', callId);
       if (get().callId === callId && get().callStatus === 'initiating') {
         set({
           callStatus: 'ringing',
@@ -299,6 +310,7 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // 3. Call Accepted by Receiver
     socket.on('call:accepted', async (data: { callId: string; callerId: string; receiverId: string; type: CallType }) => {
+      console.log('[CALL] Received call:accepted event:', data);
       SoundEffects.stopIncomingRingtone();
       SoundEffects.playCallConnectedSound();
 
@@ -306,6 +318,8 @@ export const useCallStore = create<CallState>((set, get) => ({
         callStatus: 'connected',
         statusText: 'Connected',
         connectedAt: new Date(),
+        incomingCall: null,
+        showConflictWarning: false,
       });
 
       // If this user is the caller, initiate WebRTC Offer
@@ -581,9 +595,13 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     const socket = getSocket();
     if (!socket?.connected) {
-      toast.error('Realtime connection is reconnecting. Please try again.');
-      return;
+      socket.connect();
     }
+
+    const cleanTargetId =
+      typeof targetUserId === 'object' && targetUserId !== null
+        ? (targetUserId as any)._id
+        : String(targetUserId);
 
     // Clean up any stale calls
     cleanUpCallResources();
@@ -626,14 +644,21 @@ export const useCallStore = create<CallState>((set, get) => ({
       setupPeerConnection(localMediaStream);
 
       // Emit initiate to Socket server
+      console.log(`[CALL] Emitting call:initiate to target ${cleanTargetId} in project ${projectId}`);
       socket.emit('call:initiate', {
-        targetUserId,
+        targetUserId: cleanTargetId,
         projectId,
         type,
       });
 
+      // Clear any previous once listeners to avoid stale triggers
+      socket.off('call:initiated');
+      socket.off('call:failed');
+      socket.off('call:busy');
+
       // Listen for initiate response
       socket.once('call:initiated', ({ callId }) => {
+        console.log(`[CALL] Received call:initiated for callId: ${callId}`);
         set({
           callId,
           callStatus: 'calling',

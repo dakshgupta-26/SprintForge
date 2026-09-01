@@ -42,6 +42,7 @@ export const getSocketUrl = (): string => {
 };
 
 let socket: Socket | null = null;
+let currentRegisteredUserId: string | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
@@ -50,21 +51,47 @@ export const getSocket = (): Socket => {
       autoConnect: false,
       transports: ["websocket", "polling"],
       withCredentials: true, // Send HttpOnly auth cookies with socket handshake
+      auth: (cb) => {
+        cb({ userId: currentRegisteredUserId });
+      },
+    });
+
+    socket.on("connect", () => {
+      console.log(`[REALTIME] Socket connected: ${socket?.id}`);
+      if (currentRegisteredUserId) {
+        socket?.emit("join:user", currentRegisteredUserId);
+      }
+    });
+
+    socket.on("reconnect", () => {
+      console.log(`[REALTIME] Socket reconnected: ${socket?.id}`);
+      if (currentRegisteredUserId) {
+        socket?.emit("join:user", currentRegisteredUserId);
+      }
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log(`[REALTIME] Socket disconnected: ${reason}`);
     });
   }
   return socket;
 };
 
 export const connectSocket = (userId: string) => {
+  currentRegisteredUserId = userId;
   const s = getSocket();
+
   if (!s.connected) {
     s.connect();
+  } else {
     s.emit("join:user", userId);
   }
+
   return s;
 };
 
 export const disconnectSocket = () => {
+  currentRegisteredUserId = null;
   if (socket?.connected) {
     socket.disconnect();
   }
