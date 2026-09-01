@@ -8,15 +8,17 @@
 > **"See how one change affects your sprint before you make it."**  
 > A distributed, dependency-aware Agile orchestration platform combining real-time collaboration, WebRTC audio/video infrastructure, and deterministic engineering intelligence.
 
-<p align="center">
-  <a href="https://sprint-forge-livid.vercel.app/" target="_blank">
-    <img src="https://img.shields.io/badge/⚡_LIVE_PRODUCTION_DEMO-LAUNCH_PLATFORM-6366f1?style=for-the-badge&logo=vercel&logoColor=white&labelColor=070a14" alt="Launch Live Platform" height="38" />
-  </a>
-</p>
-
 <br />
 
-[![SprintForge Core Technology Stack](assets/tech-stack.png)](https://sprint-forge-livid.vercel.app/)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-sprint--forge--livid.vercel.app-6366f1?style=for-the-badge&logo=vercel&logoColor=white&labelColor=070a14)](https://sprint-forge-livid.vercel.app/)
+[![Next.js](https://img.shields.io/badge/Next.js_16-Turbopack-000000?style=for-the-badge&logo=nextdotjs&logoColor=white&labelColor=000000)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript_5.x-Strict_Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white&labelColor=1e4976)](https://www.typescriptlang.org/)
+[![Express.js](https://img.shields.io/badge/Express.js_4-REST_API-000000?style=for-the-badge&logo=express&logoColor=white&labelColor=1a1a1a)](https://expressjs.com/)
+[![WebRTC](https://img.shields.io/badge/WebRTC-Peer_to_Peer_Audio_Video-333333?style=for-the-badge&logo=webrtc&logoColor=white&labelColor=1a1a1a)](https://webrtc.org/)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO_4-Bidirectional_Signaling-010101?style=for-the-badge&logo=socketdotio&logoColor=white&labelColor=121212)](https://socket.io/)
+[![MongoDB](https://img.shields.io/badge/MongoDB_7-Document_Store-47A248?style=for-the-badge&logo=mongodb&logoColor=white&labelColor=116149)](https://www.mongodb.com/)
+[![Docker](https://img.shields.io/badge/Docker-Multi_Stage_Container-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=136497)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=070a14)](LICENSE)
 
 </div>
 
@@ -29,110 +31,95 @@
 
 ## 🏗️ System Architecture
 
-SprintForge connects task execution, dependency intelligence, real-time collaboration, and communication through a modular production-oriented architecture.
+SprintForge uses a modular client, API, realtime, intelligence, and persistence architecture designed around collaborative engineering workflows.
 
 <div align="center">
 
-[![SprintForge Enterprise Architecture](assets/architecture.png)](https://sprint-forge-livid.vercel.app/)
+[![SprintForge System Architecture](assets/architecture.png)](https://sprint-forge-livid.vercel.app/)
 
-<p><em>Click on the architecture topology diagram above to launch the interactive live deployment on Vercel.</em></p>
+<p><em>SprintForge System Architecture: Client Tier, Express Backend Services, Socket.IO Realtime Mesh, Impact Computation Pipeline, and MongoDB Document Store.</em></p>
 
 </div>
 
 <br />
 
-### ⚡ Core Engineering Systems
-
-<table width="100%">
-<tr>
-<td width="50%" valign="top">
-
-#### 🧠 1. Flagship Impact Engine & Simulator
-- **Mathematical CPM**: Calculates Earliest/Latest Start/Finish & Total Slack ($\text{Float} \le 0$) across sprint dependencies.
-- **Topological Sorting**: Kahn’s Algorithm for $\mathcal{O}(V+E)$ DAG evaluation + DFS circular back-edge chain tracing.
-- **In-Memory What-If Studio**: Deep graph cloning for zero-database-mutation delay forecasting & rebalancing.
-- **6-Vector Risk Radar**: Multi-factor scoring (Blast Radius, Depth, Assignee Overload, Proximity, Blocker Propagation).
-
-</td>
-<td width="50%" valign="top">
-
-#### ⚡ 2. Real-Time & WebSockets Mesh
-- **Global User Socket Registry**: Multi-tab user map (`Map<string, Set<string>>`) for cross-session state coherence.
-- **Sub-50ms Mutation Dispatch**: Room-based events for atomic Kanban column drops, chat messages & sprint changes.
-- **Presence & Live Telemetry**: Heartbeat presence tracking, live typing indicators, and synchronized call dismissals.
-- **Optimistic Reconciliation**: Instant client-side state mutation with rollback capability on server rejection.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-#### 📞 3. WebRTC Audio/Video Media Engine
-- **Full-Duplex SRTP Mesh**: Peer-to-peer audio and 720p/1080p video streaming without intermediate media relays.
-- **Asynchronous ICE Queueing**: Eliminates candidate-drop race conditions occurring before remote SDP description sets.
-- **Dynamic Hardware Controls**: Real-time microphone/camera mute negotiation, screen sharing, and graceful teardowns.
-- **Multi-Tab Presence Arbitration**: Synchronized ringtone broadcast with instant dismissal across duplicate sessions.
-
-</td>
-<td width="50%" valign="top">
-
-#### 🔒 4. Zero-Trust Security & Auth Authority
-- **Federated & OTP Identity**: Google OAuth 2.0 PKCE (`google-auth-library`) + Cryptographic 6-digit email challenges.
-- **5-Tier Fine-Grained RBAC**: `Admin` > `Lead` > `Dev` > `QA` > `Viewer` enforced via express middleware pipelines.
-- **Field-Level Encryption**: AES-256-CBC cipher primitives for chat history and confidential workspace records.
-- **Defense in Depth**: Helmet CSP/HSTS policies, token-bucket rate limiting, and NoSQL query sanitization.
-
-</td>
-</tr>
-</table>
-
-<br />
-
-### 🔄 Request & Data Lifecycle
+### 🔄 Core Data Flow
 
 ```
 [ Engineer / User Action ]
-           │
-           ▼
-[ Next.js 16 Client Tier ] ──( Optimistic Zustand Store Mutation )
-           │
-     ┌─────┴───────────────────────────────────────────────────────┐
-     │                                                             │
-(HTTPS REST API)                                          (Duplex WebSockets)
-     │                                                             │
-     ▼                                                             ▼
-[ Edge Security Gateway ]                                 [ Socket.IO Signaling Mesh ]
-  ├─ Token Bucket Rate Limiter                              ├─ Global Multi-Tab Socket Registry
-  ├─ Helmet CSP / HSTS Headers                              ├─ WebRTC SDP / ICE Negotiation
-  └─ JWT & 5-Tier RBAC Auth                                 └─ Room-Based Mutation Dispatcher
-     │                                                             │
-     ▼                                                             │
-[ Express.js Core Services ]                                      │
-  ├─ Project & Task Orchestrator                                   │
-  ├─ Sprint Burndown Telemetry                                     │
-  └─ Impact Engine (DAG / CPM / Risk) ─────────┐                   │
-     │                                         │                   │
-     ▼                                         ▼                   │
-[ MongoDB Document Store ]             [ In-Memory Sandbox ]       │
-  └─ AES-256-CBC Field Encryption        └─ What-If Simulation     │
-     │                                                             │
-     └─────────────────────────┬───────────────────────────────────┘
-                               │
-                               ▼
-              [ Live Broadcast to Connected Clients ]
-                   (Sub-50ms Global UI Update)
+          │
+          ▼
+[ Next.js 16 Client ]  (Optimistic Zustand state update)
+          │
+     ┌────┴───────────────────────────────┐
+     │                                    │
+(HTTPS REST API)                 (Duplex WebSockets)
+     │                                    │
+     ▼                                    ▼
+[ Express Backend Services ]     [ Socket.IO Signaling Mesh ]
+     │                                    │
+     ▼                                    │
+[ MongoDB 7.x Database ]                  │
+     │                                    │
+     └─────────────────┬──────────────────┘
+                       │
+                       ▼
+         [ Realtime Broadcast to Connected Clients ]
 ```
 
 <br />
 
-### 🧠 Engineering Highlights
+### 📞 Realtime Calling Architecture
 
-- **Deterministic Graph Computing**: Dependency-aware schedule risk forecasting and Critical Path Method (CPM) calculated via rigorous discrete mathematics ($\mathcal{O}(V+E)$) instead of non-deterministic LLMs.
-- **In-Memory Scenario Simulation**: Sandboxed what-if modeling lets engineering leads test hypothetical delays and reassignments without mutating live database records.
-- **Zero-Drop WebRTC Signaling Mesh**: Queue-arbitrated ICE candidate exchange and multi-tab socket registries prevent connection drops across distributed devices.
-- **Sub-50ms Real-Time Synchronization**: Room-clustered Socket.IO engine synchronizes Kanban boards, chat channels, and user presence with optimistic UI reconciliation.
-- **Cryptographic Defense in Depth**: Strict 5-tier RBAC authorization, token-bucket rate limiting, HTTP-only cookie security, and hardware-accelerated AES-256-CBC field encryption.
-- **End-to-End Type Safety**: Unified TypeScript domain contracts shared across Next.js 16 Turbopack frontend and Express.js backend services.
+```
+[ Signaling Path ]
+Client A ───( SDP Offer / ICE Candidate )───► Socket.IO Signaling Bridge ───► Client B
+Client B ───( SDP Answer / ICE Candidate )──► Socket.IO Signaling Bridge ───► Client A
+
+[ Media Path (Peer-to-Peer) ]
+Client A ◄═══════════════ ( Full-Duplex SRTP Audio & Video Stream ) ═══════════════► Client B
+```
+
+- **Signaling Channel**: Transports SDP session descriptions and ICE candidate discoveries over Socket.IO room mesh.
+- **Media Channel**: Direct browser-to-browser peer-to-peer SRTP audio and video streaming (zero server media relay overhead).
+
+<br />
+
+### 🧠 Impact Engine Computation Pipeline
+
+```
+[ Sprint Tasks & Dependencies Input ]
+                  │
+                  ▼
+   [ Dependency Graph Construction ]
+                  │
+                  ▼
+   [ Directed Acyclic Graph (DAG) ]
+                  │
+                  ▼
+[ Cycle Detection: Kahn's Topo Sort & DFS Back-Edge Tracer O(V+E) ]
+                  │
+                  ▼
+[ Critical Path Method (CPM): ES/EF Forward + LS/LF Backward Pass ]
+                  │
+                  ▼
+[ Mathematical Risk Radar: 6-Vector Normalized Scoring (0 - 100) ]
+                  │
+                  ▼
+[ In-Memory What-If Simulation: Deep Graph Clone Scenario Sandbox ]
+                  │
+                  ▼
+[ Explainable Recommendations & Workload Rebalancing Telemetry ]
+```
+
+<br />
+
+### 🔒 Authentication & Security Architecture
+
+- **Identity & Federated Access**: Dual authentication via Cryptographic 6-digit Email OTP challenges and Google OAuth 2.0 PKCE (`google-auth-library`).
+- **Session & Transport Security**: Secure HTTP-Only cookies with JWT rotation, Helmet security headers (strict CSP, HSTS), and token-bucket rate limiting (`express-rate-limit`).
+- **Granular 5-Tier RBAC**: Enforces `Admin` > `Lead` > `Dev` > `QA` > `Viewer` access boundaries across workspace resources.
+- **Data-at-Rest Cryptography**: AES-256-CBC field-level encryption for sensitive stored message payloads and audit logging (`SecurityLog.ts`).
 
 ---
 
