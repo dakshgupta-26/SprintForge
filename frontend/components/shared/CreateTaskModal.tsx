@@ -5,6 +5,7 @@ import { X, Loader2, CheckCircle2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { taskAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
+import { DatePicker } from "@/components/shared/DatePicker";
 import toast from "react-hot-toast";
 
 interface CreateTaskModalProps {
@@ -206,11 +207,10 @@ export function CreateTaskModal({ onClose, onCreated, defaultProjectId }: Create
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1.5">Due Date</label>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={form.dueDate}
-                    onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    onChange={(val) => setForm((f) => ({ ...f, dueDate: val }))}
+                    placeholder="Select due date"
                   />
                 </div>
                 <div>

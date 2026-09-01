@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { sprintAPI, taskAPI } from "@/lib/api";
 import { generateAvatar, cn } from "@/lib/utils";
+import { DatePicker } from "@/components/shared/DatePicker";
 import toast from "react-hot-toast";
 
 interface CreateSprintModalProps {
@@ -366,32 +367,29 @@ export function CreateSprintModal({
 
               {/* Date Inputs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-3.5 rounded-2xl bg-[#060914] border border-white/[0.08]">
+                <div>
                   <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1.5">
                     Start Date
                   </label>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={startDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    required
-                    className="w-full bg-transparent text-white text-sm focus:outline-none font-sans cursor-pointer"
+                    onChange={(val) => handleStartDateChange(val)}
+                    placeholder="Select start date"
                   />
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-[#060914] border border-white/[0.08]">
+                <div>
                   <label className="block text-[11px] font-mono uppercase text-slate-400 mb-1.5">
                     End Date
                   </label>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={endDate}
-                    onChange={(e) => {
-                      setEndDate(e.target.value);
+                    minDate={startDate}
+                    onChange={(val) => {
+                      setEndDate(val);
                       setDurationPreset("custom");
                     }}
-                    required
-                    className="w-full bg-transparent text-white text-sm focus:outline-none font-sans cursor-pointer"
+                    placeholder="Select end date"
                   />
                 </div>
               </div>

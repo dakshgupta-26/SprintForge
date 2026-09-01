@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { taskAPI } from "@/lib/api";
 import { generateAvatar, cn } from "@/lib/utils";
+import { DatePicker } from "@/components/shared/DatePicker";
 import toast from "react-hot-toast";
 
 interface CreateBacklogItemModalProps {
@@ -305,11 +306,10 @@ export function CreateBacklogItemModal({
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Target Due Date (Optional)
                 </label>
-                <input
-                  type="date"
+                <DatePicker
                   value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-white/[0.1] bg-[#060914] text-white text-xs sm:text-sm focus:outline-none focus:border-violet-500/70 cursor-pointer"
+                  onChange={(val) => setDueDate(val)}
+                  placeholder="Select due date"
                 />
               </div>
             </div>

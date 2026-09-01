@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import { TaskDetailModal } from "@/components/board/TaskDetailModal";
 import { WorkspaceBootLoader } from "@/components/shared/WorkspaceBootLoader";
 import { UserAvatar } from "@/components/shared/UserAvatar";
+import { DatePicker } from "@/components/shared/DatePicker";
 
 export default function SprintDetailPage() {
   const { id: projectId, sprintId } = useParams<{ id: string; sprintId: string }>();
@@ -144,10 +145,10 @@ export default function SprintDetailPage() {
         {isEditing && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="p-4 bg-muted/30 border border-border rounded-2xl overflow-hidden">
             <h3 className="font-bold text-sm mb-3">Sprint Settings</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-               <div><label className="text-xs text-muted-foreground mb-1 block">Sprint Name</label><input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="w-full px-3 py-2 bg-card border rounded-lg text-sm" /></div>
-               <div><label className="text-xs text-muted-foreground mb-1 block">Start Date</label><input type="date" value={editForm.startDate} onChange={(e) => setEditForm({...editForm, startDate: e.target.value})} className="w-full px-3 py-2 bg-card border rounded-lg text-sm" /></div>
-               <div><label className="text-xs text-muted-foreground mb-1 block">End Date</label><input type="date" value={editForm.endDate} onChange={(e) => setEditForm({...editForm, endDate: e.target.value})} className="w-full px-3 py-2 bg-card border rounded-lg text-sm" /></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+               <div><label className="text-xs text-muted-foreground mb-1.5 block">Sprint Name</label><input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="w-full px-3.5 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" /></div>
+               <div><label className="text-xs text-muted-foreground mb-1.5 block">Start Date</label><DatePicker value={editForm.startDate} onChange={(val) => setEditForm({...editForm, startDate: val})} placeholder="Select start date" /></div>
+               <div><label className="text-xs text-muted-foreground mb-1.5 block">End Date</label><DatePicker value={editForm.endDate} minDate={editForm.startDate} onChange={(val) => setEditForm({...editForm, endDate: val})} placeholder="Select end date" /></div>
             </div>
             <div className="flex gap-2 mt-4"><button onClick={handleUpdate} className="px-4 py-2 bg-primary text-white text-sm rounded-lg font-medium">Save Changes</button><button onClick={() => setIsEditing(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button></div>
           </motion.div>
