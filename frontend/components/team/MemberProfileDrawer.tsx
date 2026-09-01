@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
@@ -8,7 +8,6 @@ import {
   Mail,
   Copy,
   Check,
-  PhoneCall,
   Video,
   MessageSquare,
   Settings,
@@ -27,8 +26,6 @@ import {
   Calendar,
   AlertTriangle,
   RotateCcw,
-  User as UserIcon,
-  Flame,
 } from "lucide-react";
 import { teamsAPI } from "@/lib/api";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -103,19 +100,15 @@ interface ProfileData {
   projects: ProfileProject[];
 }
 
-const ROLE_ICONS = {
-  owner: Crown,
-  admin: Crown,
-  member: Shield,
-  viewer: Eye,
-};
-
 const ROLE_BADGES = {
   owner: "text-amber-400 bg-amber-500/10 border-amber-500/25",
   admin: "text-amber-400 bg-amber-500/10 border-amber-500/25",
   member: "text-violet-400 bg-violet-500/10 border-violet-500/25",
   viewer: "text-slate-400 bg-slate-500/10 border-slate-500/25",
 };
+
+// In-memory cache for fast snappy drawer opening during session
+const profileCache = new Map<string, ProfileData>();
 
 export function MemberProfileDrawer({
   isOpen,
@@ -134,35 +127,91 @@ export function MemberProfileDrawer({
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emailCopied, setEmailCopied] = useState(false);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
 
+  // Request sequence tracker to avoid race conditions when switching members rapidly
+  const currentReqToken = useRef<number>(0);
+
+  // Safely resolve the target user's string ID
+  const targetUserId = useMemo(() => {
+    if (typeof userId === "string" && userId.trim() && userId !== "[object Object]") {
+      return userId.trim();
+    }
+    if (initialMemberData) {
+      const u = initialMemberData.user;
+      if (typeof u === "string" && u.trim() && u !== "[object Object]") return u.trim();
+      if (u?._id && typeof u._id === "string") return u._id.trim();
+      if (initialMemberData._id && typeof initialMemberData._id === "string") return initialMemberData._id.trim();
+    }
+    return null;
+  }, [userId, initialMemberData]);
+
   // Fetch full profile from backend
-  const fetchProfile = useCallback(async () => {
-    if (!userId) return;
+  const fetchProfile = useCallback(async (bypassCache = false) => {
+    if (!targetUserId) {
+      setIsLoading(false);
+      setHasError(true);
+      setErrorMessage("Member identifier is missing.");
+      return;
+    }
+
+    // Check cache first for instant feedback
+    const cacheKey = `${targetUserId}_${projectId || "global"}`;
+    if (!bypassCache && profileCache.has(cacheKey)) {
+      setProfileData(profileCache.get(cacheKey)!);
+      setIsLoading(false);
+      setHasError(false);
+      setErrorMessage(null);
+      return;
+    }
+
+    const token = ++currentReqToken.current;
     setIsLoading(true);
     setHasError(false);
+    setErrorMessage(null);
 
     try {
-      const res = await teamsAPI.getMemberProfile(userId, projectId);
-      setProfileData(res.data);
+      const res = await teamsAPI.getMemberProfile(targetUserId, projectId);
+      // Ensure we only apply results if this request is the latest active one
+      if (token === currentReqToken.current) {
+        setProfileData(res.data);
+        profileCache.set(cacheKey, res.data);
+      }
     } catch (err: any) {
-      console.error("Failed to load member profile", err);
-      setHasError(true);
+      if (token === currentReqToken.current) {
+        console.error("Failed to load member profile:", err);
+        setHasError(true);
+        const serverMsg =
+          err?.response?.data?.message ||
+          (err?.response?.status === 404
+            ? "Member profile not found."
+            : err?.response?.status === 403
+            ? "You do not share any active workspaces with this member."
+            : err?.response?.status === 401
+            ? "Your session has expired. Please sign in again."
+            : "We couldn't load this member's workspace profile right now. Please try again.");
+        setErrorMessage(serverMsg);
+      }
     } finally {
-      setIsLoading(false);
+      if (token === currentReqToken.current) {
+        setIsLoading(false);
+      }
     }
-  }, [userId, projectId]);
+  }, [targetUserId, projectId]);
 
   useEffect(() => {
-    if (isOpen && userId) {
+    if (isOpen && targetUserId) {
       fetchProfile();
     } else if (!isOpen) {
       setProfileData(null);
       setIsBioExpanded(false);
       setEmailCopied(false);
+      setHasError(false);
+      setErrorMessage(null);
     }
-  }, [isOpen, userId, fetchProfile]);
+  }, [isOpen, targetUserId, fetchProfile]);
 
   // Keyboard Navigation: Escape to close
   useEffect(() => {
@@ -339,7 +388,8 @@ export function MemberProfileDrawer({
                   Unable to load profile
                 </h3>
                 <p className="text-xs text-slate-400 max-w-xs mb-6 leading-relaxed">
-                  We couldn&apos;t load this member&apos;s workspace profile right now. Please try again.
+                  {errorMessage ||
+                    "We couldn't load this member's workspace profile right now. Please try again."}
                 </p>
                 <div className="flex items-center gap-3">
                   <button
@@ -351,7 +401,7 @@ export function MemberProfileDrawer({
                   </button>
                   <button
                     type="button"
-                    onClick={fetchProfile}
+                    onClick={() => fetchProfile(true)}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 shadow-[0_0_16px_rgba(124,92,255,0.35)] transition-all"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -374,7 +424,7 @@ export function MemberProfileDrawer({
                   />
 
                   <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
-                    {/* Large 80px Avatar */}
+                    {/* Large Avatar */}
                     <div className="relative flex-shrink-0">
                       <UserAvatar
                         src={user?.avatar}
