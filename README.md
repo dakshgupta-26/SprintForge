@@ -14,14 +14,9 @@
   </a>
 </p>
 
-[![Next.js](https://img.shields.io/badge/Next.js_16-Turbopack-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript_5.x-Strict_Mode-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Express.js](https://img.shields.io/badge/Express.js_4-REST_API-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
-[![WebRTC](https://img.shields.io/badge/WebRTC-Peer_to_Peer_Audio_Video-333333?style=for-the-badge&logo=webrtc&logoColor=white)](https://webrtc.org/)
-[![Socket.IO](https://img.shields.io/badge/Socket.IO_4-Bidirectional_Signaling-010101?style=for-the-badge&logo=socket.io)](https://socket.io/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Document_Store-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![Docker](https://img.shields.io/badge/Docker-Multi_Stage_Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+<br />
+
+[![SprintForge Core Technology Stack](assets/tech-stack.png)](https://sprint-forge-livid.vercel.app/)
 
 </div>
 
