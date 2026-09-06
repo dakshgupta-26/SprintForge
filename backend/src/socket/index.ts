@@ -783,16 +783,15 @@ export const initSocket = (io: Server) => {
           createdAt: newCall.createdAt,
         };
 
-        // Emit incoming call payload to target user's personal room & direct sockets
-        console.log(`[CALL] Emitting call:incoming to target user ${cleanTargetId}:`, incomingPayload);
-        io.to(cleanTargetId).emit('call:incoming', incomingPayload);
-
+        // Emit incoming call payload to target user's personal room (covers all active tabs/sockets)
         const targetSockets = globalUserSockets.get(cleanTargetId);
-        if (targetSockets) {
-          targetSockets.forEach((sId) => {
-            io.to(sId).emit('call:incoming', incomingPayload);
-          });
-        }
+        const socketCount = targetSockets ? targetSockets.size : 0;
+        console.log(
+          `[CALL] 📞 Emitting call:incoming to target user ${cleanTargetId} (active sockets: ${socketCount}):`,
+          { callId, caller: cleanCallerId, type, projectId }
+        );
+
+        io.to(cleanTargetId).emit('call:incoming', incomingPayload);
 
         const successPayload = {
           success: true,

@@ -358,24 +358,48 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Filter project members
+  // Filter project members (including owner and members deduplicated)
   const filteredMembers = useMemo(() => {
-    if (!project?.members) return [];
-    return project.members
-      .map((m: any) => {
+    const list: any[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Add owner if populated
+    if (project?.owner) {
+      const ownerObj = typeof project.owner === "object" ? (project.owner as any) : null;
+      const ownerId = String(ownerObj?._id || project.owner);
+      if (ownerId && !seenIds.has(ownerId)) {
+        seenIds.add(ownerId);
+        list.push({
+          _id: ownerId,
+          name: ownerObj?.name || "Project Owner",
+          email: ownerObj?.email || "",
+          avatar: ownerObj?.avatar,
+          role: "Owner",
+          isOnline: onlineUserIds.has(ownerId),
+        });
+      }
+    }
+
+    // 2. Add members
+    if (Array.isArray(project?.members)) {
+      project.members.forEach((m: any) => {
         const memberUser = m.user || {};
-        const memberId =
-          memberUser._id || (typeof m.user === "string" ? m.user : "");
-        const isOnline = onlineUserIds.has(memberId);
-        return {
-          _id: memberId,
-          name: memberUser.name || "Team Member",
-          email: memberUser.email || "",
-          avatar: memberUser.avatar,
-          role: m.role || "Member",
-          isOnline,
-        };
-      })
+        const memberId = String(memberUser._id || (typeof m.user === "string" ? m.user : ""));
+        if (memberId && !seenIds.has(memberId)) {
+          seenIds.add(memberId);
+          list.push({
+            _id: memberId,
+            name: memberUser.name || "Team Member",
+            email: memberUser.email || "",
+            avatar: memberUser.avatar,
+            role: m.role || "Member",
+            isOnline: onlineUserIds.has(memberId),
+          });
+        }
+      });
+    }
+
+    return list
       .filter((m: any) => m._id && m._id !== user?._id)
       .filter(
         (m: any) =>
@@ -383,7 +407,7 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
           m.email.toLowerCase().includes(memberSearch.toLowerCase()) ||
           m.role.toLowerCase().includes(memberSearch.toLowerCase())
       );
-  }, [project?.members, onlineUserIds, user?._id, memberSearch]);
+  }, [project?.owner, project?.members, onlineUserIds, user?._id, memberSearch]);
 
   return (
     <div

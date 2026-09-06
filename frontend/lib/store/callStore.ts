@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getSocket } from '@/lib/socket';
+import { getSocket, ensureSocketConnected } from '@/lib/socket';
 import { callAPI } from '@/lib/api';
 import {
   getWebRTCConfig,
@@ -612,22 +612,22 @@ export const useCallStore = create<CallState>((set, get) => ({
       return;
     }
 
-    const socket = getSocket();
-    if (!socket?.connected) {
-      socket.connect();
-    }
-
     const cleanTargetId =
       typeof targetUserId === 'object' && targetUserId !== null
         ? (targetUserId as any)._id
         : String(targetUserId);
+
+    if (!cleanTargetId || !projectId) {
+      toast.error('Invalid call destination.');
+      return;
+    }
 
     // Clean up any stale calls
     cleanUpCallResources();
 
     set({
       callStatus: 'initiating',
-      statusText: 'Connecting...',
+      statusText: 'Connecting signaling...',
       isCaller: true,
       callType: type,
       projectId,
@@ -637,7 +637,24 @@ export const useCallStore = create<CallState>((set, get) => ({
       errorMessage: null,
     });
 
+    let socket: any = null;
     try {
+      socket = await ensureSocketConnected(8000);
+    } catch (sockErr: any) {
+      console.error('[CALL] Failed to connect signaling socket:', sockErr);
+      cleanUpCallResources();
+      set({
+        callStatus: 'failed',
+        statusText: 'Signaling connection failed',
+        errorMessage: 'Unable to connect to the real-time calling server. Please check your internet connection.',
+      });
+      toast.error('Could not reach calling server. Please try again.');
+      return;
+    }
+
+    try {
+      set({ statusText: 'Accessing media devices...' });
+
       let localMediaStream = existingStream;
       if (!localMediaStream) {
         localMediaStream = await navigator.mediaDevices.getUserMedia({
@@ -657,27 +674,48 @@ export const useCallStore = create<CallState>((set, get) => ({
         localStream: localMediaStream,
         isMuted: !localMediaStream.getAudioTracks()[0]?.enabled,
         isVideoOff: type === 'video' ? !localMediaStream.getVideoTracks()[0]?.enabled : true,
+        statusText: 'Calling team member...',
       });
 
       // Prepare WebRTC Peer Connection
       setupPeerConnection(localMediaStream);
 
       // Emit initiate to Socket server
-      console.log(`[CALL] Emitting call:initiate to target ${cleanTargetId} in project ${projectId}`);
-      socket.emit('call:initiate', {
-        targetUserId: cleanTargetId,
-        projectId,
-        type,
-      });
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[CALL] 📤 Emitting call:initiate to target ${cleanTargetId} in project ${projectId} (type: ${type})`);
+      }
 
       // Clear any previous once listeners to avoid stale triggers
       socket.off('call:initiated');
       socket.off('call:failed');
       socket.off('call:busy');
 
-      // Listen for initiate response
-      socket.once('call:initiated', ({ callId }) => {
-        console.log(`[CALL] Received call:initiated for callId: ${callId}`);
+      // 15-second client-side initiation timeout guard
+      let initiationTimer: NodeJS.Timeout | null = setTimeout(() => {
+        if (get().callStatus === 'initiating') {
+          console.warn('[CALL] Call initiation timed out without response from server.');
+          socket.off('call:initiated');
+          socket.off('call:failed');
+          socket.off('call:busy');
+          cleanUpCallResources();
+          set({
+            callStatus: 'failed',
+            statusText: 'Connection timed out',
+            errorMessage: 'Call request timed out. Please verify that the receiver is online and try again.',
+          });
+          toast.error('Call request timed out. No response from recipient.');
+        }
+      }, 15000);
+
+      // Listen for initiate confirmation from server
+      socket.once('call:initiated', ({ callId }: { callId: string }) => {
+        if (initiationTimer) {
+          clearTimeout(initiationTimer);
+          initiationTimer = null;
+        }
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[CALL] 📥 Received call:initiated confirmation for callId: ${callId}`);
+        }
         set({
           callId,
           callStatus: 'calling',
@@ -686,26 +724,61 @@ export const useCallStore = create<CallState>((set, get) => ({
         SoundEffects.playCallingChime();
       });
 
-      socket.once('call:failed', ({ message }) => {
-        toast.error(message || 'Failed to start call');
+      // Listen for server failure responses
+      socket.once('call:failed', ({ code, message }: { code?: string; message?: string }) => {
+        if (initiationTimer) {
+          clearTimeout(initiationTimer);
+          initiationTimer = null;
+        }
+
         cleanUpCallResources();
-        set({
-          callStatus: 'failed',
-          statusText: message || 'Call failed',
-          errorMessage: message,
-        });
+
+        if (code === 'USER_OFFLINE') {
+          toast.error('User is currently offline.');
+          set({
+            callStatus: 'failed',
+            statusText: 'User is offline',
+            errorMessage: 'Team member is currently offline. A missed call notification has been sent.',
+          });
+        } else if (code === 'NOT_AUTHORIZED') {
+          toast.error('Calling is restricted to workspace members.');
+          set({
+            callStatus: 'failed',
+            statusText: 'Not authorized',
+            errorMessage: 'Workspace membership is required to place calls.',
+          });
+        } else {
+          toast.error(message || 'Failed to start call');
+          set({
+            callStatus: 'failed',
+            statusText: message || 'Call failed',
+            errorMessage: message || 'Call initiation failed.',
+          });
+        }
       });
 
-      socket.once('call:busy', ({ message }) => {
+      // Listen for user busy response
+      socket.once('call:busy', ({ message }: { message?: string }) => {
+        if (initiationTimer) {
+          clearTimeout(initiationTimer);
+          initiationTimer = null;
+        }
         toast(message || 'User is currently on another call.', { icon: '⏳' });
         cleanUpCallResources();
         set({
           callStatus: 'busy',
           statusText: 'User is busy on another call',
+          errorMessage: 'User is currently on another active call.',
         });
       });
+
+      socket.emit('call:initiate', {
+        targetUserId: cleanTargetId,
+        projectId,
+        type,
+      });
     } catch (err: any) {
-      console.error('Error initiating media stream:', err);
+      console.error('[CALL] Error initiating media stream or call:', err);
       cleanUpCallResources();
       set({
         callStatus: 'failed',
@@ -1066,14 +1139,29 @@ export const useCallStore = create<CallState>((set, get) => ({
   switchAudioOutput: async (deviceId: string) => {
     set({ selectedAudioOutputId: deviceId });
     // In browsers that support HTMLMediaElement.setSinkId
+    const globalAudioEl = document.getElementById('sprintforge-global-remote-audio') as any;
     const remoteAudioEl = document.getElementById('sprintforge-remote-audio') as any;
+
+    let routed = false;
+    if (globalAudioEl && typeof globalAudioEl.setSinkId === 'function') {
+      try {
+        await globalAudioEl.setSinkId(deviceId);
+        routed = true;
+      } catch (err) {
+        console.warn('[CALL/AUDIO] Error setting sink on global audio element:', err);
+      }
+    }
     if (remoteAudioEl && typeof remoteAudioEl.setSinkId === 'function') {
       try {
         await remoteAudioEl.setSinkId(deviceId);
-        toast.success('Speaker output changed');
-      } catch {
-        toast.error('Failed to route audio to selected speaker');
+        routed = true;
+      } catch (err) {
+        console.warn('[CALL/AUDIO] Error setting sink on workspace audio element:', err);
       }
+    }
+
+    if (routed) {
+      toast.success('Speaker output changed');
     }
   },
 
