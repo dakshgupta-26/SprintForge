@@ -43,6 +43,7 @@ export const getSocketUrl = (): string => {
 
 let socket: Socket | null = null;
 let currentRegisteredUserId: string | null = null;
+let currentAuthToken: string | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
@@ -52,7 +53,10 @@ export const getSocket = (): Socket => {
       transports: ["websocket", "polling"],
       withCredentials: true, // Send HttpOnly auth cookies with socket handshake
       auth: (cb) => {
-        cb({ userId: currentRegisteredUserId });
+        cb({
+          userId: currentRegisteredUserId,
+          token: currentAuthToken,
+        });
       },
     });
 
@@ -77,8 +81,9 @@ export const getSocket = (): Socket => {
   return socket;
 };
 
-export const connectSocket = (userId: string) => {
+export const connectSocket = (userId: string, token?: string) => {
   currentRegisteredUserId = userId;
+  if (token) currentAuthToken = token;
   const s = getSocket();
 
   if (!s.connected) {
@@ -92,6 +97,7 @@ export const connectSocket = (userId: string) => {
 
 export const disconnectSocket = () => {
   currentRegisteredUserId = null;
+  currentAuthToken = null;
   if (socket?.connected) {
     socket.disconnect();
   }
@@ -110,3 +116,4 @@ export const joinTask = (taskId: string) => {
 };
 
 export default getSocket;
+

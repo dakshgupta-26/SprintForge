@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   Bell, Check, CheckCheck, Trash2, X, UserPlus, Zap,
   MessageCircle, GitPullRequest, AlertCircle, Users,
-  BellRing, ArrowRight,
+  BellRing, ArrowRight, Phone, PhoneOff, Video,
 } from "lucide-react";
 import { notificationAPI } from "@/lib/api";
 import { getSocket, connectSocket } from "@/lib/socket";
@@ -37,6 +37,8 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
   sprint_started: { icon: BellRing,      color: "text-primary",    bg: "bg-primary/10"    },
   pr_linked:      { icon: GitPullRequest,color: "text-orange-400", bg: "bg-orange-500/10" },
   mention:        { icon: AlertCircle,   color: "text-pink-400",   bg: "bg-pink-500/10"   },
+  call_missed:    { icon: PhoneOff,      color: "text-rose-400",   bg: "bg-rose-500/10"   },
+  call_incoming:  { icon: Phone,         color: "text-violet-400", bg: "bg-violet-500/10" },
 };
 
 const getConfig = (type: string) =>

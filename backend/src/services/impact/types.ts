@@ -1,5 +1,5 @@
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
-export type TaskStatus = 'todo' | 'in_progress' | 'in_review' | 'done';
+export type TaskStatus = 'todo' | 'in_progress' | 'in_review' | 'done' | 'blocked';
 export type RiskLevel = 'low' | 'moderate' | 'high' | 'critical';
 
 export interface TaskAssignee {

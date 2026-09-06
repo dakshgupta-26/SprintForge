@@ -10,6 +10,7 @@ import { Navbar } from "@/components/shared/Navbar";
 import { GlobalChatToastContainer } from "@/components/chat/GlobalChatToast";
 import { IncomingCallModal } from "@/components/call/IncomingCallModal";
 import { GlobalCallMiniBar } from "@/components/call/GlobalCallMiniBar";
+import { GlobalCallAudio } from "@/components/call/GlobalCallAudio";
 import { connectSocket } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 
@@ -68,6 +69,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Global Persistent Audio Sink for WebRTC Calling */}
+      <GlobalCallAudio />
+
       {/* Global Realtime Chat Notification Toast */}
       <GlobalChatToastContainer />
 

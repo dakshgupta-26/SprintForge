@@ -300,7 +300,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     // 2. Caller receives "ringing" confirmation
     socket.on('call:ringing', ({ callId }) => {
       console.log('[CALL] Received call:ringing event for callId:', callId);
-      if (get().callId === callId && get().callStatus === 'initiating') {
+      if (get().callId === callId && (get().callStatus === 'initiating' || get().callStatus === 'calling')) {
         set({
           callStatus: 'ringing',
           statusText: 'Ringing...',
@@ -312,12 +312,10 @@ export const useCallStore = create<CallState>((set, get) => ({
     socket.on('call:accepted', async (data: { callId: string; callerId: string; receiverId: string; type: CallType }) => {
       console.log('[CALL] Received call:accepted event:', data);
       SoundEffects.stopIncomingRingtone();
-      SoundEffects.playCallConnectedSound();
 
       set({
-        callStatus: 'connected',
-        statusText: 'Connected',
-        connectedAt: new Date(),
+        callStatus: 'initiating',
+        statusText: 'Connecting media...',
         incomingCall: null,
         showConflictWarning: false,
       });
@@ -329,16 +327,20 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
 
     // 4. Remote WebRTC SDP Offer Received (Receiver side)
-    socket.on('call:offer', async (data: { callId: string; sdp: RTCSessionDescriptionInit; senderId: string }) => {
+    socket.on('call:offer', async (data: { callId: string; sdp: RTCSessionDescriptionInit; senderId?: string }) => {
+      console.log('[CALL/WEBRTC] Received call:offer for callId:', data.callId);
       if (!peerConnection) return;
       try {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
-        // Flush any queued ICE candidates
+        // Flush any queued ICE candidates that arrived before remoteDescription
+        console.log(`[CALL/WEBRTC] Flushing ${queuedIceCandidates.length} queued ICE candidates`);
         while (queuedIceCandidates.length > 0) {
           const candidate = queuedIceCandidates.shift();
           if (candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch((e) => {
+              console.warn('[CALL/WEBRTC] Error adding queued ICE candidate:', e);
+            });
           }
         }
 
@@ -350,25 +352,29 @@ export const useCallStore = create<CallState>((set, get) => ({
           sdp: peerConnection.localDescription,
         });
       } catch (err) {
-        console.error('Error handling WebRTC offer:', err);
+        console.error('[CALL/WEBRTC] Error handling WebRTC offer:', err);
       }
     });
 
     // 5. Remote WebRTC SDP Answer Received (Caller side)
     socket.on('call:answer', async (data: { callId: string; sdp: RTCSessionDescriptionInit }) => {
+      console.log('[CALL/WEBRTC] Received call:answer for callId:', data.callId);
       if (!peerConnection) return;
       try {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
-        // Flush queued ICE candidates
+        // Flush queued ICE candidates that arrived before remoteDescription
+        console.log(`[CALL/WEBRTC] Flushing ${queuedIceCandidates.length} queued ICE candidates`);
         while (queuedIceCandidates.length > 0) {
           const candidate = queuedIceCandidates.shift();
           if (candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch((e) => {
+              console.warn('[CALL/WEBRTC] Error adding queued ICE candidate:', e);
+            });
           }
         }
       } catch (err) {
-        console.error('Error handling WebRTC answer:', err);
+        console.error('[CALL/WEBRTC] Error handling WebRTC answer:', err);
       }
     });
 
@@ -381,7 +387,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
       } catch (err) {
-        console.error('Error adding ICE candidate:', err);
+        console.error('[CALL/WEBRTC] Error adding ICE candidate:', err);
       }
     });
 
@@ -400,20 +406,33 @@ export const useCallStore = create<CallState>((set, get) => ({
     );
 
     // 8. Call Rejected / Declined
-    socket.on('call:rejected', ({ callId, reason }) => {
+    const handleCallDeclined = ({ callId, reason }: { callId: string; reason?: string }) => {
       SoundEffects.stopIncomingRingtone();
-      if (get().callId === callId) {
+      if (get().callId === callId || get().incomingCall?.callId === callId) {
         toast.error(reason || 'Call was declined');
         cleanUpCallResources();
         set({
           callStatus: 'ended',
-          statusText: 'Call declined',
+          statusText: reason || 'Call declined',
+          incomingCall: null,
+          showConflictWarning: false,
         });
+      }
+    };
+
+    socket.on('call:rejected', handleCallDeclined);
+    socket.on('call:declined', handleCallDeclined);
+
+    // 8b. Call Answered Elsewhere (multi-tab receiver)
+    socket.on('call:answered-elsewhere', ({ callId }: { callId: string }) => {
+      SoundEffects.stopIncomingRingtone();
+      if (get().incomingCall?.callId === callId) {
+        set({ incomingCall: null, showConflictWarning: false });
       }
     });
 
     // 9. Call Cancelled by Caller
-    socket.on('call:cancelled', ({ callId, message }) => {
+    socket.on('call:cancelled', ({ callId, message }: { callId: string; message?: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
         toast(message || 'Call cancelled', { icon: '📞' });
@@ -426,13 +445,13 @@ export const useCallStore = create<CallState>((set, get) => ({
         cleanUpCallResources();
         set({
           callStatus: 'ended',
-          statusText: 'Call cancelled',
+          statusText: message || 'Call cancelled',
         });
       }
     });
 
     // 10. Call Missed Notification
-    socket.on('call:missed', ({ callId }) => {
+    socket.on('call:missed', ({ callId }: { callId: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
         set({ incomingCall: null, showConflictWarning: false });
@@ -447,7 +466,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
 
     // 11. Real-time Missed Call Unread Badge Update
-    socket.on('call:unread_update', ({ projectId, increment = 1 }) => {
+    socket.on('call:unread_update', ({ projectId, increment = 1 }: { projectId: string; increment?: number }) => {
       const counts = { ...get().missedCallsByProject };
       counts[projectId] = (counts[projectId] || 0) + increment;
       set({
@@ -457,7 +476,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
 
     // 12. Call Ended
-    socket.on('call:ended', ({ callId, duration, endedBy }) => {
+    socket.on('call:ended', ({ callId, duration, endedBy }: { callId: string; duration?: number; endedBy?: string }) => {
       SoundEffects.stopIncomingRingtone();
       SoundEffects.playCallEndedSound();
 
@@ -1071,18 +1090,21 @@ export const useCallStore = create<CallState>((set, get) => ({
 // ─── WebRTC PeerConnection Setup Helper ────────────────────────────────────
 function setupPeerConnection(localStream: MediaStream) {
   const config = getWebRTCConfig();
+  console.log('[CALL/WEBRTC] Initializing RTCPeerConnection with config:', config);
   peerConnection = new RTCPeerConnection(config);
   queuedIceCandidates = [];
 
   // Add local stream tracks to RTCPeerConnection
   localStream.getTracks().forEach((track) => {
     if (peerConnection) {
+      console.log('[CALL/WEBRTC] Adding local track to RTCPeerConnection:', track.kind, track.label);
       peerConnection.addTrack(track, localStream);
     }
   });
 
   // Handle incoming remote media tracks
   peerConnection.ontrack = (event) => {
+    console.log('[CALL/WEBRTC] Remote track received:', event.track.kind, event.streams);
     const [remoteStream] = event.streams;
     if (remoteStream) {
       useCallStore.setState({ remoteStream });
@@ -1099,6 +1121,7 @@ function setupPeerConnection(localStream: MediaStream) {
     if (event.candidate) {
       const callId = useCallStore.getState().callId;
       if (callId) {
+        console.log('[CALL/WEBRTC] Emitting local ICE candidate');
         const socket = getSocket();
         socket.emit('call:ice-candidate', {
           callId,
@@ -1108,16 +1131,20 @@ function setupPeerConnection(localStream: MediaStream) {
     }
   };
 
-  // Monitor connection states & handle reconnects/failures gracefully
-  peerConnection.onconnectionstatechange = () => {
-    if (!peerConnection) return;
-    const state = peerConnection.connectionState;
-
-    if (state === 'connected') {
+  const handleConnectionSuccess = () => {
+    if (useCallStore.getState().callStatus !== 'connected') {
+      console.log('[CALL/WEBRTC] PeerConnection successfully established & connected!');
+      SoundEffects.playCallConnectedSound();
       useCallStore.setState({
         callStatus: 'connected',
         statusText: 'Connected',
+        connectedAt: new Date(),
       });
+
+      const callId = useCallStore.getState().callId;
+      if (callId) {
+        getSocket().emit('call:connected', { callId });
+      }
 
       // Start duration timer
       if (!durationInterval) {
@@ -1135,6 +1162,21 @@ function setupPeerConnection(localStream: MediaStream) {
           }
         }, 3000);
       }
+    }
+  };
+
+  // Monitor connection states & handle reconnects/failures gracefully
+  peerConnection.onconnectionstatechange = () => {
+    if (!peerConnection) return;
+    const state = peerConnection.connectionState;
+    console.log('[CALL/WEBRTC] peerConnection connectionState:', state);
+
+    if (state === 'connected') {
+      handleConnectionSuccess();
+    } else if (state === 'connecting') {
+      useCallStore.setState({
+        statusText: 'Connecting media...',
+      });
     } else if (state === 'disconnected') {
       useCallStore.setState({
         callStatus: 'reconnecting',
@@ -1144,7 +1186,7 @@ function setupPeerConnection(localStream: MediaStream) {
       useCallStore.setState({
         callStatus: 'failed',
         statusText: 'Connection lost',
-        errorMessage: 'Network connection between peers failed. Please try reconnecting.',
+        errorMessage: 'Network connection between peers failed. Please check your network or firewall.',
       });
     } else if (state === 'closed') {
       // closed
@@ -1154,7 +1196,12 @@ function setupPeerConnection(localStream: MediaStream) {
   peerConnection.oniceconnectionstatechange = () => {
     if (!peerConnection) return;
     const iceState = peerConnection.iceConnectionState;
-    if (iceState === 'failed') {
+    console.log('[CALL/WEBRTC] peerConnection iceConnectionState:', iceState);
+
+    if (iceState === 'connected' || iceState === 'completed') {
+      handleConnectionSuccess();
+    } else if (iceState === 'failed') {
+      console.warn('[CALL/WEBRTC] ICE connection state failed. Attempting ICE restart if caller...');
       // Attempt ICE restart if caller
       if (useCallStore.getState().isCaller && useCallStore.getState().callId) {
         peerConnection.restartIce();

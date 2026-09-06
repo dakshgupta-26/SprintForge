@@ -120,6 +120,9 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
   const [localMicLevel, setLocalMicLevel] = useState(0);
   const [preCallMicLevel, setPreCallMicLevel] = useState(0);
 
+  const isConnected = callStatus === "connected";
+  const isCallingOrRinging = callStatus === "calling" || callStatus === "ringing" || callStatus === "initiating";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -235,11 +238,13 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(() => {});
     }
     if (remoteAudioRef.current && remoteStream) {
       remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
     }
-  }, [remoteStream]);
+  }, [remoteStream, isConnected]);
 
   useEffect(() => {
     if (preCallVideoRef.current && preCallStream) {
@@ -379,9 +384,6 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
           m.role.toLowerCase().includes(memberSearch.toLowerCase())
       );
   }, [project?.members, onlineUserIds, user?._id, memberSearch]);
-
-  const isConnected = callStatus === "connected";
-  const isCallingOrRinging = callStatus === "calling" || callStatus === "ringing" || callStatus === "initiating";
 
   return (
     <div
@@ -615,6 +617,16 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
                       className="w-full h-full object-contain bg-black"
                     />
                   )}
+
+                  {/* Dedicated Persistent Remote Audio Element for in-workspace playback */}
+                  <audio
+                    ref={remoteAudioRef}
+                    id="sprintforge-remote-audio"
+                    autoPlay
+                    playsInline
+                    className="hidden"
+                    aria-hidden="true"
+                  />
 
                   {/* Remote User Name & Status Badge */}
                   <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md border border-white/[0.1] text-xs text-white">

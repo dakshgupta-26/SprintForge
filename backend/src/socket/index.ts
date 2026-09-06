@@ -11,13 +11,19 @@ import { encryptMessage } from '../utils/crypto';
 
 // ─── Global State & Registries ─────────────────────────────────────────────
 
-// Track socketId → { userId, projectId, name, email, avatar }
-const socketMeta: Record<
-  string,
-  { userId?: string; projectId?: string; name?: string; email?: string; avatar?: string }
-> = {};
+// Track socketId → { userId, projectId, name, email, avatar, role }
+interface SocketMetaInfo {
+  userId?: string;
+  projectId?: string;
+  name?: string;
+  email?: string;
+  avatar?: string;
+  role?: string;
+}
 
-// Global User Socket Registry: userId → Set<socketId>
+const socketMeta: Record<string, SocketMetaInfo> = {};
+
+// Global User Socket Registry: userId → Set<socketId> (Multi-tab & multi-device support)
 const globalUserSockets = new Map<string, Set<string>>();
 
 // Project Presence Tracking: projectId → Map<userId, Set<socketId>>
@@ -32,7 +38,7 @@ const userActiveCall = new Map<
 // callId → ring timeout timer
 const callRingTimers = new Map<string, NodeJS.Timeout>();
 
-// callId → call details
+// callId → active call session details
 const activeCallRooms = new Map<
   string,
   {
@@ -47,7 +53,11 @@ const activeCallRooms = new Map<
 >();
 
 // Helper: Register user socket mapping
-const registerUserSocket = (userId: string, socket: Socket, userMeta?: { name?: string; email?: string; avatar?: string }) => {
+const registerUserSocket = (
+  userId: string,
+  socket: Socket,
+  userMeta?: { name?: string; email?: string; avatar?: string; role?: string }
+) => {
   if (!userId) return;
   const uid = String(userId);
 
@@ -65,8 +75,11 @@ const registerUserSocket = (userId: string, socket: Socket, userMeta?: { name?: 
   if (userMeta?.name) socketMeta[socket.id].name = userMeta.name;
   if (userMeta?.email) socketMeta[socket.id].email = userMeta.email;
   if (userMeta?.avatar) socketMeta[socket.id].avatar = userMeta.avatar;
+  if (userMeta?.role) socketMeta[socket.id].role = userMeta.role;
 
-  console.log(`[CALL/SOCKET] Registered user socket: userId=${uid}, socketId=${socket.id}, activeSockets=${globalUserSockets.get(uid)?.size}`);
+  console.log(
+    `[CALL/SOCKET] Registered user socket: userId=${uid}, socketId=${socket.id}, activeSockets=${globalUserSockets.get(uid)?.size}`
+  );
 };
 
 // Helper: Unregister user socket mapping
@@ -79,11 +92,13 @@ const unregisterUserSocket = (socketId: string) => {
     if (sockets.size === 0) {
       globalUserSockets.delete(uid);
     }
-    console.log(`[CALL/SOCKET] Unregistered socket: userId=${uid}, socketId=${socketId}, remainingSockets=${globalUserSockets.get(uid)?.size || 0}`);
+    console.log(
+      `[CALL/SOCKET] Unregistered socket: userId=${uid}, socketId=${socketId}, remainingSockets=${globalUserSockets.get(uid)?.size || 0}`
+    );
   }
 };
 
-// Helper: Check if user is online anywhere
+// Helper: Check if user is online anywhere in SprintForge
 const isUserOnline = (userId: string): boolean => {
   if (!userId) return false;
   const sockets = globalUserSockets.get(String(userId));
@@ -100,14 +115,19 @@ export const initSocket = (io: Server) => {
   // ─── Socket Authentication Middleware ───────────────────────────────────────
   io.use(async (socket: Socket, next) => {
     try {
-      let token = socket.handshake.auth?.token;
+      let token = socket.handshake.auth?.token || socket.handshake.auth?.jwt;
 
-      // Also check query param token
+      // Check Authorization header in handshake
+      if (!token && socket.handshake.headers?.authorization?.startsWith('Bearer ')) {
+        token = socket.handshake.headers.authorization.split(' ')[1];
+      }
+
+      // Check query param token
       if (!token && socket.handshake.query?.token && typeof socket.handshake.query.token === 'string') {
         token = socket.handshake.query.token;
       }
 
-      // Also check cookies in socket handshake
+      // Check cookies in socket handshake
       if (!token && socket.handshake.headers?.cookie) {
         const parsedCookies = cookie.parse(socket.handshake.headers.cookie);
         token = parsedCookies.sf_access_token;
@@ -118,13 +138,14 @@ export const initSocket = (io: Server) => {
           const decoded: any = jwt.verify(token, process.env.JWT_SECRET || 'secret');
           const userId = decoded.id || decoded.userId;
           if (userId) {
-            const user = await User.findById(userId).select('name email avatar').lean();
+            const user = await User.findById(userId).select('name email avatar role').lean();
             if (user) {
               (socket as any).user = {
                 _id: String(user._id),
                 name: user.name,
                 email: user.email,
                 avatar: user.avatar,
+                role: user.role,
               };
             }
           }
@@ -133,16 +154,17 @@ export const initSocket = (io: Server) => {
         }
       }
 
-      // Also handle auth.userId passed directly
+      // Fallback: auth.userId if authenticated session exists
       const authUserId = socket.handshake.auth?.userId || socket.handshake.query?.userId;
       if (!(socket as any).user && authUserId && typeof authUserId === 'string') {
-        const fallbackUser = await User.findById(authUserId).select('name email avatar').lean();
+        const fallbackUser = await User.findById(authUserId).select('name email avatar role').lean();
         if (fallbackUser) {
           (socket as any).user = {
             _id: String(fallbackUser._id),
             name: fallbackUser.name,
             email: fallbackUser.email,
             avatar: fallbackUser.avatar,
+            role: fallbackUser.role,
           };
         }
       }
@@ -160,6 +182,7 @@ export const initSocket = (io: Server) => {
         name: authUser.name,
         email: authUser.email,
         avatar: authUser.avatar,
+        role: authUser.role,
       });
     }
 
@@ -170,9 +193,9 @@ export const initSocket = (io: Server) => {
 
       let freshMeta = authUser;
       if (!freshMeta?.name) {
-        const u = await User.findById(targetUserId).select('name email avatar').lean();
+        const u = await User.findById(targetUserId).select('name email avatar role').lean();
         if (u) {
-          freshMeta = { _id: String(u._id), name: u.name, email: u.email, avatar: u.avatar };
+          freshMeta = { _id: String(u._id), name: u.name, email: u.email, avatar: u.avatar, role: u.role };
         }
       }
 
@@ -221,13 +244,13 @@ export const initSocket = (io: Server) => {
 
         const onlineUserIds = getOnlineUsersInProject(projectId);
 
-        // 1. Send authoritative list to this joining client
+        // 1. Send authoritative list to joining client
         socket.emit('presence:sync', {
           projectId,
           onlineUserIds,
         });
 
-        // 2. Broadcast updated list to the entire project room
+        // 2. Broadcast updated list to entire project room
         io.to(`project:${projectId}`).emit('presence:update', {
           projectId,
           onlineUserIds,
@@ -497,7 +520,7 @@ export const initSocket = (io: Server) => {
         userActiveCall.delete(callMeta.callerId);
         userActiveCall.delete(callMeta.receiverId);
 
-        // Dismiss incoming call modal on all tabs of the receiver
+        // Dismiss incoming call modal on all tabs of the receiver and caller
         io.to(callMeta.receiverId).emit('call:dismiss_incoming', { callId });
         io.to(callMeta.callerId).emit('call:dismiss_incoming', { callId });
       }
@@ -520,65 +543,181 @@ export const initSocket = (io: Server) => {
       }
     };
 
-    // 1. Initiate Call
-    socket.on(
-      'call:initiate',
-      async (data: { targetUserId: string; projectId: string; type?: 'audio' | 'video' }) => {
-        const callerId = authUser?._id || socketMeta[socket.id]?.userId;
-        const { targetUserId, projectId, type = 'video' } = data;
+    // 1. Initiate / Start Outgoing Call
+    const handleCallInitiate = async (
+      data: { targetUserId: string; receiverId?: string; projectId: string; type?: 'audio' | 'video' },
+      callback?: (res: any) => void
+    ) => {
+      const callerId = authUser?._id || socketMeta[socket.id]?.userId;
+      const targetUserId = data.targetUserId || data.receiverId;
+      const { projectId, type = 'video' } = data;
 
-        console.log(`[CALL] Incoming call:initiate request: callerId=${callerId}, targetUserId=${targetUserId}, projectId=${projectId}, type=${type}`);
+      console.log(
+        `[CALL] Outgoing call request: callerId=${callerId}, targetUserId=${targetUserId}, projectId=${projectId}, type=${type}`
+      );
 
-        if (!callerId) {
-          socket.emit('call:failed', { message: 'Authentication required to make calls' });
+      if (!callerId) {
+        const errPayload = { success: false, code: 'AUTH_REQUIRED', message: 'Authentication required to make calls' };
+        socket.emit('call:failed', errPayload);
+        if (typeof callback === 'function') callback(errPayload);
+        return;
+      }
+
+      if (!targetUserId || !projectId) {
+        const errPayload = { success: false, code: 'INVALID_PARAMS', message: 'Invalid call parameters' };
+        socket.emit('call:failed', errPayload);
+        if (typeof callback === 'function') callback(errPayload);
+        return;
+      }
+
+      const cleanCallerId = String(callerId);
+      const cleanTargetId = String(targetUserId);
+
+      if (cleanCallerId === cleanTargetId) {
+        const errPayload = { success: false, code: 'SELF_CALL', message: 'Cannot call yourself' };
+        socket.emit('call:failed', errPayload);
+        if (typeof callback === 'function') callback(errPayload);
+        return;
+      }
+
+      try {
+        // Security: Verify project membership for BOTH caller and target receiver
+        const project = await Project.findById(projectId).select('name key members owner isPrivate').lean();
+        if (!project) {
+          const errPayload = { success: false, code: 'PROJECT_NOT_FOUND', message: 'Project workspace not found' };
+          socket.emit('call:failed', errPayload);
+          if (typeof callback === 'function') callback(errPayload);
           return;
         }
 
-        if (!targetUserId || !projectId) {
-          socket.emit('call:failed', { message: 'Invalid call parameters' });
+        const isCallerMember =
+          String(project.owner?._id || project.owner) === cleanCallerId ||
+          (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanCallerId);
+
+        const isTargetMember =
+          String(project.owner?._id || project.owner) === cleanTargetId ||
+          (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanTargetId);
+
+        if (!isCallerMember || !isTargetMember) {
+          const errPayload = {
+            success: false,
+            code: 'NOT_AUTHORIZED',
+            message: 'Calling is restricted to members of the same workspace',
+          };
+          socket.emit('call:failed', errPayload);
+          if (typeof callback === 'function') callback(errPayload);
           return;
         }
 
-        const cleanCallerId = String(callerId);
-        const cleanTargetId = String(targetUserId);
+        // Check if receiver is online anywhere in SprintForge
+        const targetIsOnline = isUserOnline(cleanTargetId);
+        console.log(`[CALL] Target user online check: cleanTargetId=${cleanTargetId}, isOnline=${targetIsOnline}`);
 
-        if (cleanCallerId === cleanTargetId) {
-          socket.emit('call:failed', { message: 'Cannot call yourself' });
-          return;
-        }
+        if (!targetIsOnline) {
+          const errPayload = { success: false, code: 'USER_OFFLINE', message: 'User is currently offline' };
+          socket.emit('call:failed', errPayload);
+          if (typeof callback === 'function') callback(errPayload);
 
-        try {
-          // Security: Verify project membership for BOTH caller and target receiver
-          const project = await Project.findById(projectId).select('name key members owner isPrivate').lean();
-          if (!project) {
-            socket.emit('call:failed', { message: 'Project workspace not found' });
-            return;
+          // Create missed call notification in DB for recipient
+          try {
+            const callerUser = await User.findById(cleanCallerId).select('name avatar email').lean();
+            await Notification.create({
+              recipient: cleanTargetId,
+              sender: cleanCallerId,
+              type: 'call_missed',
+              title: 'Missed Call',
+              message: `Missed ${type} call from ${callerUser?.name || 'Team Member'} in ${project.name}`,
+              link: `/dashboard/projects/${projectId}/call`,
+              data: {
+                projectId,
+                projectName: project.name,
+                callType: type,
+              },
+            });
+          } catch (notifErr) {
+            console.error('Error creating offline missed call notification:', notifErr);
           }
+          return;
+        }
 
-          const isCallerMember =
-            String(project.owner?._id || project.owner) === cleanCallerId ||
-            (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanCallerId);
+        // Check if receiver is already in an active call
+        if (userActiveCall.has(cleanTargetId)) {
+          const busyPayload = {
+            success: false,
+            code: 'USER_BUSY',
+            targetUserId: cleanTargetId,
+            message: 'User is currently on another call.',
+          };
+          socket.emit('call:busy', busyPayload);
+          if (typeof callback === 'function') callback(busyPayload);
+          return;
+        }
 
-          const isTargetMember =
-            String(project.owner?._id || project.owner) === cleanTargetId ||
-            (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanTargetId);
+        // Check if caller is already in another call
+        if (userActiveCall.has(cleanCallerId)) {
+          const existing = userActiveCall.get(cleanCallerId)!;
+          await endCallSession(existing.callId, cleanCallerId, 'completed');
+        }
 
-          if (!isCallerMember || !isTargetMember) {
-            socket.emit('call:failed', { message: 'Calling is restricted to members of the same workspace' });
-            return;
-          }
+        // Create Call record in DB
+        const newCall = await Call.create({
+          caller: cleanCallerId,
+          receiver: cleanTargetId,
+          project: projectId,
+          type,
+          status: 'initiated',
+          startedAt: new Date(),
+        });
 
-          // Check if receiver is online anywhere in SprintForge
-          const targetIsOnline = isUserOnline(cleanTargetId);
-          console.log(`[CALL] Target user online check: cleanTargetId=${cleanTargetId}, isOnline=${targetIsOnline}`);
+        const callId = String(newCall._id);
 
-          if (!targetIsOnline) {
-            socket.emit('call:failed', { message: 'User is currently offline' });
+        // Track in active memory
+        activeCallRooms.set(callId, {
+          callerId: cleanCallerId,
+          receiverId: cleanTargetId,
+          projectId,
+          type,
+          status: 'initiated',
+          startedAt: new Date(),
+        });
 
-            // Create missed call notification in DB for when recipient next logs in
-            try {
-              const callerUser = await User.findById(cleanCallerId).select('name avatar email').lean();
-              await Notification.create({
+        userActiveCall.set(cleanCallerId, {
+          callId,
+          projectId,
+          peerId: cleanTargetId,
+          role: 'caller',
+        });
+
+        // Join caller socket to call room
+        socket.join(`call:${callId}`);
+
+        // Fetch fresh caller details
+        const callerUser = await User.findById(cleanCallerId).select('name avatar email role').lean();
+        const callerMemberObj = (project.members as any[]).find(
+          (m) => String(m.user?._id || m.user || m) === cleanCallerId
+        );
+        const callerRole =
+          String(project.owner?._id || project.owner) === cleanCallerId
+            ? 'Owner'
+            : callerMemberObj?.role || callerUser?.role || 'Member';
+
+        // Set 35-second Ring Timeout
+        const ringTimer = setTimeout(async () => {
+          console.log(`[CALL] Call timed out (unanswered): callId=${callId}`);
+          callRingTimers.delete(callId);
+          activeCallRooms.delete(callId);
+          userActiveCall.delete(cleanCallerId);
+          userActiveCall.delete(cleanTargetId);
+
+          try {
+            const timedOutCall = await Call.findById(callId);
+            if (timedOutCall && timedOutCall.status === 'initiated') {
+              timedOutCall.status = 'missed';
+              timedOutCall.endedAt = new Date();
+              await timedOutCall.save();
+
+              // Create missed call notification for recipient
+              const notif = await Notification.create({
                 recipient: cleanTargetId,
                 sender: cleanCallerId,
                 type: 'call_missed',
@@ -586,177 +725,96 @@ export const initSocket = (io: Server) => {
                 message: `Missed ${type} call from ${callerUser?.name || 'Team Member'} in ${project.name}`,
                 link: `/dashboard/projects/${projectId}/call`,
                 data: {
+                  callId,
                   projectId,
                   projectName: project.name,
                   callType: type,
                 },
               });
-            } catch (notifErr) {
-              console.error('Error creating offline missed call notification:', notifErr);
+
+              // Notify receiver about missed call & unread badge
+              io.to(cleanTargetId).emit('notification:new', notif);
+              io.to(cleanTargetId).emit('call:missed_notification', {
+                callId,
+                projectId,
+                projectName: project.name,
+                caller: {
+                  _id: cleanCallerId,
+                  name: callerUser?.name || 'Team Member',
+                  avatar: callerUser?.avatar || '',
+                },
+                type,
+                createdAt: new Date(),
+              });
+
+              io.to(cleanTargetId).emit('call:unread_update', {
+                projectId,
+                increment: 1,
+              });
             }
-            return;
+          } catch (err) {
+            console.error('Error handling ring timeout:', err);
           }
 
-          // Check if receiver is already in an active call
-          if (userActiveCall.has(cleanTargetId)) {
-            socket.emit('call:busy', {
-              targetUserId: cleanTargetId,
-              message: 'User is currently on another call.',
-            });
-            return;
-          }
-
-          // Check if caller is already in another call
-          if (userActiveCall.has(cleanCallerId)) {
-            const existing = userActiveCall.get(cleanCallerId)!;
-            await endCallSession(existing.callId, cleanCallerId, 'completed');
-          }
-
-          // Create Call record in DB
-          const newCall = await Call.create({
-            caller: cleanCallerId,
-            receiver: cleanTargetId,
-            project: projectId,
-            type,
-            status: 'initiated',
-            startedAt: new Date(),
-          });
-
-          const callId = String(newCall._id);
-
-          // Track in active memory
-          activeCallRooms.set(callId, {
-            callerId: cleanCallerId,
-            receiverId: cleanTargetId,
-            projectId,
-            type,
-            status: 'initiated',
-            startedAt: new Date(),
-          });
-
-          userActiveCall.set(cleanCallerId, {
+          io.to(`call:${callId}`).emit('call:missed', {
             callId,
-            projectId,
-            peerId: cleanTargetId,
-            role: 'caller',
+            message: 'Call went unanswered',
           });
+          io.to(cleanCallerId).emit('call:missed', { callId });
+          io.to(cleanTargetId).emit('call:missed', { callId });
+          io.to(cleanTargetId).emit('call:dismiss_incoming', { callId });
+        }, 35000);
 
-          // Join caller socket to call room
-          socket.join(`call:${callId}`);
+        callRingTimers.set(callId, ringTimer);
 
-          // Fetch fresh caller details
-          const callerUser = await User.findById(cleanCallerId).select('name avatar email').lean();
-          const callerMemberObj = (project.members as any[]).find(
-            (m) => String(m.user?._id || m.user || m) === cleanCallerId
-          );
-          const callerRole = String(project.owner?._id || project.owner) === cleanCallerId ? 'Owner' : callerMemberObj?.role || 'Member';
+        const incomingPayload = {
+          callId,
+          projectId,
+          projectName: project.name,
+          projectKey: project.key,
+          caller: {
+            _id: cleanCallerId,
+            name: callerUser?.name || 'Team Member',
+            avatar: callerUser?.avatar || '',
+            email: callerUser?.email || '',
+            role: callerRole,
+          },
+          type,
+          createdAt: newCall.createdAt,
+        };
 
-          // Set 35-second Ring Timeout
-          const ringTimer = setTimeout(async () => {
-            console.log(`[CALL] Call timed out (unanswered): callId=${callId}`);
-            callRingTimers.delete(callId);
-            activeCallRooms.delete(callId);
-            userActiveCall.delete(cleanCallerId);
-            userActiveCall.delete(cleanTargetId);
+        // Emit incoming call payload to target user's personal room & direct sockets
+        console.log(`[CALL] Emitting call:incoming to target user ${cleanTargetId}:`, incomingPayload);
+        io.to(cleanTargetId).emit('call:incoming', incomingPayload);
 
-            try {
-              const timedOutCall = await Call.findById(callId);
-              if (timedOutCall && timedOutCall.status === 'initiated') {
-                timedOutCall.status = 'missed';
-                timedOutCall.endedAt = new Date();
-                await timedOutCall.save();
-
-                // Create missed call notification for recipient
-                const notif = await Notification.create({
-                  recipient: cleanTargetId,
-                  sender: cleanCallerId,
-                  type: 'call_missed',
-                  title: 'Missed Call',
-                  message: `Missed ${type} call from ${callerUser?.name || 'Team Member'} in ${project.name}`,
-                  link: `/dashboard/projects/${projectId}/call`,
-                  data: {
-                    callId,
-                    projectId,
-                    projectName: project.name,
-                    callType: type,
-                  },
-                });
-
-                // Notify receiver about missed call & unread badge
-                io.to(cleanTargetId).emit('notification:new', notif);
-                io.to(cleanTargetId).emit('call:missed_notification', {
-                  callId,
-                  projectId,
-                  projectName: project.name,
-                  caller: {
-                    _id: cleanCallerId,
-                    name: callerUser?.name || 'Team Member',
-                    avatar: callerUser?.avatar || '',
-                  },
-                  type,
-                  createdAt: new Date(),
-                });
-
-                io.to(cleanTargetId).emit('call:unread_update', {
-                  projectId,
-                  increment: 1,
-                });
-              }
-            } catch (err) {
-              console.error('Error handling ring timeout:', err);
-            }
-
-            io.to(`call:${callId}`).emit('call:missed', {
-              callId,
-              message: 'Call went unanswered',
-            });
-            io.to(cleanCallerId).emit('call:missed', { callId });
-            io.to(cleanTargetId).emit('call:missed', { callId });
-            io.to(cleanTargetId).emit('call:dismiss_incoming', { callId });
-          }, 35000);
-
-          callRingTimers.set(callId, ringTimer);
-
-          const incomingPayload = {
-            callId,
-            projectId,
-            projectName: project.name,
-            projectKey: project.key,
-            caller: {
-              _id: cleanCallerId,
-              name: callerUser?.name || 'Team Member',
-              avatar: callerUser?.avatar || '',
-              email: callerUser?.email || '',
-              role: callerRole,
-            },
-            type,
-            createdAt: newCall.createdAt,
-          };
-
-          // Emit incoming call payload to target user's personal room & direct sockets
-          console.log(`[CALL] Emitting call:incoming to target user ${cleanTargetId}:`, incomingPayload);
-          io.to(cleanTargetId).emit('call:incoming', incomingPayload);
-
-          const targetSockets = globalUserSockets.get(cleanTargetId);
-          if (targetSockets) {
-            targetSockets.forEach((sId) => {
-              io.to(sId).emit('call:incoming', incomingPayload);
-            });
-          }
-
-          // Confirm initiation to caller
-          socket.emit('call:initiated', {
-            callId,
-            targetUserId: cleanTargetId,
-            type,
-            createdAt: newCall.createdAt,
+        const targetSockets = globalUserSockets.get(cleanTargetId);
+        if (targetSockets) {
+          targetSockets.forEach((sId) => {
+            io.to(sId).emit('call:incoming', incomingPayload);
           });
-        } catch (err: any) {
-          console.error('[CALL] Failed to initiate call:', err);
-          socket.emit('call:failed', { message: err?.message || 'Call initiation failed' });
         }
+
+        const successPayload = {
+          success: true,
+          callId,
+          targetUserId: cleanTargetId,
+          type,
+          createdAt: newCall.createdAt,
+        };
+
+        // Confirm initiation to caller
+        socket.emit('call:initiated', successPayload);
+        if (typeof callback === 'function') callback(successPayload);
+      } catch (err: any) {
+        console.error('[CALL] Failed to initiate call:', err);
+        const errPayload = { success: false, code: 'SERVER_ERROR', message: err?.message || 'Call initiation failed' };
+        socket.emit('call:failed', errPayload);
+        if (typeof callback === 'function') callback(errPayload);
       }
-    );
+    };
+
+    socket.on('call:initiate', handleCallInitiate);
+    socket.on('call:start', handleCallInitiate);
 
     // 2. Receiver Reports Ringing
     socket.on('call:ringing', async (data: { callId: string }) => {
@@ -777,12 +835,15 @@ export const initSocket = (io: Server) => {
     });
 
     // 3. Accept Call
-    socket.on('call:accept', async (data: { callId: string }) => {
+    socket.on('call:accept', async (data: { callId: string }, callback?: (res: any) => void) => {
       const { callId } = data;
       const receiverId = authUser?._id || socketMeta[socket.id]?.userId;
       console.log(`[CALL] call:accept received: callId=${callId}, receiverId=${receiverId}`);
 
-      if (!callId || !receiverId) return;
+      if (!callId || !receiverId) {
+        if (typeof callback === 'function') callback({ success: false, message: 'Invalid accept parameters' });
+        return;
+      }
 
       // Clear ring timer
       if (callRingTimers.has(callId)) {
@@ -793,7 +854,9 @@ export const initSocket = (io: Server) => {
       try {
         const callDoc = await Call.findById(callId);
         if (!callDoc || !['initiated', 'ringing'].includes(callDoc.status)) {
-          socket.emit('call:failed', { message: 'Call is no longer available' });
+          const errPayload = { success: false, message: 'Call is no longer available' };
+          socket.emit('call:failed', errPayload);
+          if (typeof callback === 'function') callback(errPayload);
           return;
         }
 
@@ -833,6 +896,7 @@ export const initSocket = (io: Server) => {
 
         // Dismiss incoming call modal on any other open tabs of the receiver
         io.to(String(receiverId)).emit('call:dismiss_incoming', { callId });
+        io.to(String(receiverId)).emit('call:answered-elsewhere', { callId });
 
         // Broadcast to project that users are in a call
         io.to(`project:${projectId}`).emit('call:user_status_changed', {
@@ -840,17 +904,21 @@ export const initSocket = (io: Server) => {
           status: 'in_call',
           callId,
         });
+
+        if (typeof callback === 'function') callback({ success: true, acceptedPayload });
       } catch (err) {
         console.error('[CALL] Error accepting call:', err);
-        socket.emit('call:failed', { message: 'Failed to accept call' });
+        const errPayload = { success: false, message: 'Failed to accept call' };
+        socket.emit('call:failed', errPayload);
+        if (typeof callback === 'function') callback(errPayload);
       }
     });
 
-    // 4. Reject Call
-    socket.on('call:reject', async (data: { callId: string; reason?: string }) => {
+    // 4. Reject / Decline Call
+    const handleCallDecline = async (data: { callId: string; reason?: string }) => {
       const { callId, reason } = data;
       const receiverId = authUser?._id || socketMeta[socket.id]?.userId;
-      console.log(`[CALL] call:reject received: callId=${callId}, receiverId=${receiverId}`);
+      console.log(`[CALL] call:reject/decline received: callId=${callId}, receiverId=${receiverId}`);
 
       if (!callId) return;
 
@@ -858,17 +926,20 @@ export const initSocket = (io: Server) => {
       await endCallSession(callId, receiverId, 'rejected');
 
       if (callMeta) {
-        io.to(callMeta.callerId).emit('call:rejected', {
+        const payload = {
           callId,
           reason: reason || 'Call was declined by receiver',
-        });
-        io.to(`call:${callId}`).emit('call:rejected', {
-          callId,
-          reason: reason || 'Call was declined by receiver',
-        });
+        };
+        io.to(callMeta.callerId).emit('call:rejected', payload);
+        io.to(callMeta.callerId).emit('call:declined', payload);
+        io.to(`call:${callId}`).emit('call:rejected', payload);
+        io.to(`call:${callId}`).emit('call:declined', payload);
         io.to(callMeta.receiverId).emit('call:dismiss_incoming', { callId });
       }
-    });
+    };
+
+    socket.on('call:reject', handleCallDecline);
+    socket.on('call:decline', handleCallDecline);
 
     // 5. Cancel Call (Caller cancels before answer)
     socket.on('call:cancel', async (data: { callId: string }) => {
@@ -882,21 +953,21 @@ export const initSocket = (io: Server) => {
       await endCallSession(callId, callerId, 'cancelled');
 
       if (callMeta) {
-        io.to(callMeta.receiverId).emit('call:cancelled', {
+        const payload = {
           callId,
           message: 'Caller cancelled the call',
-        });
-        io.to(`call:${callId}`).emit('call:cancelled', {
-          callId,
-          message: 'Caller cancelled the call',
-        });
+        };
+        io.to(callMeta.receiverId).emit('call:cancelled', payload);
+        io.to(`call:${callId}`).emit('call:cancelled', payload);
         io.to(callMeta.receiverId).emit('call:dismiss_incoming', { callId });
       }
     });
 
     // 6. WebRTC Signaling Relays (Pure P2P SDP Offer / Answer / ICE Candidates)
-    socket.on('call:offer', (data: { callId: string; sdp: any }) => {
-      const { callId, sdp } = data;
+    // CRITICAL: Route strictly ONCE using socket.to(`call:${callId}`) to prevent double-offer / double-answer / double-ICE crashes!
+    socket.on('call:offer', (data: { callId: string; sdp?: any; description?: any }) => {
+      const { callId } = data;
+      const sdp = data.sdp || data.description;
       const senderId = authUser?._id || socketMeta[socket.id]?.userId;
       if (!callId || !sdp) return;
 
@@ -906,15 +977,11 @@ export const initSocket = (io: Server) => {
         sdp,
         senderId,
       });
-
-      const callMeta = activeCallRooms.get(callId);
-      if (callMeta) {
-        io.to(callMeta.receiverId).emit('call:offer', { callId, sdp, senderId });
-      }
     });
 
-    socket.on('call:answer', (data: { callId: string; sdp: any }) => {
-      const { callId, sdp } = data;
+    socket.on('call:answer', (data: { callId: string; sdp?: any; description?: any }) => {
+      const { callId } = data;
+      const sdp = data.sdp || data.description;
       const senderId = authUser?._id || socketMeta[socket.id]?.userId;
       if (!callId || !sdp) return;
 
@@ -924,11 +991,6 @@ export const initSocket = (io: Server) => {
         sdp,
         senderId,
       });
-
-      const callMeta = activeCallRooms.get(callId);
-      if (callMeta) {
-        io.to(callMeta.callerId).emit('call:answer', { callId, sdp, senderId });
-      }
     });
 
     socket.on('call:ice-candidate', (data: { callId: string; candidate: any }) => {
@@ -941,12 +1003,6 @@ export const initSocket = (io: Server) => {
         candidate,
         senderId,
       });
-
-      const callMeta = activeCallRooms.get(callId);
-      if (callMeta) {
-        const peerId = String(senderId) === String(callMeta.callerId) ? callMeta.receiverId : callMeta.callerId;
-        io.to(peerId).emit('call:ice-candidate', { callId, candidate, senderId });
-      }
     });
 
     // 7. WebRTC Connected Confirmation
@@ -997,19 +1053,6 @@ export const initSocket = (io: Server) => {
           isScreenSharing,
           isSpeaking,
         });
-
-        const callMeta = activeCallRooms.get(callId);
-        if (callMeta) {
-          const peerId = String(senderId) === String(callMeta.callerId) ? callMeta.receiverId : callMeta.callerId;
-          io.to(peerId).emit('call:track-state', {
-            callId,
-            senderId,
-            isMuted,
-            isVideoOff,
-            isScreenSharing,
-            isSpeaking,
-          });
-        }
       }
     );
 
@@ -1044,3 +1087,4 @@ export const initSocket = (io: Server) => {
     });
   });
 };
+
