@@ -215,7 +215,7 @@ export const initSocket = (io: Server) => {
           const project = await Project.findById(projectId).select('owner members isPrivate').lean();
           if (project) {
             const isOwner = String(project.owner) === String(effectiveUserId);
-            const isMember = (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === String(effectiveUserId));
+            const isMember = (project.members as any[] || []).some((m) => String(m.user?._id || m.user || m) === String(effectiveUserId));
 
             if (!isOwner && !isMember && project.isPrivate) {
               socket.emit('error', { message: 'Not authorized to join this project room' });
@@ -592,11 +592,11 @@ export const initSocket = (io: Server) => {
 
         const isCallerMember =
           String(project.owner?._id || project.owner) === cleanCallerId ||
-          (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanCallerId);
+          (project.members as any[] || []).some((m) => String(m.user?._id || m.user || m) === cleanCallerId);
 
         const isTargetMember =
           String(project.owner?._id || project.owner) === cleanTargetId ||
-          (project.members as any[]).some((m) => String(m.user?._id || m.user || m) === cleanTargetId);
+          (project.members as any[] || []).some((m) => String(m.user?._id || m.user || m) === cleanTargetId);
 
         if (!isCallerMember || !isTargetMember) {
           const errPayload = {
@@ -693,7 +693,7 @@ export const initSocket = (io: Server) => {
 
         // Fetch fresh caller details
         const callerUser = await User.findById(cleanCallerId).select('name avatar email role').lean();
-        const callerMemberObj = (project.members as any[]).find(
+        const callerMemberObj = (project.members as any[] || []).find(
           (m) => String(m.user?._id || m.user || m) === cleanCallerId
         );
         const callerRole =
