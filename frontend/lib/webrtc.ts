@@ -174,7 +174,7 @@ export class AudioMeter {
 
       this.audioContext = new AudioContextClass();
       if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(() => {});
+        this.audioContext.resume().catch(() => { });
       }
 
       this.analyser = this.audioContext.createAnalyser();
@@ -218,13 +218,13 @@ export class AudioMeter {
     if (this.source) {
       try {
         this.source.disconnect();
-      } catch {}
+      } catch { }
       this.source = null;
     }
     if (this.audioContext && this.audioContext.state !== 'closed') {
       try {
         this.audioContext.close();
-      } catch {}
+      } catch { }
       this.audioContext = null;
     }
     this.onLevelCallback(0);
@@ -237,53 +237,73 @@ export class AudioMeter {
  */
 export class SoundEffects {
   private static ringIntervalId: NodeJS.Timeout | null = null;
+  private static audioCtx: AudioContext | null = null;
 
-  /**
-   * Play an outgoing or incoming call soft melody chime
-   */
-  public static playCallingChime() {
-    if (typeof window === 'undefined') return;
+  private static getAudioContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      if (!AudioCtx) return null;
+      if (!this.audioCtx || this.audioCtx.state === 'closed') {
+        this.audioCtx = new AudioCtx();
+      }
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      return this.audioCtx;
+    } catch {
+      return null;
+    }
+  }
 
+  /**
+   * Play a modern, elegant soft double-chime (harmonic F#5 -> A5)
+   */
+  public static playCallingChime() {
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
       const now = ctx.currentTime;
+
+      // Note 1: F#5 (739.99 Hz) soft bell
       const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
-
+      const gain1 = ctx.createGain();
       osc1.type = 'sine';
-      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(739.99, now);
+      gain1.gain.setValueAtTime(0.06, now);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
 
-      // Soft marimba-like harmony (440Hz A4 + 554.37Hz C#5)
-      osc1.frequency.setValueAtTime(440, now);
-      osc2.frequency.setValueAtTime(554.37, now);
-
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
-
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
-
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
       osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + 0.45);
-      osc2.stop(now + 0.45);
+      osc1.stop(now + 0.35);
+
+      // Note 2: A5 (880.00 Hz) chime with slight delay
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880.00, now + 0.12);
+      gain2.gain.setValueAtTime(0.0001, now);
+      gain2.gain.setValueAtTime(0.07, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.12);
+      osc2.stop(now + 0.6);
     } catch {}
   }
 
   /**
-   * Start periodic incoming call ringtone (plays every 2.8 seconds)
+   * Start periodic incoming call ringtone (plays every 2.4 seconds)
    */
   public static startIncomingRingtone() {
     this.stopIncomingRingtone();
     this.playCallingChime();
     this.ringIntervalId = setInterval(() => {
       this.playCallingChime();
-    }, 2800);
+    }, 2400);
   }
 
   /**
@@ -297,63 +317,57 @@ export class SoundEffects {
   }
 
   /**
-   * Short pleasant "Connected" audio feedback
+   * Short pleasant "Connected" audio feedback (Ascending major triad C5 -> E5 -> G5)
    */
   public static playCallConnectedSound() {
-    if (typeof window === 'undefined') return;
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
 
+    try {
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523.25, now); // C5
-      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.12); // E5
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.24); // G5
+      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.08); // E5
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.16); // G5
 
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.35);
+      osc.stop(now + 0.32);
     } catch {}
   }
 
   /**
-   * Short gentle "Call Ended" audio feedback
+   * Short gentle "Call Ended" audio feedback (Descending tone E5 -> A4)
    */
   public static playCallEndedSound() {
-    if (typeof window === 'undefined') return;
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
 
+    try {
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(659.25, now); // E5
-      osc.frequency.exponentialRampToValueAtTime(440, now + 0.18); // A4
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.15); // A4
 
-      gain.gain.setValueAtTime(0.07, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.3);
+      osc.stop(now + 0.28);
     } catch {}
   }
 }

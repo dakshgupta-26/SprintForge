@@ -220,7 +220,7 @@ export const useCallStore = create<CallState>((set, get) => ({
         availableVideoInputs: videoInputs,
         availableAudioOutputs: audioOutputs,
       });
-    } catch {}
+    } catch { }
   },
 
   // ─── Missed Calls Unread Counter API ─────────────────────────────────────
@@ -233,7 +233,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           missedCallsByProject: data.projects || {},
         });
       }
-    } catch {}
+    } catch { }
   },
 
   markProjectCallsAsRead: async (projectId: string) => {
@@ -537,10 +537,10 @@ export const useCallStore = create<CallState>((set, get) => ({
         video:
           type === 'video'
             ? {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: 'user',
-              }
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'user',
+            }
             : false,
       };
 
@@ -662,10 +662,10 @@ export const useCallStore = create<CallState>((set, get) => ({
           video:
             type === 'video'
               ? {
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
-                  facingMode: 'user',
-                }
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user',
+              }
               : false,
         });
       }
@@ -825,10 +825,10 @@ export const useCallStore = create<CallState>((set, get) => ({
         video:
           incoming.type === 'video'
             ? {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: 'user',
-              }
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'user',
+            }
             : false,
       });
 
@@ -1340,7 +1340,7 @@ function cleanUpCallResources() {
     localStream.getTracks().forEach((track) => {
       try {
         track.stop();
-      } catch {}
+      } catch { }
     });
   }
 
@@ -1350,7 +1350,7 @@ function cleanUpCallResources() {
     screenStream.getTracks().forEach((track) => {
       try {
         track.stop();
-      } catch {}
+      } catch { }
     });
   }
 
@@ -1362,7 +1362,7 @@ function cleanUpCallResources() {
       peerConnection.onconnectionstatechange = null;
       peerConnection.oniceconnectionstatechange = null;
       peerConnection.close();
-    } catch {}
+    } catch { }
     peerConnection = null;
   }
 
