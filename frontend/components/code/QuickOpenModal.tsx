@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Search, FileCode, ArrowRight } from "lucide-react";
+import { Search, ArrowRight } from "lucide-react";
 import { useCodeStore, FileTreeItem } from "@/lib/store/codeStore";
 import { getFileIcon } from "./FileTreeItem";
 import { cn } from "@/lib/utils";
@@ -85,7 +85,7 @@ export function QuickOpenModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] p-4 bg-black/60 backdrop-blur-xs">
       <div
         className="w-full max-w-xl bg-[#090d20] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[60vh] select-none"
         onClick={(e) => e.stopPropagation()}
@@ -102,7 +102,7 @@ export function QuickOpenModal() {
               setSelectedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search files by name (e.g. index.ts, Board.tsx)..."
+            placeholder="Search files by name (e.g. index.ts, Button.tsx)..."
             className="w-full bg-transparent text-white placeholder:text-slate-500 text-xs focus:outline-none font-mono"
           />
           <kbd className="text-[10px] font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5">
@@ -138,8 +138,8 @@ export function QuickOpenModal() {
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     {getFileIcon(file.extension, file.name)}
-                    <span className="truncate font-mono">{file.name}</span>
-                    <span className="text-[11px] text-slate-500 truncate">
+                    <span className="truncate font-mono font-medium">{file.name}</span>
+                    <span className="text-[11px] text-slate-500 truncate font-mono">
                       {file.path}
                     </span>
                   </div>

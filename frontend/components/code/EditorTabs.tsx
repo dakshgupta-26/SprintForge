@@ -10,6 +10,8 @@ import {
   Command,
   Terminal,
   MoreHorizontal,
+  ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { useCodeStore, CodeTab } from "@/lib/store/codeStore";
 import { getFileIcon } from "./FileTreeItem";
@@ -22,6 +24,7 @@ export function EditorTabs() {
     setActiveTab,
     closeTab,
     closeOtherTabs,
+    closeTabsToTheRight,
     closeAllTabs,
     pinTab,
     gitStatus,
@@ -45,11 +48,10 @@ export function EditorTabs() {
     return () => window.removeEventListener("click", handleOutsideClick);
   }, []);
 
-  const activeTab = openTabs.find((t) => t.id === activeTabId);
   const hasGitChanges = gitStatus?.files?.some((f) => f.path === activeTabId);
 
   return (
-    <div className="h-10 bg-[#070a18] border-b border-white/[0.08] flex items-center justify-between px-2 select-none flex-shrink-0 z-10">
+    <div className="h-9 bg-[#070a14] border-b border-white/[0.08] flex items-center justify-between px-2 select-none flex-shrink-0 z-10">
       {/* ── Horizontal Scrolling Tabs ── */}
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 min-w-0 flex-1">
         {openTabs.map((tab) => {
@@ -66,10 +68,10 @@ export function EditorTabs() {
                 setTabContextMenu({ tab, x: e.clientX, y: e.clientY });
               }}
               className={cn(
-                "group relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all border flex-shrink-0 max-w-[200px]",
+                "group relative flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all border flex-shrink-0 max-w-[210px]",
                 isActive
-                  ? "bg-[#0f142e] text-white border-white/[0.12] shadow-sm font-semibold"
-                  : "bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] border-transparent"
+                  ? "bg-[#0c1024] text-white border-white/[0.12] shadow-xs font-semibold"
+                  : "bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-transparent"
               )}
             >
               {/* Active Purple Bottom Bar */}
@@ -81,7 +83,7 @@ export function EditorTabs() {
               {getFileIcon(ext, tab.title)}
 
               {/* Title */}
-              <span className="truncate">{tab.title}</span>
+              <span className="truncate text-xs">{tab.title}</span>
 
               {/* Pinned Icon */}
               {tab.isPinned && (
@@ -89,7 +91,7 @@ export function EditorTabs() {
               )}
 
               {/* Dirty / Close Indicator */}
-              <div className="flex items-center ml-1">
+              <div className="flex items-center ml-0.5">
                 {tab.isDirty ? (
                   <button
                     type="button"
@@ -98,6 +100,7 @@ export function EditorTabs() {
                       closeTab(tab.id);
                     }}
                     className="w-4 h-4 flex items-center justify-center rounded hover:bg-white/[0.1] text-violet-400 hover:text-white"
+                    title="Unsaved changes (Click to close)"
                   >
                     <div className="w-2 h-2 rounded-full bg-violet-400 group-hover:hidden" />
                     <X className="w-3.5 h-3.5 hidden group-hover:block" />
@@ -110,8 +113,9 @@ export function EditorTabs() {
                       closeTab(tab.id);
                     }}
                     className="w-4 h-4 flex items-center justify-center rounded hover:bg-white/[0.1] text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Close tab (Ctrl+W)"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -135,11 +139,12 @@ export function EditorTabs() {
             }}
             className={cn(
               "p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer",
-              activeDiff?.file === activeTabId && "text-violet-300 bg-violet-600/20 border border-violet-500/30"
+              activeDiff?.file === activeTabId &&
+                "text-violet-300 bg-violet-600/20 border border-violet-500/30"
             )}
             title="Toggle Git Diff for active file"
           >
-            <GitCompare className="w-4 h-4" />
+            <GitCompare className="w-3.5 h-3.5" />
           </button>
         )}
 
@@ -150,7 +155,7 @@ export function EditorTabs() {
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           title="Quick Open File (Ctrl+P)"
         >
-          <Search className="w-4 h-4" />
+          <Search className="w-3.5 h-3.5" />
         </button>
 
         {/* Command Palette (Cmd+Shift+P) */}
@@ -160,7 +165,7 @@ export function EditorTabs() {
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           title="Command Palette (Ctrl+Shift+P)"
         >
-          <Command className="w-4 h-4" />
+          <Command className="w-3.5 h-3.5" />
         </button>
 
         {/* Terminal Toggle */}
@@ -169,11 +174,12 @@ export function EditorTabs() {
           onClick={() => toggleTerminal()}
           className={cn(
             "p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer",
-            terminalOpen && "text-violet-300 bg-violet-600/20 border border-violet-500/30"
+            terminalOpen &&
+              "text-violet-300 bg-violet-600/20 border border-violet-500/30"
           )}
           title="Toggle Terminal (Ctrl+`)"
         >
-          <Terminal className="w-4 h-4" />
+          <Terminal className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -181,7 +187,7 @@ export function EditorTabs() {
       {tabContextMenu && (
         <div
           style={{ top: `${tabContextMenu.y}px`, left: `${tabContextMenu.x}px` }}
-          className="fixed z-50 min-w-[150px] bg-[#0c1024] border border-white/[0.12] rounded-xl shadow-2xl py-1 text-xs text-slate-200"
+          className="fixed z-50 min-w-[160px] bg-[#0c1024] border border-white/[0.12] rounded-xl shadow-2xl py-1 text-xs text-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -204,6 +210,16 @@ export function EditorTabs() {
             className="w-full flex items-center px-3 py-1.5 hover:bg-violet-600/20 hover:text-white transition-colors text-left"
           >
             Close Others
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              closeTabsToTheRight(tabContextMenu.tab.id);
+              setTabContextMenu(null);
+            }}
+            className="w-full flex items-center px-3 py-1.5 hover:bg-violet-600/20 hover:text-white transition-colors text-left"
+          >
+            Close to the Right
           </button>
           <button
             type="button"
@@ -235,6 +251,16 @@ export function EditorTabs() {
                 Pin Tab
               </>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(tabContextMenu.tab.path);
+              setTabContextMenu(null);
+            }}
+            className="w-full flex items-center px-3 py-1.5 hover:bg-violet-600/20 hover:text-white transition-colors text-left"
+          >
+            Copy Relative Path
           </button>
         </div>
       )}

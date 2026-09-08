@@ -14,6 +14,7 @@ import {
   FileCode,
   Loader2,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { useCodeStore } from "@/lib/store/codeStore";
 import { getFileIcon } from "./FileTreeItem";
@@ -61,12 +62,12 @@ export function SourceControlPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300">
+    <div className="h-full flex flex-col bg-[#070a14] select-none text-slate-300 text-xs">
       {/* ── Top Header Bar ── */}
-      <div className="h-10 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a18]">
-        <div className="flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-violet-400" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
+      <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a14]">
+        <div className="flex items-center gap-1.5">
+          <GitBranch className="w-3.5 h-3.5 text-violet-400" />
+          <span className="font-mono font-bold uppercase text-[11px] text-slate-300">
             Source Control
           </span>
         </div>
@@ -74,7 +75,7 @@ export function SourceControlPanel() {
         <button
           type="button"
           onClick={() => loadGitStatus()}
-          className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+          className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           title="Refresh Git Status"
         >
           <RotateCw className={cn("w-3.5 h-3.5", isGitLoading && "animate-spin text-violet-400")} />
@@ -82,19 +83,19 @@ export function SourceControlPanel() {
       </div>
 
       {/* ── Branch & Remote Toolbar ── */}
-      <div className="p-2.5 border-b border-white/[0.08] space-y-2 bg-[#090d20]">
+      <div className="p-2.5 border-b border-white/[0.08] space-y-2 bg-[#080c1e]">
         {/* Branch Switcher Dropdown */}
         <div className="relative">
           <button
             type="button"
             onClick={() => setBranchDropdownOpen(!branchDropdownOpen)}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-xs font-medium text-slate-200 transition-colors"
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-xs font-medium text-slate-200 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2 truncate">
               <GitBranch className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-              <span className="truncate font-mono">{gitStatus?.branch || "main"}</span>
+              <span className="truncate font-mono text-[11px]">{gitStatus?.branch || "main"}</span>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" />
           </button>
 
           {branchDropdownOpen && (
@@ -111,7 +112,7 @@ export function SourceControlPanel() {
                     setBranchDropdownOpen(false);
                   }}
                   className={cn(
-                    "w-full flex items-center justify-between px-3 py-1.5 text-left transition-colors font-mono",
+                    "w-full flex items-center justify-between px-3 py-1.5 text-left transition-colors font-mono cursor-pointer",
                     b === gitStatus?.branch
                       ? "text-violet-300 bg-violet-600/20 font-bold"
                       : "text-slate-300 hover:bg-white/[0.04] hover:text-white"
@@ -131,7 +132,7 @@ export function SourceControlPanel() {
                       setBranchDropdownOpen(false);
                       setNewBranchModalOpen(true);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-violet-400 hover:bg-violet-600/20 hover:text-violet-300 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-violet-400 hover:bg-violet-600/20 hover:text-violet-300 transition-colors text-left cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Create New Branch...</span>
@@ -148,10 +149,10 @@ export function SourceControlPanel() {
             type="button"
             onClick={() => gitPull()}
             disabled={isGitLoading}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-200 transition-colors cursor-pointer disabled:opacity-40"
             title="Pull changes from origin"
           >
-            <ArrowDown className="w-3.5 h-3.5 text-blue-400" />
+            <ArrowDown className="w-3 h-3 text-blue-400" />
             <span>Pull</span>
             {gitStatus?.behind !== undefined && gitStatus.behind > 0 && (
               <span className="text-[10px] font-mono text-blue-300">({gitStatus.behind})</span>
@@ -162,10 +163,10 @@ export function SourceControlPanel() {
             type="button"
             onClick={() => gitPush()}
             disabled={!canPush || isGitLoading}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-xs font-semibold text-violet-200 transition-colors cursor-pointer disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-xs font-semibold text-violet-200 transition-colors cursor-pointer disabled:opacity-40"
             title="Push changes to origin"
           >
-            <ArrowUp className="w-3.5 h-3.5 text-violet-400" />
+            <ArrowUp className="w-3 h-3 text-violet-400" />
             <span>Push</span>
             {gitStatus?.ahead !== undefined && gitStatus.ahead > 0 && (
               <span className="text-[10px] font-mono text-violet-300">({gitStatus.ahead})</span>
@@ -176,7 +177,7 @@ export function SourceControlPanel() {
 
       {/* ── Commit Message Box ── */}
       {permission === "WRITE" && (
-        <div className="p-2.5 border-b border-white/[0.08] space-y-2 bg-[#070a18]">
+        <div className="p-2.5 border-b border-white/[0.08] space-y-2 bg-[#070a14]">
           <textarea
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
@@ -187,19 +188,19 @@ export function SourceControlPanel() {
             }}
             placeholder="Commit message (Ctrl+Enter to commit)..."
             rows={3}
-            className="w-full px-2.5 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08] text-xs text-white focus:outline-none focus:border-violet-500 placeholder:text-slate-500 resize-none font-sans"
+            className="w-full px-2.5 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-xs text-white focus:outline-none focus:border-violet-500 placeholder:text-slate-500 resize-none font-sans"
           />
 
           <button
             type="button"
             onClick={handleCommit}
             disabled={!canCommit || isGitLoading}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs shadow-md transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs shadow-md transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isGitLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <GitCommit className="w-4 h-4" />
+              <GitCommit className="w-3.5 h-3.5" />
             )}
             <span>Commit Changes</span>
           </button>
@@ -230,10 +231,11 @@ export function SourceControlPanel() {
                   loadGitDiff(file.path);
                 }}
                 className="group flex items-center justify-between px-2 py-1.5 rounded-lg text-xs hover:bg-white/[0.04] cursor-pointer transition-colors"
+                title={`Click to open ${file.path} and view Git Diff`}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   {getFileIcon(ext, fileName)}
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">
+                  <span className="truncate text-slate-200 group-hover:text-white font-mono text-[11px]">
                     {file.path}
                   </span>
                 </div>
@@ -241,7 +243,7 @@ export function SourceControlPanel() {
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <span
                     className={cn(
-                      "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded",
+                      "text-[9px] font-mono font-bold px-1.5 py-0.2 rounded",
                       file.status === "M" && "text-amber-400 bg-amber-500/10",
                       file.status === "A" && "text-emerald-400 bg-emerald-500/10",
                       file.status === "D" && "text-rose-400 bg-rose-500/10",
@@ -279,14 +281,14 @@ export function SourceControlPanel() {
               <button
                 type="button"
                 onClick={() => setNewBranchModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleCreateBranch}
-                className="px-3 py-1.5 rounded-lg text-xs bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
+                className="px-3 py-1.5 rounded-lg text-xs bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors cursor-pointer"
               >
                 Create & Checkout
               </button>

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { useChatUnreadStore } from "@/lib/store/chatUnreadStore";
@@ -20,6 +20,8 @@ import { WorkspaceBootLoader } from "@/components/shared/WorkspaceBootLoader";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isCodeWorkspace = pathname?.includes("/code");
   const { user, isAuthenticated, initialize } = useAuthStore();
   const { fetchProjects } = useProjectStore();
   const { initialize: initializeChatUnread } = useChatUnreadStore();
@@ -95,7 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main content */}
       <div className={cn("main-content", isCollapsed && "sidebar-collapsed")}>
         <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 p-6">
+        <main className={cn("flex-1", isCodeWorkspace ? "p-0 overflow-hidden h-[calc(100vh-65px)]" : "p-6")}>
           {children}
         </main>
       </div>

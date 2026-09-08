@@ -57,7 +57,7 @@ export function CodePermissionsModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none text-xs">
       <div
         className="w-full max-w-xl bg-[#090d20] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
@@ -66,14 +66,14 @@ export function CodePermissionsModal() {
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-[#0a0e24]">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">
                 Workspace Code Permissions
               </h3>
-              <p className="text-xs text-slate-400">
-                Control member access to code editing, Git commits, and terminal
+              <p className="text-[11px] text-slate-400">
+                Control member access to collaborative editing, Git commits, and terminal execution
               </p>
             </div>
           </div>
@@ -92,13 +92,13 @@ export function CodePermissionsModal() {
           <Info className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-0.5">
             <p>
-              <strong className="text-slate-200">VIEW:</strong> Read code and view diffs.
+              <strong className="text-slate-200">VIEW:</strong> Read-only access to files and diffs.
             </p>
             <p>
               <strong className="text-slate-200">EDIT:</strong> Real-time collaborative code editing.
             </p>
             <p>
-              <strong className="text-slate-200">WRITE:</strong> Edit, commit, push, branch, and run terminal.
+              <strong className="text-slate-200">WRITE:</strong> Edit, commit, push, branch, and execute commands in terminal.
             </p>
           </div>
         </div>
@@ -131,7 +131,7 @@ export function CodePermissionsModal() {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-400 truncate block">
+                    <span className="text-[11px] text-slate-400 truncate block font-mono">
                       {member.email}
                     </span>
                   </div>

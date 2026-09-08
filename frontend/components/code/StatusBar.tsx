@@ -9,7 +9,9 @@ import {
   Users,
   Terminal,
   ShieldCheck,
-  FileCode,
+  AlertCircle,
+  AlertTriangle,
+  Settings,
 } from "lucide-react";
 import { useCodeStore, getLanguageFromPath } from "@/lib/store/codeStore";
 import { cn } from "@/lib/utils";
@@ -19,9 +21,14 @@ export function StatusBar() {
     gitStatus,
     activeTabId,
     collaborators,
-    terminalOpen,
-    toggleTerminal,
+    problems,
+    cursorPosition,
+    ideSettings,
+    bottomPanelOpen,
+    toggleBottomPanel,
+    setBottomPanelTab,
     setActiveActivityBarView,
+    setSettingsModalOpen,
     permission,
   } = useCodeStore();
 
@@ -31,18 +38,21 @@ export function StatusBar() {
   const behind = gitStatus?.behind || 0;
   const collabCount = collaborators.length;
 
+  const errorCount = problems.filter((p) => p.severity === "error").length;
+  const warningCount = problems.filter((p) => p.severity === "warning").length;
+
   return (
-    <div className="h-6 bg-[#060916] border-t border-white/[0.08] flex items-center justify-between px-3 text-[11px] font-mono text-slate-400 select-none flex-shrink-0 z-30">
+    <footer className="h-6 bg-[#060914] border-t border-white/[0.08] flex items-center justify-between px-2.5 text-[11px] font-mono text-slate-400 select-none flex-shrink-0 z-30">
       {/* ── Left Status Indicators ── */}
       <div className="flex items-center gap-3">
         {/* Active Branch */}
         <button
           type="button"
           onClick={() => setActiveActivityBarView("git")}
-          className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
+          className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
           title={`Active Branch: ${branch}`}
         >
-          <GitBranch className="w-3.5 h-3.5 text-violet-400" />
+          <GitBranch className="w-3 h-3 text-violet-400" />
           <span className="font-semibold text-slate-300">{branch}</span>
         </button>
 
@@ -56,13 +66,13 @@ export function StatusBar() {
           ) : (
             <span className="flex items-center gap-1">
               {behind > 0 && (
-                <span className="flex items-center text-blue-400">
+                <span className="flex items-center text-blue-400" title={`${behind} commits behind origin`}>
                   <ArrowDown className="w-3 h-3" />
                   {behind}
                 </span>
               )}
               {ahead > 0 && (
-                <span className="flex items-center text-violet-400">
+                <span className="flex items-center text-violet-400" title={`${ahead} commits ahead of origin`}>
                   <ArrowUp className="w-3 h-3" />
                   {ahead}
                 </span>
@@ -70,6 +80,25 @@ export function StatusBar() {
             </span>
           )}
         </div>
+
+        {/* Problems Counter Pill */}
+        <button
+          type="button"
+          onClick={() => {
+            setBottomPanelTab("problems");
+          }}
+          className="flex items-center gap-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+          title={`${errorCount} errors, ${warningCount} warnings`}
+        >
+          <span className="flex items-center gap-0.5 text-rose-400">
+            <AlertCircle className="w-3 h-3" />
+            <span>{errorCount}</span>
+          </span>
+          <span className="flex items-center gap-0.5 text-amber-400 ml-1">
+            <AlertTriangle className="w-3 h-3" />
+            <span>{warningCount}</span>
+          </span>
+        </button>
 
         {/* Permission Role */}
         <div className="hidden sm:flex items-center gap-1 text-slate-500">
@@ -81,33 +110,43 @@ export function StatusBar() {
       </div>
 
       {/* ── Right Status Indicators ── */}
-      <div className="flex items-center gap-3.5">
+      <div className="flex items-center gap-3">
         {/* Terminal Toggle Button */}
         <button
           type="button"
-          onClick={() => toggleTerminal()}
+          onClick={() => toggleBottomPanel()}
           className={cn(
             "flex items-center gap-1 hover:text-white transition-colors cursor-pointer",
-            terminalOpen && "text-violet-300"
+            bottomPanelOpen && "text-violet-300"
           )}
-          title="Toggle Terminal"
+          title="Toggle Integrated Terminal (Ctrl+`)"
         >
           <Terminal className="w-3 h-3 text-violet-400" />
           <span className="hidden sm:inline">Terminal</span>
         </button>
 
         {/* Live Collaborators Count */}
-        <div
-          className="flex items-center gap-1 text-violet-300 font-semibold"
-          title={`${collabCount} active collaborators`}
+        <button
+          type="button"
+          onClick={() => setActiveActivityBarView("collab")}
+          className="flex items-center gap-1 text-violet-300 font-semibold hover:text-violet-200 transition-colors cursor-pointer"
+          title={`${collabCount} active collaborator${collabCount === 1 ? "" : "s"}`}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <Users className="w-3 h-3 text-violet-400" />
           <span>{collabCount}</span>
-        </div>
+        </button>
 
-        {/* Formatting Settings */}
-        <span className="hidden md:inline text-slate-500">Spaces: 2</span>
+        {/* Cursor Position (Ln X, Col Y) */}
+        <span className="text-slate-300">
+          Ln {cursorPosition.line}, Col {cursorPosition.column}
+          {cursorPosition.selectionCount ? ` (${cursorPosition.selectionCount} selected)` : ""}
+        </span>
+
+        {/* Indent & Encoding */}
+        <span className="hidden md:inline text-slate-500">
+          Spaces: {ideSettings.tabSize}
+        </span>
         <span className="hidden md:inline text-slate-500">UTF-8</span>
         <span className="hidden md:inline text-slate-500">LF</span>
 
@@ -115,7 +154,17 @@ export function StatusBar() {
         <span className="text-violet-400 font-semibold uppercase text-[10px]">
           {language}
         </span>
+
+        {/* Settings Quick Icon */}
+        <button
+          type="button"
+          onClick={() => setSettingsModalOpen(true)}
+          className="hover:text-white transition-colors cursor-pointer"
+          title="Editor Settings"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
       </div>
-    </div>
+    </footer>
   );
 }

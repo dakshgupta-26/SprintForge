@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useRef, useEffect, useMemo } from "react";
+import React, { useRef, useEffect, useMemo, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useCodeStore } from "@/lib/store/codeStore";
 import { monacoModelManager } from "@/lib/monacoModelManager";
 import { getSocket } from "@/lib/socket";
-import { getFileIcon } from "./FileTreeItem";
-import { Users, Lock, Loader2, Sparkles, Copy, Check, ChevronRight } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { EditorBreadcrumbs } from "./EditorBreadcrumbs";
+import { Sparkles, Loader2, Code2, Search, Command, Terminal } from "lucide-react";
 
 export function CodeEditor() {
   const {
@@ -15,37 +14,25 @@ export function CodeEditor() {
     activeTabId,
     openTabs,
     saveActiveFile,
-    isSaving,
     isLoadingFile,
     permission,
-    collaborators,
+    ideSettings,
     setCommandPaletteOpen,
     setQuickOpenOpen,
     toggleTerminal,
     setActiveActivityBarView,
+    setProblems,
+    setCursorPosition,
   } = useCodeStore();
 
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const [copied, setCopied] = React.useState(false);
 
   // Active tab metadata
   const activeTab = useMemo(
     () => openTabs.find((t) => t.id === activeTabId),
     [openTabs, activeTabId]
   );
-
-  // Calculate collaborators active on current file
-  const activeFileCollabs = useMemo(() => {
-    if (!activeTabId) return [];
-    return collaborators.filter((c) => c.activeFile === activeTabId);
-  }, [collaborators, activeTabId]);
-
-  // Breadcrumb path segments
-  const breadcrumbSegments = useMemo(() => {
-    if (!activeTabId) return [];
-    return activeTabId.split("/");
-  }, [activeTabId]);
 
   // Broadcast current active file presence
   useEffect(() => {
@@ -57,6 +44,29 @@ export function CodeEditor() {
       });
     }
   }, [projectId, activeTabId]);
+
+  // Sync diagnostic markers from Monaco model to store
+  const syncMarkers = useCallback(() => {
+    if (!monacoRef.current || !activeTabId) return;
+    try {
+      const markers = monacoRef.current.editor.getModelMarkers({
+        resource: monacoModelManager.getModelUri(monacoRef.current, projectId || "proj", activeTabId),
+      });
+
+      const parsedProblems = markers.map((m: any, idx: number) => ({
+        id: `${activeTabId}-${m.startLineNumber}-${m.startColumn}-${idx}`,
+        file: activeTabId,
+        message: m.message,
+        severity: (m.severity === 8 ? "error" : m.severity === 4 ? "warning" : "info") as any,
+        startLineNumber: m.startLineNumber,
+        startColumn: m.startColumn,
+        endLineNumber: m.endLineNumber,
+        endColumn: m.endColumn,
+      }));
+
+      setProblems(parsedProblems);
+    } catch {}
+  }, [activeTabId, projectId, setProblems]);
 
   // Handle Monaco Mount
   const handleEditorDidMount = (editor: any, monaco: Monaco) => {
@@ -77,19 +87,24 @@ export function CodeEditor() {
         { token: "function", foreground: "60a5fa" },
         { token: "variable", foreground: "f1f5f9" },
         { token: "constant", foreground: "fb923c" },
+        { token: "delimiter", foreground: "94a3b8" },
       ],
       colors: {
         "editor.background": "#080c1e",
         "editor.foreground": "#e2e8f0",
-        "editor.lineHighlightBackground": "#ffffff08",
+        "editor.lineHighlightBackground": "#ffffff06",
         "editorCursor.foreground": "#a855f7",
-        "editorWhitespace.foreground": "#ffffff15",
-        "editorIndentGuide.background": "#ffffff10",
-        "editorIndentGuide.activeBackground": "#a855f740",
+        "editorWhitespace.foreground": "#ffffff12",
+        "editorIndentGuide.background": "#ffffff0a",
+        "editorIndentGuide.activeBackground": "#a855f744",
         "editorLineNumber.foreground": "#475569",
-        "editorLineNumber.activeForeground": "#a855f7",
+        "editorLineNumber.activeForeground": "#c084fc",
         "editor.selectionBackground": "#8b5cf633",
-        "editor.inactiveSelectionBackground": "#8b5cf61a",
+        "editor.inactiveSelectionBackground": "#8b5cf618",
+        "minimap.background": "#080c1e",
+        "scrollbarSlider.background": "#ffffff10",
+        "scrollbarSlider.hoverBackground": "#ffffff20",
+        "scrollbarSlider.activeBackground": "#a855f750",
       },
     });
 
@@ -103,6 +118,7 @@ export function CodeEditor() {
         activeTabId,
         activeTab?.content || ""
       );
+
       editor.setModel(model);
       monacoModelManager.getOrCreateCollaboration(
         monaco,
@@ -112,6 +128,29 @@ export function CodeEditor() {
         activeTab?.content
       );
     }
+
+    // Register Cursor Position change listener
+    editor.onDidChangeCursorPosition((e: any) => {
+      const selection = editor.getSelection();
+      let selectionCount = 0;
+      if (selection && !selection.isEmpty()) {
+        const model = editor.getModel();
+        if (model) {
+          selectionCount = model.getValueInRange(selection).length;
+        }
+      }
+
+      setCursorPosition({
+        line: e.position.lineNumber,
+        column: e.position.column,
+        selectionCount: selectionCount > 0 ? selectionCount : undefined,
+      });
+    });
+
+    // Listen for diagnostic marker changes
+    monaco.editor.onDidChangeMarkers(() => {
+      syncMarkers();
+    });
 
     // Register IDE Global Keybindings inside Monaco Editor
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -139,6 +178,10 @@ export function CodeEditor() {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backquote, () => {
       toggleTerminal();
     });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB, () => {
+      setActiveActivityBarView("explorer");
+    });
   };
 
   // Switch Monaco canonical model cleanly when active tab changes (only on activeTabId/projectId change)
@@ -162,16 +205,28 @@ export function CodeEditor() {
         activeTabId,
         activeTab?.content
       );
-    }
-  }, [activeTabId, projectId]);
 
-  const handleCopyPath = () => {
-    if (!activeTabId) return;
-    navigator.clipboard.writeText(activeTabId);
-    setCopied(true);
-    toast.success(`Copied path: ${activeTabId}`);
-    setTimeout(() => setCopied(false), 1500);
-  };
+      syncMarkers();
+    }
+  }, [activeTabId, projectId, syncMarkers]);
+
+  // Update editor options when user changes ideSettings
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.updateOptions({
+        fontSize: ideSettings.fontSize,
+        tabSize: ideSettings.tabSize,
+        fontFamily: ideSettings.fontFamily,
+        wordWrap: ideSettings.wordWrap,
+        minimap: { enabled: ideSettings.minimap, side: "right", scale: 1 },
+        lineNumbers: ideSettings.lineNumbers,
+        bracketPairColorization: { enabled: ideSettings.bracketPairColorization },
+        cursorStyle: ideSettings.cursorStyle,
+        cursorBlinking: ideSettings.cursorBlinking,
+        smoothScrolling: ideSettings.smoothScrolling,
+      });
+    }
+  }, [ideSettings]);
 
   if (isLoadingFile) {
     return (
@@ -185,17 +240,17 @@ export function CodeEditor() {
   if (!activeTabId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-[#080c1e] text-slate-500 p-6 select-none">
-        <div className="w-14 h-14 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mb-4 text-violet-400 shadow-inner">
-          <Sparkles className="w-7 h-7" />
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-violet-600/20 to-purple-600/10 border border-violet-500/20 flex items-center justify-center mb-4 text-violet-400 shadow-inner">
+          <Code2 className="w-7 h-7" />
         </div>
         <h3 className="text-sm font-semibold text-slate-300 mb-1">
           No File Open
         </h3>
-        <p className="text-xs text-slate-500 text-center max-w-sm mb-4">
-          Select a file from the explorer on the left, or use shortcuts to search.
+        <p className="text-xs text-slate-500 text-center max-w-sm mb-5">
+          Select a file from the explorer on the left, or use shortcuts to search workspace.
         </p>
 
-        <div className="flex flex-col gap-2 text-[11px] font-mono text-slate-400">
+        <div className="flex flex-col gap-2 text-[11px] font-mono text-slate-400 w-64">
           <div className="flex items-center justify-between gap-6 px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
             <span>Quick Open</span>
             <kbd className="px-1.5 py-0.5 rounded bg-white/[0.06] text-violet-300">
@@ -226,76 +281,11 @@ export function CodeEditor() {
   }
 
   const isReadOnly = permission === "VIEW";
-  const ext = activeTabId.split(".").pop();
-  const fileName = breadcrumbSegments[breadcrumbSegments.length - 1];
 
   return (
     <div className="relative flex-1 h-full w-full flex flex-col overflow-hidden bg-[#080c1e]">
       {/* ── Top Breadcrumbs Strip ── */}
-      <div className="h-7 px-3 bg-[#070b1c] border-b border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-slate-400 flex-shrink-0 z-10 select-none">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {getFileIcon(ext, fileName)}
-          <div className="flex items-center gap-1 overflow-hidden truncate">
-            {breadcrumbSegments.map((segment, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />}
-                <span
-                  className={
-                    idx === breadcrumbSegments.length - 1
-                      ? "text-slate-200 font-semibold"
-                      : "text-slate-500 hover:text-slate-300 transition-colors"
-                  }
-                >
-                  {segment}
-                </span>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-
-        {/* Action button: Copy Path */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCopyPath}
-            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-colors cursor-pointer"
-            title="Copy Relative Path"
-          >
-            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Top Right Editor Banner / Presence Badges ── */}
-      <div className="absolute top-9 right-4 z-20 flex items-center gap-2 pointer-events-none">
-        {/* Read Only Badge */}
-        {isReadOnly && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium shadow-lg backdrop-blur-md">
-            <Lock className="w-3 h-3" />
-            <span>Read Only Mode</span>
-          </div>
-        )}
-
-        {/* Live Collaborators Pill */}
-        {activeFileCollabs.length > 0 && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-950/80 border border-violet-500/40 text-violet-200 text-[11px] font-medium shadow-lg backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <Users className="w-3 h-3" />
-            <span>
-              {activeFileCollabs.length}{" "}
-              {activeFileCollabs.length === 1 ? "collaborator" : "collaborators"}
-            </span>
-          </div>
-        )}
-
-        {/* Saving Indicator */}
-        {isSaving && (
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-900/80 border border-white/[0.1] text-slate-300 text-[11px] font-mono shadow-lg backdrop-blur-md">
-            <Loader2 className="w-3 h-3 animate-spin text-violet-400" />
-            <span>Saving...</span>
-          </div>
-        )}
-      </div>
+      <EditorBreadcrumbs />
 
       {/* ── Monaco Editor Instance ── */}
       <div className="flex-1 w-full h-full min-h-0 overflow-hidden relative">
@@ -305,25 +295,25 @@ export function CodeEditor() {
           theme="sprintforge-dark"
           options={{
             readOnly: isReadOnly,
-            fontSize: 13,
-            fontFamily:
-              "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+            fontSize: ideSettings.fontSize,
+            fontFamily: ideSettings.fontFamily,
             fontLigatures: true,
-            tabSize: 2,
-            minimap: { enabled: true, side: "right", scale: 1 },
+            tabSize: ideSettings.tabSize,
+            minimap: { enabled: ideSettings.minimap, side: "right", scale: 1 },
             scrollBeyondLastLine: false,
-            smoothScrolling: true,
-            cursorBlinking: "smooth",
+            smoothScrolling: ideSettings.smoothScrolling,
+            cursorBlinking: ideSettings.cursorBlinking,
+            cursorStyle: ideSettings.cursorStyle,
             cursorSmoothCaretAnimation: "on",
             renderWhitespace: "selection",
-            lineNumbers: "on",
+            lineNumbers: ideSettings.lineNumbers,
             lineNumbersMinChars: 3,
             glyphMargin: true,
             automaticLayout: true,
             folding: true,
-            bracketPairColorization: { enabled: true },
+            bracketPairColorization: { enabled: ideSettings.bracketPairColorization },
             guides: { bracketPairs: true, indentation: true },
-            wordWrap: "on",
+            wordWrap: ideSettings.wordWrap,
             padding: { top: 8, bottom: 12 },
           }}
           onMount={handleEditorDidMount}

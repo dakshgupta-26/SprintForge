@@ -4,10 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useCodeStore } from "@/lib/store/codeStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { getSocket } from "@/lib/socket";
+import { CodeTopBar } from "./CodeTopBar";
 import { ActivityBar } from "./ActivityBar";
 import { FileExplorer } from "./FileExplorer";
 import { SourceControlPanel } from "./SourceControlPanel";
 import { SearchPanel } from "./SearchPanel";
+import { ProblemsPanel } from "./ProblemsPanel";
+import { RunDebugPanel } from "./RunDebugPanel";
 import { CollaborationPanel } from "./CollaborationPanel";
 import { CodeActivityPanel } from "./CodeActivityPanel";
 import { EditorTabs } from "./EditorTabs";
@@ -19,6 +22,7 @@ import { CodeCommandPalette } from "./CodeCommandPalette";
 import { QuickOpenModal } from "./QuickOpenModal";
 import { GitHubConnectModal } from "./GitHubConnectModal";
 import { CodePermissionsModal } from "./CodePermissionsModal";
+import { CodeSettingsModal } from "./CodeSettingsModal";
 import { CodeErrorBoundary } from "./CodeErrorBoundary";
 import { CodeWorkspaceSkeleton } from "./CodeWorkspaceSkeleton";
 import { cn } from "@/lib/utils";
@@ -148,7 +152,7 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + S -> Save
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         saveActiveFile();
       }
@@ -166,6 +170,16 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
       else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setActiveActivityBarView("search");
+      }
+      // Ctrl/Cmd + Shift + E -> Explorer
+      else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        setActiveActivityBarView("explorer");
+      }
+      // Ctrl/Cmd + Shift + G -> Source Control
+      else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        setActiveActivityBarView("git");
       }
       // Ctrl/Cmd + ` -> Toggle Terminal
       else if ((e.ctrlKey || e.metaKey) && e.key === "`") {
@@ -189,8 +203,12 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
     e.preventDefault();
     setIsResizing(true);
 
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(180, Math.min(480, moveEvent.clientX - 50));
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(180, Math.min(480, startWidth + delta));
       setSidebarWidth(newWidth);
     };
 
@@ -216,11 +234,14 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
   return (
     <CodeErrorBoundary
       componentName="SprintForge Code Workspace"
-      fallbackTitle="Code Workspace encountered an error"
+      fallbackTitle="Code Workspace encountered an unexpected error"
       onReset={() => initWorkspace(projectId)}
     >
-      <div className="w-full h-[calc(100vh-80px)] flex flex-col bg-[#070a18] overflow-hidden select-none">
-        {/* ── Main Workspace Body (ActivityBar + Sidebar + Editor + Terminal) ── */}
+      <div className="w-full h-[calc(100vh-80px)] flex flex-col bg-[#070a14] overflow-hidden select-none">
+        {/* ── 1. Top IDE Bar ── */}
+        <CodeTopBar />
+
+        {/* ── 2. Main Workspace Body (ActivityBar + Sidebar + Editor + Terminal) ── */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* 1. Activity Bar */}
           <ActivityBar />
@@ -228,12 +249,14 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
           {/* 2. Resizable Sidebar Panel */}
           <div
             style={{ width: `${sidebarWidth}px` }}
-            className="h-full flex-shrink-0 flex flex-col border-r border-white/[0.08] bg-[#070a18] overflow-hidden"
+            className="h-full flex-shrink-0 flex flex-col border-r border-white/[0.08] bg-[#070a14] overflow-hidden"
           >
             <CodeErrorBoundary componentName="Sidebar Activity Panel">
               {activeActivityBarView === "explorer" && <FileExplorer />}
               {activeActivityBarView === "git" && <SourceControlPanel />}
               {activeActivityBarView === "search" && <SearchPanel />}
+              {activeActivityBarView === "problems" && <ProblemsPanel />}
+              {activeActivityBarView === "debug" && <RunDebugPanel />}
               {activeActivityBarView === "collab" && <CollaborationPanel />}
               {activeActivityBarView === "activity" && <CodeActivityPanel />}
             </CodeErrorBoundary>
@@ -243,12 +266,12 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
           <div
             onMouseDown={handleMouseDown}
             className={cn(
-              "w-1 h-full cursor-col-resize hover:bg-violet-500/60 transition-colors z-10",
+              "w-1 h-full cursor-col-resize hover:bg-violet-500/80 transition-colors z-10",
               isResizing && "bg-violet-500"
             )}
           />
 
-          {/* 3. Main Center Area (Tabs + Editor / Diff + Terminal) */}
+          {/* 3. Main Center Area (Tabs + Editor / Diff + Integrated Bottom Panel) */}
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#080c1e]">
             {/* Tabs Bar */}
             <CodeErrorBoundary componentName="Editor Tabs Strip">
@@ -262,21 +285,22 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
               </CodeErrorBoundary>
             </div>
 
-            {/* Bottom Terminal Panel */}
-            <CodeErrorBoundary componentName="Integrated Terminal">
+            {/* Bottom Panel (Problems, Output, Terminal, Debug Console) */}
+            <CodeErrorBoundary componentName="Integrated Bottom Panel">
               <TerminalPanel />
             </CodeErrorBoundary>
           </div>
         </div>
 
-        {/* ── Bottom Status Bar ── */}
+        {/* ── 3. Bottom Status Bar ── */}
         <StatusBar />
 
-        {/* ── Modals ── */}
+        {/* ── 4. Modals ── */}
         <CodeCommandPalette />
         <QuickOpenModal />
         <GitHubConnectModal />
         <CodePermissionsModal />
+        <CodeSettingsModal />
       </div>
     </CodeErrorBoundary>
   );

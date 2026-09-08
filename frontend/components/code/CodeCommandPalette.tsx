@@ -15,7 +15,11 @@ import {
   RotateCw,
   X,
   FileCode,
-  ArrowRight,
+  Play,
+  Bug,
+  AlertCircle,
+  Settings,
+  ShieldCheck,
 } from "lucide-react";
 import { useCodeStore } from "@/lib/store/codeStore";
 import { cn } from "@/lib/utils";
@@ -30,11 +34,13 @@ export function CodeCommandPalette() {
     setQuickOpenOpen,
     setGithubModalOpen,
     setPermissionsModalOpen,
+    setSettingsModalOpen,
+    setRunDebugModalOpen,
+    setBottomPanelTab,
     gitPull,
     gitPush,
     loadFileTree,
     loadGitStatus,
-    openTabs,
     closeTab,
     activeTabId,
     permission,
@@ -98,7 +104,7 @@ export function CodeCommandPalette() {
     },
     {
       id: "toggle-terminal",
-      title: "View: Toggle Terminal",
+      title: "View: Toggle Integrated Terminal",
       category: "View",
       icon: Terminal,
       shortcut: "Ctrl+`",
@@ -109,9 +115,10 @@ export function CodeCommandPalette() {
     },
     {
       id: "view-explorer",
-      title: "View: Show File Explorer",
+      title: "View: Focus File Explorer",
       category: "View",
       icon: FileCode,
+      shortcut: "Ctrl+Shift+E",
       action: () => {
         setActiveActivityBarView("explorer");
         setCommandPaletteOpen(false);
@@ -119,9 +126,10 @@ export function CodeCommandPalette() {
     },
     {
       id: "view-git",
-      title: "View: Show Source Control",
+      title: "View: Focus Source Control",
       category: "View",
       icon: GitBranch,
+      shortcut: "Ctrl+Shift+G",
       action: () => {
         setActiveActivityBarView("git");
         setCommandPaletteOpen(false);
@@ -129,11 +137,32 @@ export function CodeCommandPalette() {
     },
     {
       id: "view-search",
-      title: "View: Show Project Search",
+      title: "View: Search Across Files",
       category: "View",
       icon: Search,
+      shortcut: "Ctrl+Shift+F",
       action: () => {
         setActiveActivityBarView("search");
+        setCommandPaletteOpen(false);
+      },
+    },
+    {
+      id: "view-problems",
+      title: "View: Show Problems & Diagnostics",
+      category: "View",
+      icon: AlertCircle,
+      action: () => {
+        setBottomPanelTab("problems");
+        setCommandPaletteOpen(false);
+      },
+    },
+    {
+      id: "view-debug",
+      title: "Run: Run & Debug Configurations",
+      category: "Run",
+      icon: Play,
+      action: () => {
+        setRunDebugModalOpen(true);
         setCommandPaletteOpen(false);
       },
     },
@@ -179,10 +208,20 @@ export function CodeCommandPalette() {
       },
     },
     {
+      id: "ide-settings",
+      title: "Preferences: Open Editor & IDE Settings...",
+      category: "Preferences",
+      icon: Settings,
+      action: () => {
+        setCommandPaletteOpen(false);
+        setSettingsModalOpen(true);
+      },
+    },
+    {
       id: "manage-permissions",
-      title: "Security: Manage Code Permissions...",
+      title: "Security: Manage Code Workspace Permissions...",
       category: "Security",
-      icon: Command,
+      icon: ShieldCheck,
       action: () => {
         setCommandPaletteOpen(false);
         setPermissionsModalOpen(true);
@@ -228,7 +267,7 @@ export function CodeCommandPalette() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] p-4 bg-black/60 backdrop-blur-xs">
       <div
         className="w-full max-w-xl bg-[#090d20] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[60vh] select-none"
         onClick={(e) => e.stopPropagation()}
@@ -246,7 +285,7 @@ export function CodeCommandPalette() {
             }}
             onKeyDown={handleKeyDown}
             placeholder="Type a command or search..."
-            className="w-full bg-transparent text-white placeholder:text-slate-500 text-xs focus:outline-none"
+            className="w-full bg-transparent text-white placeholder:text-slate-500 text-xs focus:outline-none font-sans"
           />
           <kbd className="text-[10px] font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5">
             ESC
@@ -271,7 +310,7 @@ export function CodeCommandPalette() {
                   onClick={cmd.action}
                   onMouseEnter={() => setSelectedIndex(index)}
                   className={cn(
-                    "w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-colors cursor-pointer text-xs",
+                    "w-full flex items-center justify-between p-2 rounded-xl text-left transition-colors cursor-pointer text-xs",
                     isSelected
                       ? "bg-violet-600/20 border border-violet-500/40 text-white font-semibold"
                       : "text-slate-300 hover:bg-white/[0.04] border border-transparent"

@@ -11,7 +11,6 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Key,
 } from "lucide-react";
 import { GitHubIcon } from "@/components/shared/GitHubIcon";
@@ -108,7 +107,7 @@ export function GitHubConnectModal() {
     setCloneStage("Authenticating repository access...");
 
     try {
-      setCloneStage("Cloning repository from GitHub...");
+      setCloneStage("Cloning repository files into workspace...");
       await codeAPI.cloneGitHubRepo(projectId, {
         repoUrl: repo.cloneUrl || repo.htmlUrl,
         repoName: repo.name,
@@ -120,11 +119,11 @@ export function GitHubConnectModal() {
       setCloneStage("Indexing workspace files...");
       await initWorkspace(projectId);
 
-      setCloneStage("Ready!");
+      setCloneStage("Workspace ready!");
       setTimeout(() => {
         setCloning(false);
         setGithubModalOpen(false);
-      }, 600);
+      }, 500);
     } catch (err: any) {
       setCloning(false);
       setErrorMessage(err.response?.data?.message || "Failed to clone repository.");
@@ -144,7 +143,7 @@ export function GitHubConnectModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none text-xs">
       <div
         className="w-full max-w-2xl bg-[#090d20] border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
@@ -159,8 +158,8 @@ export function GitHubConnectModal() {
               <h3 className="text-sm font-semibold text-white">
                 Connect GitHub Repository
               </h3>
-              <p className="text-xs text-slate-400">
-                Import and synchronize Git repositories with SprintForge
+              <p className="text-[11px] text-slate-400">
+                Import and synchronize public or private Git repositories
               </p>
             </div>
           </div>
@@ -256,14 +255,14 @@ export function GitHubConnectModal() {
                       <button
                         type="button"
                         onClick={() => setActiveTab("connect")}
-                        className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-colors"
+                        className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-colors cursor-pointer"
                       >
                         Connect GitHub Account
                       </button>
                       <button
                         type="button"
                         onClick={() => setActiveTab("url")}
-                        className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 font-semibold text-xs transition-colors"
+                        className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 font-semibold text-xs transition-colors cursor-pointer"
                       >
                         Paste Public URL
                       </button>
@@ -407,7 +406,7 @@ export function GitHubConnectModal() {
                       <button
                         type="button"
                         onClick={handleDisconnect}
-                        className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 text-xs font-medium transition-colors"
+                        className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 text-xs font-medium transition-colors cursor-pointer"
                       >
                         Disconnect
                       </button>
@@ -430,7 +429,7 @@ export function GitHubConnectModal() {
                       <button
                         type="button"
                         onClick={handleConnectOAuth}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-colors cursor-pointer"
                       >
                         <GitHubIcon className="w-4 h-4" />
                         <span>Authorize with GitHub</span>
@@ -457,7 +456,7 @@ export function GitHubConnectModal() {
                         type="button"
                         onClick={handleConnectToken}
                         disabled={!patToken.trim() || loading}
-                        className="px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] text-white font-semibold text-xs transition-colors disabled:opacity-40"
+                        className="px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] text-white font-semibold text-xs transition-colors disabled:opacity-40 cursor-pointer"
                       >
                         Save & Connect Token
                       </button>

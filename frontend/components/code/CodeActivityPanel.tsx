@@ -64,12 +64,12 @@ export function CodeActivityPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300">
+    <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300 text-xs">
       {/* ── Top Header ── */}
-      <div className="h-10 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a18]">
-        <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-violet-400" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
+      <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a18]">
+        <div className="flex items-center gap-1.5">
+          <History className="w-3.5 h-3.5 text-violet-400" />
+          <span className="font-mono font-bold uppercase text-[11px] text-slate-300">
             Activity & Audit
           </span>
         </div>
@@ -77,7 +77,7 @@ export function CodeActivityPanel() {
         <button
           type="button"
           onClick={loadActivities}
-          className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+          className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           title="Refresh Activity"
         >
           <RotateCw className={cn("w-3.5 h-3.5", loading && "animate-spin text-violet-400")} />
@@ -85,14 +85,14 @@ export function CodeActivityPanel() {
       </div>
 
       {/* ── Filter Tabs ── */}
-      <div className="p-2 border-b border-white/[0.06] flex items-center gap-1 overflow-x-auto scrollbar-none text-[10px] font-mono">
+      <div className="p-1.5 border-b border-white/[0.06] flex items-center gap-1 overflow-x-auto scrollbar-none text-[10px] font-mono">
         {["all", "modified", "committed", "pushed", "created"].map((f) => (
           <button
             key={f}
             type="button"
             onClick={() => setFilterAction(f)}
             className={cn(
-              "px-2 py-1 rounded-md uppercase font-bold transition-colors cursor-pointer",
+              "px-2 py-0.5 rounded uppercase font-bold transition-colors cursor-pointer",
               filterAction === f
                 ? "bg-violet-600/30 text-violet-300 border border-violet-500/40"
                 : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
@@ -104,7 +104,7 @@ export function CodeActivityPanel() {
       </div>
 
       {/* ── Activities Timeline ── */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin">
         {activities.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">
             <Clock className="w-5 h-5 text-slate-600 mx-auto mb-1" />
@@ -120,7 +120,7 @@ export function CodeActivityPanel() {
             return (
               <div
                 key={act._id}
-                className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-colors text-xs space-y-1.5"
+                className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-colors text-xs space-y-1"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
@@ -142,7 +142,7 @@ export function CodeActivityPanel() {
                   <button
                     type="button"
                     onClick={() => openFile(act.file)}
-                    className="flex items-center gap-1 text-[10px] font-mono text-violet-400 hover:underline pt-0.5"
+                    className="flex items-center gap-1 text-[10px] font-mono text-violet-400 hover:underline pt-0.5 cursor-pointer"
                   >
                     <FileCode className="w-3 h-3" />
                     <span className="truncate">{act.file}</span>

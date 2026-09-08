@@ -66,7 +66,9 @@ export class MonacoYjsCollaboration {
     if (this._isDestroyed) return;
     this.editor = newEditor;
     if (this.cursorDecorationsCollection) {
-      this.cursorDecorationsCollection.clear();
+      try {
+        this.cursorDecorationsCollection.clear();
+      } catch {}
       this.cursorDecorationsCollection = null;
     }
     this.renderRemoteCursors();
@@ -76,7 +78,7 @@ export class MonacoYjsCollaboration {
     const socket = getSocket();
     if (!socket) return;
 
-    // 1. Join file collaboration room with current (empty) state vector
+    // 1. Join file collaboration room with current state vector
     const joinFileRoom = () => {
       if (!socket.connected) return;
       const stateVector = Y.encodeStateVector(this.doc);
@@ -103,13 +105,16 @@ export class MonacoYjsCollaboration {
     }) => {
       if (
         data.projectId === this.projectId &&
-        data.filePath === this.filePath
+        data.filePath === this.filePath &&
+        !this._isDestroyed
       ) {
         this.isApplyingRemoteUpdate = true;
         try {
-          Y.applyUpdate(this.doc, new Uint8Array(data.update), "server-sync");
+          if (data.update && data.update.length > 0) {
+            Y.applyUpdate(this.doc, new Uint8Array(data.update), "server-sync");
+          }
 
-          // If the server had an empty doc and client has initial content, populate once
+          // If the server doc was completely empty and client has initial content, populate Yjs doc
           if (
             this.yText.length === 0 &&
             initialContent &&
@@ -119,10 +124,12 @@ export class MonacoYjsCollaboration {
               this.yText.insert(0, initialContent);
             }, "local");
           } else if (this.model && !this.model.isDisposed()) {
-            const currentText = this.yText.toString();
-            if (this.model.getValue() !== currentText) {
+            const authoritativeText = this.yText.toString();
+            if (this.model.getValue() !== authoritativeText) {
               const fullRange = this.model.getFullModelRange();
-              this.model.applyEdits([{ range: fullRange, text: currentText }]);
+              this.model.applyEdits([
+                { range: fullRange, text: authoritativeText },
+              ]);
             }
           }
         } finally {
@@ -140,7 +147,8 @@ export class MonacoYjsCollaboration {
     }) => {
       if (
         data.projectId === this.projectId &&
-        data.filePath === this.filePath
+        data.filePath === this.filePath &&
+        !this._isDestroyed
       ) {
         if (data.senderSocketId === socket.id) return;
         this.isApplyingRemoteUpdate = true;
@@ -156,7 +164,11 @@ export class MonacoYjsCollaboration {
     const handleAwarenessUpdate = (
       info: RemoteCursorInfo & { filePath: string }
     ) => {
-      if (info.filePath === this.filePath && info.socketId !== socket.id) {
+      if (
+        info.filePath === this.filePath &&
+        info.socketId !== socket.id &&
+        !this._isDestroyed
+      ) {
         this.remoteCursors.set(info.socketId, info);
         this.renderRemoteCursors();
       }
@@ -169,7 +181,8 @@ export class MonacoYjsCollaboration {
     }) => {
       if (
         data.filePath === this.filePath &&
-        this.remoteCursors.has(data.socketId)
+        this.remoteCursors.has(data.socketId) &&
+        !this._isDestroyed
       ) {
         this.remoteCursors.delete(data.socketId);
         this.renderRemoteCursors();
@@ -283,7 +296,7 @@ export class MonacoYjsCollaboration {
 
     // C. Yjs Local Updates -> Binary Delta Broadcast over WebSocket
     const docUpdateListener = (update: Uint8Array, origin: any) => {
-      if (origin === "local" && socket?.connected) {
+      if (origin === "local" && socket?.connected && !this._isDestroyed) {
         socket.emit("code:doc:update", {
           projectId: this.projectId,
           filePath: this.filePath,
@@ -309,7 +322,7 @@ export class MonacoYjsCollaboration {
     let cursorDebounce: any = null;
     const cursorListener = this.editor.onDidChangeCursorPosition((e: any) => {
       // Only broadcast if the editor is currently displaying this file's model
-      if (this.editor.getModel() !== this.model) return;
+      if (this.editor.getModel() !== this.model || this._isDestroyed) return;
 
       if (cursorDebounce) clearTimeout(cursorDebounce);
       cursorDebounce = setTimeout(() => {
@@ -442,7 +455,9 @@ export class MonacoYjsCollaboration {
     this.monacoBindingDisposables.forEach((d) => d.dispose?.());
     this.monacoBindingDisposables = [];
     if (this.cursorDecorationsCollection) {
-      this.cursorDecorationsCollection.clear();
+      try {
+        this.cursorDecorationsCollection.clear();
+      } catch {}
       this.cursorDecorationsCollection = null;
     }
     this.doc.destroy();

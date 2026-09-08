@@ -4,24 +4,24 @@ import React from "react";
 import { Users, Shield, FileCode, ExternalLink, Sparkles, Circle } from "lucide-react";
 import { useCodeStore, CodeCollaborator } from "@/lib/store/codeStore";
 import { useAuthStore } from "@/lib/store/authStore";
-import { cn, generateAvatar } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export function CollaborationPanel() {
   const { collaborators, openFile, permission } = useCodeStore();
   const { user } = useAuthStore();
 
   return (
-    <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300">
+    <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300 text-xs">
       {/* ── Top Header ── */}
-      <div className="h-10 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a18]">
-        <div className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-violet-400" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
+      <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[#070a18]">
+        <div className="flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5 text-violet-400" />
+          <span className="font-mono font-bold uppercase text-[11px] text-slate-300">
             Collaborators ({collaborators.length})
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-600/15 border border-violet-500/30 text-[10px] font-mono text-violet-300 font-bold">
+        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-600/15 border border-violet-500/30 text-[10px] font-mono text-violet-300 font-bold">
           <Shield className="w-3 h-3 text-emerald-400" />
           <span>{permission}</span>
         </div>
@@ -78,7 +78,7 @@ export function CollaborationPanel() {
                         className="text-[10px] font-mono font-medium"
                         style={{ color: collab.color }}
                       >
-                        Active Collaborator
+                        Active Peer
                       </span>
                     </div>
                   </div>
@@ -90,11 +90,11 @@ export function CollaborationPanel() {
                     <button
                       type="button"
                       onClick={() => openFile(collab.activeFile!)}
-                      className="flex items-center gap-1.5 text-slate-400 hover:text-violet-300 transition-colors truncate text-left"
-                      title={`Open ${collab.activeFile}`}
+                      className="flex items-center gap-1.5 text-slate-400 hover:text-violet-300 transition-colors truncate text-left cursor-pointer"
+                      title={`Jump to ${collab.activeFile}`}
                     >
                       <FileCode className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-                      <span className="truncate">{collab.activeFile}</span>
+                      <span className="truncate font-mono">{collab.activeFile}</span>
                       <ExternalLink className="w-3 h-3 flex-shrink-0" />
                     </button>
                   ) : (

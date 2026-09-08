@@ -5,7 +5,7 @@ import { MonacoYjsCollaboration } from "./codeCollaboration";
 /**
  * Production-grade Canonical Monaco Model & Collaboration Lifecycle Manager.
  * Guarantees exactly one Monaco ITextModel per file URI and exactly one
- * collaborative Yjs session per active file across tab switches and re-renders.
+ * collaborative Yjs session per active file across tab switches, scrolls, and re-renders.
  */
 class MonacoModelManager {
   private static instance: MonacoModelManager;
@@ -32,6 +32,10 @@ class MonacoModelManager {
     }
   }
 
+  public getMonaco(): Monaco | null {
+    return this.monacoInstance;
+  }
+
   public getModelUri(monaco: Monaco | null, projectId: string, filePath: string): any {
     const effectiveMonaco = monaco || this.monacoInstance;
     const normPath = filePath.replace(/\\/g, "/").replace(/^\/+/, "");
@@ -45,7 +49,7 @@ class MonacoModelManager {
   public getModel(projectId: string, filePath: string): any | null {
     const normPath = filePath.replace(/\\/g, "/").replace(/^\/+/, "");
     const uriKey = `sprintforge://${projectId}/${normPath}`;
-    
+
     // Check cached model
     const model = this.models.get(uriKey);
     if (model && !model.isDisposed()) {

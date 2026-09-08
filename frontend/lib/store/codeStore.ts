@@ -72,13 +72,60 @@ export interface TerminalTab {
   isActive: boolean;
 }
 
+export interface CodeProblem {
+  id: string;
+  file: string;
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+}
+
+export interface IDESettings {
+  fontSize: number;
+  tabSize: number;
+  fontFamily: string;
+  wordWrap: 'on' | 'off' | 'wordWrapColumn' | 'bounded';
+  minimap: boolean;
+  lineNumbers: 'on' | 'off' | 'relative';
+  bracketPairColorization: boolean;
+  formatOnSave: boolean;
+  cursorStyle: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
+  cursorBlinking: 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
+  smoothScrolling: boolean;
+  autoSave: 'off' | 'afterDelay' | 'onFocusChange';
+  autoSaveDelay: number;
+}
+
+export const DEFAULT_IDE_SETTINGS: IDESettings = {
+  fontSize: 13,
+  tabSize: 2,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace",
+  wordWrap: 'on',
+  minimap: true,
+  lineNumbers: 'on',
+  bracketPairColorization: true,
+  formatOnSave: true,
+  cursorStyle: 'line',
+  cursorBlinking: 'smooth',
+  smoothScrolling: true,
+  autoSave: 'off',
+  autoSaveDelay: 1000,
+};
+
 export type ActivityBarView =
   | 'explorer'
   | 'git'
   | 'search'
+  | 'problems'
+  | 'debug'
   | 'collab'
   | 'activity'
   | 'settings';
+
+export type BottomPanelTab = 'problems' | 'output' | 'terminal' | 'debug';
 
 interface CodeState {
   projectId: string | null;
@@ -89,6 +136,7 @@ interface CodeState {
   fileTree: FileTreeItem[];
   expandedFolders: Set<string>;
   openTabs: CodeTab[];
+  closedTabsHistory: CodeTab[];
   activeTabId: string | null;
   activeFileContent: string;
   isLoadingFile: boolean;
@@ -109,10 +157,19 @@ interface CodeState {
   collaborators: CodeCollaborator[];
   syncStatus: 'synced' | 'syncing' | 'error' | 'reconnecting';
 
-  // Terminal
+  // Terminal & Bottom Panel
+  bottomPanelOpen: boolean;
+  bottomPanelTab: BottomPanelTab;
   terminalOpen: boolean;
   terminalTabs: TerminalTab[];
   activeTerminalId: string;
+  outputLogs: string[];
+  debugLogs: string[];
+
+  // Editor Diagnostics & Cursor
+  problems: CodeProblem[];
+  cursorPosition: { line: number; column: number; selectionCount?: number };
+  ideSettings: IDESettings;
 
   // Layout & Navigation Modals
   activeActivityBarView: ActivityBarView;
@@ -120,6 +177,8 @@ interface CodeState {
   quickOpenOpen: boolean;
   githubModalOpen: boolean;
   permissionsModalOpen: boolean;
+  settingsModalOpen: boolean;
+  runDebugModalOpen: boolean;
   isSaving: boolean;
   loading: boolean;
   initError: string | null;
@@ -129,10 +188,13 @@ interface CodeState {
   loadFileTree: () => Promise<void>;
   toggleFolder: (folderPath: string) => void;
   expandFolder: (folderPath: string) => void;
-  openFile: (filePath: string) => Promise<void>;
+  collapseAllFolders: () => void;
+  openFile: (filePath: string, jumpToLine?: { line: number; column?: number }) => Promise<void>;
   closeTab: (tabId: string) => void;
   closeOtherTabs: (tabId: string) => void;
+  closeTabsToTheRight: (tabId: string) => void;
   closeAllTabs: () => void;
+  reopenClosedTab: () => void;
   pinTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   markTabDirty: (tabId: string, isDirty?: boolean) => void;
@@ -169,11 +231,22 @@ interface CodeState {
   setCollaborators: (collaborators: CodeCollaborator[]) => void;
   setSyncStatus: (status: 'synced' | 'syncing' | 'error' | 'reconnecting') => void;
 
-  // Terminal actions
+  // Terminal & Bottom Panel Actions
+  toggleBottomPanel: (open?: boolean) => void;
+  setBottomPanelTab: (tab: BottomPanelTab) => void;
   toggleTerminal: (open?: boolean) => void;
   addTerminalTab: () => string;
   closeTerminalTab: (id: string) => void;
   setActiveTerminalTab: (id: string) => void;
+  addOutputLog: (log: string) => void;
+  clearOutputLogs: () => void;
+  addDebugLog: (log: string) => void;
+  clearDebugLogs: () => void;
+
+  // Diagnostics & Cursor
+  setProblems: (problems: CodeProblem[]) => void;
+  setCursorPosition: (pos: { line: number; column: number; selectionCount?: number }) => void;
+  updateIDESettings: (newSettings: Partial<IDESettings>) => void;
 
   // Modals & View
   setActiveActivityBarView: (view: ActivityBarView) => void;
@@ -181,20 +254,28 @@ interface CodeState {
   setQuickOpenOpen: (open: boolean) => void;
   setGithubModalOpen: (open: boolean) => void;
   setPermissionsModalOpen: (open: boolean) => void;
+  setSettingsModalOpen: (open: boolean) => void;
+  setRunDebugModalOpen: (open: boolean) => void;
 }
 
 export const getLanguageFromPath = (filePath: string): string => {
-  const ext = filePath.split('.').pop()?.toLowerCase();
+  const norm = filePath.toLowerCase();
+  const ext = norm.split('.').pop() || '';
+
+  if (norm.endsWith('dockerfile') || norm.endsWith('.dockerignore')) return 'dockerfile';
+  if (norm.endsWith('makefile')) return 'makefile';
+  if (norm.endsWith('.env') || norm.startsWith('.env.')) return 'shell';
+
   switch (ext) {
     case 'ts':
-      return 'typescript';
     case 'tsx':
+    case 'mts':
+    case 'cts':
       return 'typescript';
     case 'js':
+    case 'jsx':
     case 'mjs':
     case 'cjs':
-      return 'javascript';
-    case 'jsx':
       return 'javascript';
     case 'html':
     case 'htm':
@@ -207,13 +288,19 @@ export const getLanguageFromPath = (filePath: string): string => {
     case 'less':
       return 'less';
     case 'json':
+    case 'json5':
+    case 'jsonc':
       return 'json';
     case 'md':
     case 'markdown':
+    case 'mdown':
       return 'markdown';
     case 'py':
+    case 'pyw':
+    case 'python':
       return 'python';
     case 'java':
+    case 'class':
       return 'java';
     case 'c':
     case 'h':
@@ -221,6 +308,7 @@ export const getLanguageFromPath = (filePath: string): string => {
     case 'cpp':
     case 'hpp':
     case 'cc':
+    case 'cxx':
       return 'cpp';
     case 'cs':
       return 'csharp';
@@ -229,6 +317,7 @@ export const getLanguageFromPath = (filePath: string): string => {
     case 'rs':
       return 'rust';
     case 'php':
+    case 'phtml':
       return 'php';
     case 'sql':
       return 'sql';
@@ -242,11 +331,32 @@ export const getLanguageFromPath = (filePath: string): string => {
     case 'xml':
     case 'svg':
       return 'xml';
-    case 'dockerfile':
-      return 'dockerfile';
+    case 'graphql':
+    case 'gql':
+      return 'graphql';
+    case 'lua':
+      return 'lua';
+    case 'rb':
+      return 'ruby';
+    case 'swift':
+      return 'swift';
+    case 'kt':
+    case 'kts':
+      return 'kotlin';
     default:
       return 'plaintext';
   }
+};
+
+const getInitialSettings = (): IDESettings => {
+  if (typeof window === 'undefined') return DEFAULT_IDE_SETTINGS;
+  try {
+    const saved = localStorage.getItem('sprintforge_ide_settings');
+    if (saved) {
+      return { ...DEFAULT_IDE_SETTINGS, ...JSON.parse(saved) };
+    }
+  } catch {}
+  return DEFAULT_IDE_SETTINGS;
 };
 
 export const useCodeStore = create<CodeState>((set, get) => ({
@@ -257,6 +367,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   fileTree: [],
   expandedFolders: new Set(['src']),
   openTabs: [],
+  closedTabsHistory: [],
   activeTabId: null,
   activeFileContent: '',
   isLoadingFile: false,
@@ -274,15 +385,28 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   collaborators: [],
   syncStatus: 'synced',
 
+  bottomPanelOpen: false,
+  bottomPanelTab: 'terminal',
   terminalOpen: false,
   terminalTabs: [{ id: 'term-1', title: 'Terminal 1', isActive: true }],
   activeTerminalId: 'term-1',
+  outputLogs: [
+    '[SprintForge IDE] Workspace environment ready.',
+    '[Language Server] TypeScript / JavaScript compiler service connected.',
+  ],
+  debugLogs: [],
+
+  problems: [],
+  cursorPosition: { line: 1, column: 1 },
+  ideSettings: getInitialSettings(),
 
   activeActivityBarView: 'explorer',
   commandPaletteOpen: false,
   quickOpenOpen: false,
   githubModalOpen: false,
   permissionsModalOpen: false,
+  settingsModalOpen: false,
+  runDebugModalOpen: false,
   isSaving: false,
   loading: true,
   initError: null,
@@ -301,11 +425,16 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       // Load file tree and git status in parallel
       await Promise.all([get().loadFileTree(), get().loadGitStatus(), get().loadGitBranches()]);
 
-      // If README.md or src/index.ts exists, open it automatically
+      // If README.md or src/index.ts exists, open it automatically if no tab is currently open
       const tree = get().fileTree;
-      const initialFile = tree.find((t) => t.path === 'README.md') || tree.find((t) => t.type === 'file');
-      if (initialFile && get().openTabs.length === 0) {
-        await get().openFile(initialFile.path);
+      if (get().openTabs.length === 0) {
+        const initialFile =
+          tree.find((t) => t.path === 'README.md') ||
+          tree.find((t) => t.path === 'src/index.ts' || t.path === 'index.ts') ||
+          tree.find((t) => t.type === 'file');
+        if (initialFile) {
+          await get().openFile(initialFile.path);
+        }
       }
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Init error:', err);
@@ -349,7 +478,11 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     });
   },
 
-  openFile: async (filePath: string) => {
+  collapseAllFolders: () => {
+    set({ expandedFolders: new Set() });
+  },
+
+  openFile: async (filePath: string, jumpToLine?: { line: number; column?: number }) => {
     const { projectId, openTabs } = get();
     if (!projectId || !filePath) return;
 
@@ -372,6 +505,15 @@ export const useCodeStore = create<CodeState>((set, get) => ({
         activeTabId: normalized,
         activeFileContent: existing.content || '',
       });
+
+      if (jumpToLine) {
+        set({
+          cursorPosition: {
+            line: jumpToLine.line,
+            column: jumpToLine.column || 1,
+          },
+        });
+      }
       return;
     }
 
@@ -399,6 +541,9 @@ export const useCodeStore = create<CodeState>((set, get) => ({
           activeTabId: normalized,
           activeFileContent: fileContent,
           isLoadingFile: false,
+          cursorPosition: jumpToLine
+            ? { line: jumpToLine.line, column: jumpToLine.column || 1 }
+            : state.cursorPosition,
         };
       });
     } catch (err: any) {
@@ -409,8 +554,10 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   },
 
   closeTab: (tabId: string) => {
-    const { projectId } = get();
+    const { projectId, openTabs } = get();
     const normalized = normalizePath(tabId);
+    const tabToClose = openTabs.find((t) => t.id === normalized);
+
     if (projectId) {
       monacoModelManager.disposeFile(null, projectId, normalized);
     }
@@ -433,6 +580,9 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
       return {
         openTabs: newTabs,
+        closedTabsHistory: tabToClose
+          ? [tabToClose, ...state.closedTabsHistory.slice(0, 15)]
+          : state.closedTabsHistory,
         activeTabId: nextActiveId,
         activeFileContent: nextActiveTab?.content || '',
       };
@@ -461,6 +611,26 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     });
   },
 
+  closeTabsToTheRight: (tabId: string) => {
+    const { projectId, openTabs } = get();
+    const normalized = normalizePath(tabId);
+    const targetIdx = openTabs.findIndex((t) => t.id === normalized);
+    if (targetIdx === -1) return;
+
+    const toClose = openTabs.slice(targetIdx + 1);
+    if (projectId) {
+      toClose.forEach((t) => monacoModelManager.disposeFile(null, projectId, t.id));
+    }
+
+    const remaining = openTabs.slice(0, targetIdx + 1);
+    const activeIsRemaining = remaining.some((t) => t.id === get().activeTabId);
+
+    set({
+      openTabs: remaining,
+      activeTabId: activeIsRemaining ? get().activeTabId : normalized,
+    });
+  },
+
   closeAllTabs: () => {
     const { projectId } = get();
     if (projectId) {
@@ -471,6 +641,14 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       activeTabId: null,
       activeFileContent: '',
     });
+  },
+
+  reopenClosedTab: () => {
+    const { closedTabsHistory } = get();
+    if (closedTabsHistory.length === 0) return;
+    const [mostRecent, ...rest] = closedTabsHistory;
+    set({ closedTabsHistory: rest });
+    get().openFile(mostRecent.path);
   },
 
   pinTab: (tabId: string) => {
@@ -555,6 +733,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
       // Refresh git status after saving
       get().loadGitStatus();
+      get().addOutputLog(`[Save] File saved: ${activeTabId} (${new Date().toLocaleTimeString()})`);
     } catch {
       set({ isSaving: false });
     }
@@ -581,6 +760,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
       await get().loadFileTree();
       await get().openFile(normalized);
+      get().addOutputLog(`[File] Created file: ${normalized}`);
       return true;
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Create file error:', err);
@@ -609,6 +789,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       });
 
       await get().loadFileTree();
+      get().addOutputLog(`[Folder] Created directory: ${normalized}`);
       return true;
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Create folder error:', err);
@@ -656,6 +837,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
         ),
         activeTabId: state.activeTabId === normOld ? normNew : state.activeTabId,
       }));
+      get().addOutputLog(`[Rename] ${normOld} -> ${normNew}`);
       return true;
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Rename error:', err);
@@ -676,6 +858,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       monacoModelManager.disposeFile(null, projectId, normTarget);
       await get().loadFileTree();
       get().closeTab(normTarget);
+      get().addOutputLog(`[Delete] Removed ${normTarget}`);
       return true;
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Delete error:', err);
@@ -697,6 +880,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       if (data.path) {
         await get().openFile(data.path);
       }
+      get().addOutputLog(`[Duplicate] Copied ${normSource} -> ${data.path}`);
       return true;
     } catch (err: any) {
       console.error('[CODE_WORKSPACE] Duplicate error:', err);
@@ -819,6 +1003,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       await codeAPI.commit(projectId, message, files);
       await Promise.all([get().loadGitStatus(), get().loadGitHistory()]);
       set({ isGitLoading: false });
+      get().addOutputLog(`[Git] Committed: "${message}"`);
       return true;
     } catch {
       set({ isGitLoading: false });
@@ -838,6 +1023,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
         get().loadFileTree(),
       ]);
       set({ isGitLoading: false });
+      get().addOutputLog(`[Git] Switched to branch ${branch}${create ? ' (new)' : ''}`);
       return true;
     } catch {
       set({ isGitLoading: false });
@@ -857,6 +1043,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
         get().loadGitHistory(),
       ]);
       set({ isGitLoading: false });
+      get().addOutputLog('[Git] Pulled changes from origin.');
       return true;
     } catch {
       set({ isGitLoading: false });
@@ -872,6 +1059,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       await codeAPI.gitPush(projectId, branch);
       await get().loadGitStatus();
       set({ isGitLoading: false });
+      get().addOutputLog('[Git] Pushed changes to origin.');
       return true;
     } catch {
       set({ isGitLoading: false });
@@ -887,16 +1075,41 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     set({ syncStatus: status });
   },
 
+  toggleBottomPanel: (open?: boolean) => {
+    set((state) => {
+      const next = open !== undefined ? open : !state.bottomPanelOpen;
+      return {
+        bottomPanelOpen: next,
+        terminalOpen: next,
+      };
+    });
+  },
+
+  setBottomPanelTab: (tab: BottomPanelTab) => {
+    set({
+      bottomPanelTab: tab,
+      bottomPanelOpen: true,
+      terminalOpen: true,
+    });
+  },
+
   toggleTerminal: (open?: boolean) => {
-    set((state) => ({
-      terminalOpen: open !== undefined ? open : !state.terminalOpen,
-    }));
+    set((state) => {
+      const next = open !== undefined ? open : !state.terminalOpen;
+      return {
+        terminalOpen: next,
+        bottomPanelOpen: next,
+        bottomPanelTab: next ? 'terminal' : state.bottomPanelTab,
+      };
+    });
   },
 
   addTerminalTab: () => {
     const id = `term-${Date.now()}`;
     set((state) => ({
+      bottomPanelOpen: true,
       terminalOpen: true,
+      bottomPanelTab: 'terminal',
       terminalTabs: [
         ...state.terminalTabs.map((t) => ({ ...t, isActive: false })),
         { id, title: `Terminal ${state.terminalTabs.length + 1}`, isActive: true },
@@ -913,6 +1126,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
         return {
           terminalTabs: [],
           activeTerminalId: '',
+          bottomPanelOpen: false,
           terminalOpen: false,
         };
       }
@@ -930,6 +1144,42 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     }));
   },
 
+  addOutputLog: (log: string) => {
+    set((state) => ({
+      outputLogs: [...state.outputLogs.slice(-150), log],
+    }));
+  },
+
+  clearOutputLogs: () => set({ outputLogs: [] }),
+
+  addDebugLog: (log: string) => {
+    set((state) => ({
+      debugLogs: [...state.debugLogs.slice(-150), log],
+    }));
+  },
+
+  clearDebugLogs: () => set({ debugLogs: [] }),
+
+  setProblems: (problems: CodeProblem[]) => {
+    set({ problems });
+  },
+
+  setCursorPosition: (pos: { line: number; column: number; selectionCount?: number }) => {
+    set({ cursorPosition: pos });
+  },
+
+  updateIDESettings: (newSettings: Partial<IDESettings>) => {
+    set((state) => {
+      const updated = { ...state.ideSettings, ...newSettings };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sprintforge_ide_settings', JSON.stringify(updated));
+        } catch {}
+      }
+      return { ideSettings: updated };
+    });
+  },
+
   setActiveActivityBarView: (view: ActivityBarView) => {
     set({ activeActivityBarView: view });
   },
@@ -938,4 +1188,6 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   setQuickOpenOpen: (open: boolean) => set({ quickOpenOpen: open }),
   setGithubModalOpen: (open: boolean) => set({ githubModalOpen: open }),
   setPermissionsModalOpen: (open: boolean) => set({ permissionsModalOpen: open }),
+  setSettingsModalOpen: (open: boolean) => set({ settingsModalOpen: open }),
+  setRunDebugModalOpen: (open: boolean) => set({ runDebugModalOpen: open }),
 }));
