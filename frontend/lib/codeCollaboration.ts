@@ -1,5 +1,6 @@
-import * as Y from 'yjs';
-import { getSocket } from './socket';
+import * as Y from "yjs";
+import { getSocket } from "./socket";
+import { useCodeStore } from "./store/codeStore";
 
 export interface RemoteCursorInfo {
   socketId: string;
@@ -17,10 +18,16 @@ export interface RemoteCursorInfo {
   decorationIds?: string[];
 }
 
+/**
+ * Production-grade Yjs CRDT Monaco Collaboration Session.
+ * Manages single-document CRDT state, granular delta synchronization,
+ * multi-user cursor awareness, and strict listener lifecycle cleanup.
+ */
 export class MonacoYjsCollaboration {
   private doc: Y.Doc;
   private yText: Y.Text;
   private monaco: any;
+  private model: any;
   private editor: any;
   private projectId: string;
   private filePath: string;
@@ -28,127 +35,222 @@ export class MonacoYjsCollaboration {
   private monacoBindingDisposables: any[] = [];
   private remoteCursors = new Map<string, RemoteCursorInfo>();
   private cursorDecorationsCollection: any = null;
+  private _isDestroyed = false;
 
   constructor(
     projectId: string,
     filePath: string,
+    model: any,
     editor: any,
     monaco: any,
     initialContent?: string
   ) {
     this.projectId = projectId;
-    this.filePath = filePath.replace(/\\/g, '/');
+    this.filePath = filePath.replace(/\\/g, "/").replace(/^\/+/, "");
+    this.model = model;
     this.editor = editor;
     this.monaco = monaco;
     this.doc = new Y.Doc();
-    this.yText = this.doc.getText('monaco');
+    this.yText = this.doc.getText("monaco");
 
-    if (initialContent && this.yText.length === 0) {
-      this.doc.transact(() => {
-        this.yText.insert(0, initialContent);
-      });
-    }
-
-    this.initSocketEvents();
-    this.bindEditorEvents();
+    this.initSocketEvents(initialContent);
+    this.bindModelEvents();
+    this.bindEditorCursorEvents();
   }
 
-  private initSocketEvents() {
+  public isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  public updateEditor(newEditor: any) {
+    if (this._isDestroyed) return;
+    this.editor = newEditor;
+    if (this.cursorDecorationsCollection) {
+      this.cursorDecorationsCollection.clear();
+      this.cursorDecorationsCollection = null;
+    }
+    this.renderRemoteCursors();
+  }
+
+  private initSocketEvents(initialContent?: string) {
     const socket = getSocket();
     if (!socket) return;
 
-    // Join file collaboration room
-    const stateVector = Y.encodeStateVector(this.doc);
-    socket.emit('code:join:file', {
-      projectId: this.projectId,
-      filePath: this.filePath,
-      clientStateVector: Array.from(stateVector),
-    });
+    // 1. Join file collaboration room with current (empty) state vector
+    const joinFileRoom = () => {
+      if (!socket.connected) return;
+      const stateVector = Y.encodeStateVector(this.doc);
+      socket.emit("code:join:file", {
+        projectId: this.projectId,
+        filePath: this.filePath,
+        clientStateVector: Array.from(stateVector),
+      });
+    };
 
-    // 1. Receive Sync Step 2 diff from server
-    const handleSyncStep2 = (data: { projectId: string; filePath: string; update: number[] }) => {
-      if (data.projectId === this.projectId && data.filePath === this.filePath) {
+    joinFileRoom();
+
+    // Re-join and re-sync on socket reconnect
+    const handleReconnect = () => {
+      joinFileRoom();
+    };
+    socket.on("connect", handleReconnect);
+
+    // 2. Receive Sync Step 2 diff from server (authoritative document state)
+    const handleSyncStep2 = (data: {
+      projectId: string;
+      filePath: string;
+      update: number[];
+    }) => {
+      if (
+        data.projectId === this.projectId &&
+        data.filePath === this.filePath
+      ) {
         this.isApplyingRemoteUpdate = true;
         try {
-          Y.applyUpdate(this.doc, new Uint8Array(data.update));
+          Y.applyUpdate(this.doc, new Uint8Array(data.update), "server-sync");
+
+          // If the server had an empty doc and client has initial content, populate once
+          if (
+            this.yText.length === 0 &&
+            initialContent &&
+            initialContent.length > 0
+          ) {
+            this.doc.transact(() => {
+              this.yText.insert(0, initialContent);
+            }, "local");
+          } else if (this.model && !this.model.isDisposed()) {
+            const currentText = this.yText.toString();
+            if (this.model.getValue() !== currentText) {
+              const fullRange = this.model.getFullModelRange();
+              this.model.applyEdits([{ range: fullRange, text: currentText }]);
+            }
+          }
         } finally {
           this.isApplyingRemoteUpdate = false;
         }
       }
     };
 
-    // 2. Receive incremental updates from collaborators
+    // 3. Receive incremental delta updates from collaborators
     const handleDocUpdate = (data: {
       projectId: string;
       filePath: string;
       update: number[];
       senderSocketId?: string;
     }) => {
-      if (data.projectId === this.projectId && data.filePath === this.filePath) {
+      if (
+        data.projectId === this.projectId &&
+        data.filePath === this.filePath
+      ) {
         if (data.senderSocketId === socket.id) return;
         this.isApplyingRemoteUpdate = true;
         try {
-          Y.applyUpdate(this.doc, new Uint8Array(data.update));
+          Y.applyUpdate(this.doc, new Uint8Array(data.update), "remote");
         } finally {
           this.isApplyingRemoteUpdate = false;
         }
       }
     };
 
-    // 3. Receive Remote Collaborator Awareness (Cursors & Selections)
-    const handleAwarenessUpdate = (info: RemoteCursorInfo & { filePath: string }) => {
+    // 4. Receive Remote Collaborator Awareness (Cursors & Selections)
+    const handleAwarenessUpdate = (
+      info: RemoteCursorInfo & { filePath: string }
+    ) => {
       if (info.filePath === this.filePath && info.socketId !== socket.id) {
         this.remoteCursors.set(info.socketId, info);
         this.renderRemoteCursors();
       }
     };
 
-    // 4. Remote collaborator left file
-    const handleAwarenessLeave = (data: { socketId: string; filePath: string }) => {
-      if (data.filePath === this.filePath && this.remoteCursors.has(data.socketId)) {
+    // 5. Remote collaborator left file
+    const handleAwarenessLeave = (data: {
+      socketId: string;
+      filePath: string;
+    }) => {
+      if (
+        data.filePath === this.filePath &&
+        this.remoteCursors.has(data.socketId)
+      ) {
         this.remoteCursors.delete(data.socketId);
         this.renderRemoteCursors();
       }
     };
 
-    socket.on('code:sync:step2', handleSyncStep2);
-    socket.on('code:doc:update', handleDocUpdate);
-    socket.on('code:awareness:update', handleAwarenessUpdate);
-    socket.on('code:awareness:leave', handleAwarenessLeave);
+    socket.on("code:sync:step2", handleSyncStep2);
+    socket.on("code:doc:update", handleDocUpdate);
+    socket.on("code:awareness:update", handleAwarenessUpdate);
+    socket.on("code:awareness:leave", handleAwarenessLeave);
 
-    // Track for cleanup
+    // Track disposables for teardown
     this.monacoBindingDisposables.push({
       dispose: () => {
-        socket.off('code:sync:step2', handleSyncStep2);
-        socket.off('code:doc:update', handleDocUpdate);
-        socket.off('code:awareness:update', handleAwarenessUpdate);
-        socket.off('code:awareness:leave', handleAwarenessLeave);
-        socket.emit('code:leave:file', {
-          projectId: this.projectId,
-          filePath: this.filePath,
-        });
+        socket.off("connect", handleReconnect);
+        socket.off("code:sync:step2", handleSyncStep2);
+        socket.off("code:doc:update", handleDocUpdate);
+        socket.off("code:awareness:update", handleAwarenessUpdate);
+        socket.off("code:awareness:leave", handleAwarenessLeave);
+        if (socket.connected) {
+          socket.emit("code:leave:file", {
+            projectId: this.projectId,
+            filePath: this.filePath,
+          });
+        }
       },
     });
   }
 
-  private bindEditorEvents() {
+  private bindModelEvents() {
     const socket = getSocket();
-    const model = this.editor.getModel();
-    if (!model) return;
+    if (!this.model || this.model.isDisposed()) return;
 
-    // A. Yjs Text -> Monaco Model synchronization
+    // A. Yjs Text changes -> Apply granular delta edits to Monaco Model buffer
     const handleYTextChange = (event: Y.YTextEvent) => {
-      if (this.isApplyingRemoteUpdate) {
-        // Apply remote changes to Monaco model buffer
-        const newText = this.yText.toString();
-        if (model.getValue() !== newText) {
-          const fullRange = model.getFullModelRange();
-          this.editor.executeEdits('yjs-remote', [
-            {
-              range: fullRange,
-              text: newText,
-              forceMoveMarkers: true,
-            },
+      if (this.isApplyingRemoteUpdate && this.model && !this.model.isDisposed()) {
+        const edits: any[] = [];
+        let index = 0;
+
+        for (const op of event.delta) {
+          if (op.retain !== undefined) {
+            index += op.retain;
+          }
+          if (op.delete !== undefined) {
+            const startPos = this.model.getPositionAt(index);
+            const endPos = this.model.getPositionAt(index + op.delete);
+            edits.push({
+              range: new this.monaco.Range(
+                startPos.lineNumber,
+                startPos.column,
+                endPos.lineNumber,
+                endPos.column
+              ),
+              text: "",
+            });
+          }
+          if (op.insert !== undefined) {
+            const textToInsert =
+              typeof op.insert === "string" ? op.insert : "";
+            if (textToInsert.length > 0) {
+              const pos = this.model.getPositionAt(index);
+              edits.push({
+                range: new this.monaco.Range(
+                  pos.lineNumber,
+                  pos.column,
+                  pos.lineNumber,
+                  pos.column
+                ),
+                text: textToInsert,
+              });
+              index += textToInsert.length;
+            }
+          }
+        }
+
+        if (edits.length > 0) {
+          this.model.applyEdits(edits);
+        } else if (this.model.getValue() !== this.yText.toString()) {
+          const fullRange = this.model.getFullModelRange();
+          this.model.applyEdits([
+            { range: fullRange, text: this.yText.toString() },
           ]);
         }
       }
@@ -156,9 +258,9 @@ export class MonacoYjsCollaboration {
 
     this.yText.observe(handleYTextChange);
 
-    // B. Monaco Model edits -> Yjs Document update & broadcast
-    const contentListener = model.onDidChangeContent((e: any) => {
-      if (this.isApplyingRemoteUpdate) return;
+    // B. Local Monaco Model Edits -> Yjs Document Transaction
+    const contentListener = this.model.onDidChangeContent((e: any) => {
+      if (this.isApplyingRemoteUpdate || this._isDestroyed) return;
 
       this.doc.transact(() => {
         for (const change of e.changes) {
@@ -171,29 +273,49 @@ export class MonacoYjsCollaboration {
             this.yText.insert(index, change.text);
           }
         }
-      });
+      }, "local");
 
-      // Broadcast update to server and peers
-      const update = Y.encodeStateAsUpdate(this.doc);
-      if (socket?.connected) {
-        socket.emit('code:doc:update', {
+      // Mark active tab dirty in store
+      useCodeStore.getState().markTabDirty(this.filePath, true);
+    });
+
+    this.monacoBindingDisposables.push(contentListener);
+
+    // C. Yjs Local Updates -> Binary Delta Broadcast over WebSocket
+    const docUpdateListener = (update: Uint8Array, origin: any) => {
+      if (origin === "local" && socket?.connected) {
+        socket.emit("code:doc:update", {
           projectId: this.projectId,
           filePath: this.filePath,
           update: Array.from(update),
         });
       }
+    };
+
+    this.doc.on("update", docUpdateListener);
+
+    this.monacoBindingDisposables.push({
+      dispose: () => {
+        this.yText.unobserve(handleYTextChange);
+        this.doc.off("update", docUpdateListener);
+      },
     });
+  }
 
-    this.monacoBindingDisposables.push(contentListener);
+  private bindEditorCursorEvents() {
+    const socket = getSocket();
+    if (!this.editor) return;
 
-    // C. Cursor Position & Selection broadcast
     let cursorDebounce: any = null;
     const cursorListener = this.editor.onDidChangeCursorPosition((e: any) => {
+      // Only broadcast if the editor is currently displaying this file's model
+      if (this.editor.getModel() !== this.model) return;
+
       if (cursorDebounce) clearTimeout(cursorDebounce);
       cursorDebounce = setTimeout(() => {
-        if (!socket?.connected) return;
+        if (!socket?.connected || this._isDestroyed) return;
         const selection = this.editor.getSelection();
-        socket.emit('code:awareness:update', {
+        socket.emit("code:awareness:update", {
           projectId: this.projectId,
           filePath: this.filePath,
           cursor: { line: e.position.lineNumber, column: e.position.column },
@@ -216,9 +338,8 @@ export class MonacoYjsCollaboration {
    * Renders live colored cursor decorations and selection highlights for all active peers.
    */
   private renderRemoteCursors() {
-    if (!this.editor || !this.monaco) return;
-    const model = this.editor.getModel();
-    if (!model) return;
+    if (!this.editor || !this.monaco || this._isDestroyed) return;
+    if (this.editor.getModel() !== this.model) return;
 
     const decorations: any[] = [];
 
@@ -226,7 +347,7 @@ export class MonacoYjsCollaboration {
       if (!remote.cursor) return;
 
       const { line, column } = remote.cursor;
-      const color = remote.color || '#a855f7';
+      const color = remote.color || "#a855f7";
 
       // 1. Cursor line decoration
       decorations.push({
@@ -235,7 +356,9 @@ export class MonacoYjsCollaboration {
           className: `remote-cursor-${remote.socketId}`,
           beforeContentClassName: `remote-cursor-head-${remote.socketId}`,
           hoverMessage: { value: `**${remote.userName}** (collaborating)` },
-          stickiness: this.monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          stickiness:
+            this.monaco.editor.TrackedRangeStickiness
+              .NeverGrowsWhenTypingAtEdges,
         },
       });
 
@@ -255,18 +378,21 @@ export class MonacoYjsCollaboration {
             ),
             options: {
               className: `remote-selection-${remote.socketId}`,
-              stickiness: this.monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+              stickiness:
+                this.monaco.editor.TrackedRangeStickiness
+                  .NeverGrowsWhenTypingAtEdges,
             },
           });
         }
       }
 
-      // Dynamically inject styling for remote cursor & selection
+      // Inject custom CSS for remote cursor
       this.injectCursorStyles(remote.socketId, color, remote.userName);
     });
 
     if (!this.cursorDecorationsCollection) {
-      this.cursorDecorationsCollection = this.editor.createDecorationsCollection(decorations);
+      this.cursorDecorationsCollection =
+        this.editor.createDecorationsCollection(decorations);
     } else {
       this.cursorDecorationsCollection.set(decorations);
     }
@@ -277,7 +403,7 @@ export class MonacoYjsCollaboration {
     let styleTag = document.getElementById(styleId) as HTMLStyleElement;
 
     if (!styleTag) {
-      styleTag = document.createElement('style');
+      styleTag = document.createElement("style");
       styleTag.id = styleId;
       document.head.appendChild(styleTag);
     }
@@ -312,10 +438,12 @@ export class MonacoYjsCollaboration {
   }
 
   public destroy() {
+    this._isDestroyed = true;
     this.monacoBindingDisposables.forEach((d) => d.dispose?.());
     this.monacoBindingDisposables = [];
     if (this.cursorDecorationsCollection) {
       this.cursorDecorationsCollection.clear();
+      this.cursorDecorationsCollection = null;
     }
     this.doc.destroy();
   }

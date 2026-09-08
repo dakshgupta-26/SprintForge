@@ -1,19 +1,17 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
-import { useCodeStore, getLanguageFromPath } from "@/lib/store/codeStore";
-import { MonacoYjsCollaboration } from "@/lib/codeCollaboration";
+import { useCodeStore } from "@/lib/store/codeStore";
+import { monacoModelManager } from "@/lib/monacoModelManager";
 import { getSocket } from "@/lib/socket";
-import { Users, Save, Lock, Loader2, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Users, Lock, Loader2, Sparkles } from "lucide-react";
 
 export function CodeEditor() {
   const {
     projectId,
     activeTabId,
-    activeFileContent,
-    updateActiveFileContent,
+    openTabs,
     saveActiveFile,
     isSaving,
     isLoadingFile,
@@ -27,18 +25,17 @@ export function CodeEditor() {
 
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const collabRef = useRef<MonacoYjsCollaboration | null>(null);
 
-  const [activeFileCollabs, setActiveFileCollabs] = useState<any[]>([]);
+  // Active tab metadata
+  const activeTab = useMemo(
+    () => openTabs.find((t) => t.id === activeTabId),
+    [openTabs, activeTabId]
+  );
 
   // Calculate collaborators active on current file
-  useEffect(() => {
-    if (!activeTabId) {
-      setActiveFileCollabs([]);
-      return;
-    }
-    const matching = collaborators.filter((c) => c.activeFile === activeTabId);
-    setActiveFileCollabs(matching);
+  const activeFileCollabs = useMemo(() => {
+    if (!activeTabId) return [];
+    return collaborators.filter((c) => c.activeFile === activeTabId);
   }, [collaborators, activeTabId]);
 
   // Broadcast current active file presence
@@ -88,9 +85,22 @@ export function CodeEditor() {
 
     monaco.editor.setTheme("sprintforge-dark");
 
-    // Initialize Yjs Real-time Collaboration if inside a project & file
+    // Bind canonical model and collaboration for currently active tab
     if (projectId && activeTabId) {
-      initCollaboration(editor, monaco);
+      const model = monacoModelManager.getOrCreateModel(
+        monaco,
+        projectId,
+        activeTabId,
+        activeTab?.content || ""
+      );
+      editor.setModel(model);
+      monacoModelManager.getOrCreateCollaboration(
+        monaco,
+        editor,
+        projectId,
+        activeTabId,
+        activeTab?.content
+      );
     }
 
     // Register IDE Global Keybindings inside Monaco Editor
@@ -121,43 +131,33 @@ export function CodeEditor() {
     });
   };
 
-  const initCollaboration = useCallback(
-    (editor: any, monaco: Monaco) => {
-      if (!projectId || !activeTabId) return;
-
-      // Clean up previous binding
-      if (collabRef.current) {
-        collabRef.current.destroy();
-        collabRef.current = null;
-      }
-
-      collabRef.current = new MonacoYjsCollaboration(
-        projectId,
-        activeTabId,
-        editor,
-        monaco,
-        activeFileContent
-      );
-    },
-    [projectId, activeTabId, activeFileContent]
-  );
-
-  // Re-bind when active tab changes
+  // Switch Monaco canonical model cleanly when active tab changes
   useEffect(() => {
     if (editorRef.current && monacoRef.current && projectId && activeTabId) {
-      initCollaboration(editorRef.current, monacoRef.current);
-    }
-    return () => {
-      if (collabRef.current) {
-        collabRef.current.destroy();
-        collabRef.current = null;
+      const model = monacoModelManager.getOrCreateModel(
+        monacoRef.current,
+        projectId,
+        activeTabId,
+        activeTab?.content || ""
+      );
+
+      if (editorRef.current.getModel() !== model) {
+        editorRef.current.setModel(model);
       }
-    };
-  }, [activeTabId, projectId, initCollaboration]);
+
+      monacoModelManager.getOrCreateCollaboration(
+        monacoRef.current,
+        editorRef.current,
+        projectId,
+        activeTabId,
+        activeTab?.content
+      );
+    }
+  }, [activeTabId, projectId, activeTab?.content]);
 
   if (isLoadingFile) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#080c1e] text-slate-400 gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#080c1e] text-slate-400 gap-3 select-none">
         <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
         <p className="text-xs font-mono">Loading file buffer...</p>
       </div>
@@ -207,7 +207,6 @@ export function CodeEditor() {
     );
   }
 
-  const language = getLanguageFromPath(activeTabId);
   const isReadOnly = permission === "VIEW";
 
   return (
@@ -247,13 +246,12 @@ export function CodeEditor() {
       <Editor
         height="100%"
         width="100%"
-        language={language}
-        value={activeFileContent}
         theme="sprintforge-dark"
         options={{
           readOnly: isReadOnly,
           fontSize: 13,
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+          fontFamily:
+            "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
           fontLigatures: true,
           tabSize: 2,
           minimap: { enabled: true, side: "right", scale: 1 },
@@ -273,11 +271,6 @@ export function CodeEditor() {
           padding: { top: 12, bottom: 12 },
         }}
         onMount={handleEditorDidMount}
-        onChange={(val) => {
-          if (val !== undefined) {
-            updateActiveFileContent(val, true);
-          }
-        }}
       />
     </div>
   );

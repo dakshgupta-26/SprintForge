@@ -137,14 +137,33 @@ export class CodeCollaborationService {
   }
 
   /**
-   * Encodes state as an update diff against a remote target vector.
+   * Resets or updates in-memory Yjs doc content from external disk modifications.
    */
-  public static async encodeStateAsUpdate(
-    projectId: string,
-    filePath: string,
-    targetStateVector?: Uint8Array
-  ): Promise<Uint8Array> {
-    const session = await this.getOrCreateDoc(projectId, filePath);
-    return Y.encodeStateAsUpdate(session.doc, targetStateVector);
+  public static async reloadFromDisk(projectId: string, filePath: string): Promise<void> {
+    const docKey = `${projectId}:${filePath.replace(/\\/g, '/')}`;
+    const session = activeDocs.get(docKey);
+    if (!session) return;
+
+    try {
+      const { content } = await WorkspaceService.readFile(projectId, filePath);
+      if (session.yText.toString() !== content) {
+        session.doc.transact(() => {
+          session.yText.delete(0, session.yText.length);
+          session.yText.insert(0, content);
+        });
+      }
+    } catch {}
+  }
+
+  /**
+   * Evicts in-memory document session.
+   */
+  public static evictDoc(projectId: string, filePath: string): void {
+    const docKey = `${projectId}:${filePath.replace(/\\/g, '/')}`;
+    const session = activeDocs.get(docKey);
+    if (session) {
+      if (session.flushTimeout) clearTimeout(session.flushTimeout);
+      activeDocs.delete(docKey);
+    }
   }
 }

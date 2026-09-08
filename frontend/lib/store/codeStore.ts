@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { codeAPI } from '../api';
+import { monacoModelManager } from '../monacoModelManager';
 
 export interface FileTreeItem {
   id: string;
@@ -114,8 +115,9 @@ interface CodeState {
   closeAllTabs: () => void;
   pinTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  markTabDirty: (tabId: string, isDirty?: boolean) => void;
   updateActiveFileContent: (content: string, markDirty?: boolean) => void;
-  saveActiveFile: () => Promise<void>;
+  saveActiveFile: (contentOverride?: string) => Promise<void>;
 
   // File CRUD
   createFile: (filePath: string) => Promise<boolean>;
@@ -345,6 +347,11 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   },
 
   closeTab: (tabId: string) => {
+    const { projectId } = get();
+    if (projectId) {
+      monacoModelManager.disposeFile(null, projectId, tabId);
+    }
+
     set((state) => {
       const newTabs = state.openTabs.filter((t) => t.id !== tabId);
       let nextActiveId = state.activeTabId;
@@ -370,6 +377,15 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   },
 
   closeOtherTabs: (tabId: string) => {
+    const { projectId, openTabs } = get();
+    if (projectId) {
+      openTabs.forEach((t) => {
+        if (t.id !== tabId) {
+          monacoModelManager.disposeFile(null, projectId, t.id);
+        }
+      });
+    }
+
     set((state) => {
       const target = state.openTabs.find((t) => t.id === tabId);
       if (!target) return state;
@@ -382,6 +398,10 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   },
 
   closeAllTabs: () => {
+    const { projectId } = get();
+    if (projectId) {
+      monacoModelManager.disposeProject(null, projectId);
+    }
     set({
       openTabs: [],
       activeTabId: null,
@@ -407,6 +427,14 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     }
   },
 
+  markTabDirty: (tabId: string, isDirty = true) => {
+    set((state) => ({
+      openTabs: state.openTabs.map((t) =>
+        t.id === tabId ? { ...t, isDirty } : t
+      ),
+    }));
+  },
+
   updateActiveFileContent: (content: string, markDirty = true) => {
     const { activeTabId } = get();
     if (!activeTabId) return;
@@ -425,21 +453,40 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     }));
   },
 
-  saveActiveFile: async () => {
-    const { projectId, activeTabId, activeFileContent, permission } = get();
+  saveActiveFile: async (contentOverride?: string) => {
+    const { projectId, activeTabId, openTabs, permission } = get();
     if (!projectId || !activeTabId || permission === 'VIEW') return;
+
+    const activeTab = openTabs.find((t) => t.id === activeTabId);
+    let contentToSave: string;
+    if (contentOverride !== undefined) {
+      contentToSave = contentOverride;
+    } else {
+      const model = monacoModelManager.getModel(projectId, activeTabId);
+      if (model && !model.isDisposed()) {
+        contentToSave = model.getValue();
+      } else {
+        contentToSave = activeTab?.content || '';
+      }
+    }
 
     set({ isSaving: true });
     try {
-      await codeAPI.writeFile(projectId, activeTabId, activeFileContent);
+      await codeAPI.writeFile(projectId, activeTabId, contentToSave);
 
       set((state) => ({
         isSaving: false,
         openTabs: state.openTabs.map((t) =>
           t.id === activeTabId
-            ? { ...t, isDirty: false, originalContent: activeFileContent }
+            ? {
+                ...t,
+                isDirty: false,
+                content: contentToSave,
+                originalContent: contentToSave,
+              }
             : t
         ),
+        activeFileContent: contentToSave,
       }));
 
       // Refresh git status after saving
@@ -507,6 +554,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     if (!projectId) return false;
     try {
       await codeAPI.deletePath(projectId, targetPath);
+      monacoModelManager.disposeFile(null, projectId, targetPath);
       await get().loadFileTree();
       get().closeTab(targetPath);
       return true;
