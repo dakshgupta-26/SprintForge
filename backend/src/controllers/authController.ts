@@ -930,6 +930,9 @@ export const forgotPassword = async (req: Request, res: Response) => {
       return res.json(genericResponse);
     }
 
+    // Invalidate any previous active tokens for this user
+    await PasswordResetToken.deleteMany({ userId: user._id });
+
     // Generate secure 32-byte hex reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(resetToken);
@@ -942,8 +945,13 @@ export const forgotPassword = async (req: Request, res: Response) => {
       expiresAt,
     });
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const resetUrl = `${clientUrl}/login?mode=reset&token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+    const clientUrl =
+      process.env.PUBLIC_APP_URL ||
+      process.env.CLIENT_URL ||
+      (process.env.NODE_ENV === 'production' ? 'https://sprint-forge-livid.vercel.app' : 'http://localhost:3000');
+
+    const cleanClientUrl = clientUrl.trim().replace(/\/+$/, '');
+    const resetUrl = `${cleanClientUrl}/login?mode=reset&token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendPasswordResetEmail({
       to: user.email,
@@ -965,37 +973,101 @@ export const forgotPassword = async (req: Request, res: Response) => {
   }
 };
 
+// ─── 7b. Validate Reset Token ─────────────────────────────────────────────────
+export const validateResetToken = async (req: Request, res: Response) => {
+  try {
+    const token = (req.body?.token || req.query?.token) as string;
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return res.status(400).json({
+        valid: false,
+        reason: 'invalid',
+        message: 'Password reset token is required.',
+      });
+    }
+
+    const tokenHash = hashToken(token.trim());
+    const resetDoc = await PasswordResetToken.findOne({ tokenHash });
+
+    if (!resetDoc) {
+      return res.status(400).json({
+        valid: false,
+        reason: 'invalid',
+        message: 'This password reset link is invalid or does not exist.',
+      });
+    }
+
+    if (resetDoc.usedAt) {
+      return res.status(400).json({
+        valid: false,
+        reason: 'used',
+        message: 'This password reset link has already been used.',
+      });
+    }
+
+    if (new Date() > resetDoc.expiresAt) {
+      return res.status(400).json({
+        valid: false,
+        reason: 'expired',
+        message: 'This password reset link has expired. Please request a new one.',
+      });
+    }
+
+    const parts = resetDoc.email.split('@');
+    const masked =
+      parts[0].length > 2
+        ? parts[0][0] + '***' + parts[0][parts[0].length - 1] + '@' + parts[1]
+        : parts[0][0] + '***@' + parts[1];
+
+    res.json({
+      valid: true,
+      email: resetDoc.email,
+      maskedEmail: masked,
+    });
+  } catch (error: any) {
+    res.status(500).json({ valid: false, reason: 'error', message: error.message });
+  }
+};
+
 // ─── 8. Reset Password ────────────────────────────────────────────────────────
 export const resetPassword = async (req: Request, res: Response) => {
   try {
-    const { token, email, newPassword } = req.body;
-    if (!token || !email || !newPassword) {
-      return res.status(400).json({ message: 'Token, email, and new password are required' });
+    const { token, email, newPassword, password } = req.body;
+    const candidatePassword = newPassword || password;
+
+    if (!token || !candidatePassword) {
+      return res.status(400).json({ message: 'Reset token and new password are required' });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: 'New password must be at least 8 characters' });
+    if (candidatePassword.length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters long' });
     }
-    if (!/\d/.test(newPassword)) {
-      return res.status(400).json({ message: 'New password must contain at least one number' });
+    if (!/\d/.test(candidatePassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one number (0-9)' });
+    }
+    if (!/[A-Z]/.test(candidatePassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one uppercase letter (A-Z)' });
+    }
+    if (!/[a-z]/.test(candidatePassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one lowercase letter (a-z)' });
+    }
+    if (!/[^A-Za-z0-9]/.test(candidatePassword)) {
+      return res.status(400).json({ message: 'New password must contain at least one special character (!@#$%^&*)' });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
-    const tokenHash = hashToken(token);
-
-    const resetDoc = await PasswordResetToken.findOne({
-      tokenHash,
-      email: cleanEmail,
-      usedAt: null,
-    });
+    const tokenHash = hashToken(token.trim());
+    const resetDoc = await PasswordResetToken.findOne({ tokenHash });
 
     if (!resetDoc) {
-      return res.status(400).json({ message: 'Invalid or expired password reset link.' });
+      return res.status(400).json({ message: 'This password reset link is invalid.' });
+    }
+
+    if (resetDoc.usedAt) {
+      return res.status(400).json({ message: 'This password reset link has already been used.' });
     }
 
     if (new Date() > resetDoc.expiresAt) {
       await resetDoc.deleteOne();
-      return res.status(400).json({ message: 'Password reset link has expired. Please request a new one.' });
+      return res.status(400).json({ message: 'This password reset link has expired. Please request a new one.' });
     }
 
     const user = await User.findById(resetDoc.userId).select('+password');
@@ -1003,12 +1075,15 @@ export const resetPassword = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'User account not found.' });
     }
 
-    user.password = newPassword;
+    user.password = candidatePassword;
     await user.save();
 
-    // Invalidate reset token
+    // Mark reset token as used
     resetDoc.usedAt = new Date();
     await resetDoc.save();
+
+    // Invalidate all other active reset tokens for this user
+    await PasswordResetToken.deleteMany({ userId: user._id, _id: { $ne: resetDoc._id } });
 
     // Revoke all existing active sessions for security
     await Session.updateMany({ userId: user._id }, { revokedAt: new Date() });
@@ -1023,6 +1098,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     });
 
     res.json({
+      success: true,
       message: 'Password reset successfully! Please sign in with your new password.',
     });
   } catch (error: any) {

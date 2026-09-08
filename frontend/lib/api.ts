@@ -138,7 +138,8 @@ export const authAPI = {
   changePassword: (data: any) => api.put("/auth/change-password", data),
   setPassword: (data: { newPassword: string }) => api.post("/auth/set-password", data),
   forgotPassword: (data: { email: string }) => api.post("/auth/forgot-password", data),
-  resetPassword: (data: { token: string; email: string; newPassword: string }) =>
+  validateResetToken: (token: string) => api.post("/auth/validate-reset-token", { token }),
+  resetPassword: (data: { token: string; newPassword: string; email?: string; password?: string }) =>
     api.post("/auth/reset-password", data),
   getSessions: () => api.get("/auth/sessions"),
   revokeSession: (sessionId: string) => api.delete(`/auth/sessions/${sessionId}`),

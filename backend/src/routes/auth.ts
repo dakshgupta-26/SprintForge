@@ -7,6 +7,7 @@ import {
   resendEmailOtp,
   refreshToken,
   forgotPassword,
+  validateResetToken,
   resetPassword,
   getMe,
   updateProfile,
@@ -44,6 +45,8 @@ router.post('/refresh', refreshToken);
 
 // Password Recovery
 router.post('/forgot-password', passwordResetLimiter, forgotPassword);
+router.post('/validate-reset-token', passwordResetLimiter, validateResetToken);
+router.get('/validate-reset-token', passwordResetLimiter, validateResetToken);
 router.post('/reset-password', passwordResetLimiter, resetPassword);
 
 // Protected User Management
