@@ -30,7 +30,10 @@ import {
   Info,
   Clock,
   Eye,
+  Video,
+  Phone,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateAvatar, cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
@@ -95,6 +98,7 @@ interface PendingAttachment {
 }
 
 export function ChatRoom({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const { user } = useAuthStore();
   const { currentProject, projects, fetchProject } = useProjectStore();
   const { setActiveProjectId, markProjectAsRead, markAllAsRead } = useChatUnreadStore();
@@ -864,6 +868,16 @@ export function ChatRoom({ projectId }: { projectId: string }) {
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            {/* Quick Video / Audio Call Button */}
+            <button
+              onClick={() => router.push(`/dashboard/projects/${projectId}/call`)}
+              className="p-2 px-2.5 rounded-xl border bg-white/[0.03] hover:bg-violet-600/20 border-white/[0.06] hover:border-violet-500/40 text-slate-300 hover:text-white transition-all cursor-pointer text-xs flex items-center gap-1.5"
+              title="Open Realtime Audio/Video Call Workspace"
+            >
+              <Video className="w-3.5 h-3.5 text-violet-400" />
+              <span className="hidden sm:inline-block text-[11px] font-semibold">Call</span>
+            </button>
+
             {/* Search Toggle */}
             <button
               onClick={() => setShowSearchBar((prev) => !prev)}

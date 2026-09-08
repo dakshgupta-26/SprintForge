@@ -49,6 +49,49 @@ import { format, isToday, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
+function LiveKitVideoTrackView({
+  track,
+  className,
+}: {
+  track: any;
+  className?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !track) return;
+    track.attach(el);
+    return () => {
+      track.detach(el);
+    };
+  }, [track]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      className={className || "w-full h-full object-contain bg-black"}
+    />
+  );
+}
+
+function LiveKitAudioTrackView({ track }: { track: any }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el || !track) return;
+    track.attach(el);
+    return () => {
+      track.detach(el);
+    };
+  }, [track]);
+
+  return <audio ref={audioRef} autoPlay playsInline className="hidden" aria-hidden="true" />;
+}
+
 interface CallWorkspaceProps {
   projectId: string;
 }
@@ -64,6 +107,7 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
     callType,
     isCaller,
     remoteUser,
+    remoteParticipants,
     durationSeconds,
     endSummary,
     localStream,
@@ -82,6 +126,7 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
     availableVideoInputs,
     availableAudioOutputs,
     qualityMetrics,
+    errorMessage,
     preCallModalOpen,
     preCallTargetMember,
     preCallType,
@@ -680,113 +725,197 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
                   </div>
                 )}
 
-                {/* Remote Participant Canvas */}
-                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-                  {remoteIsVideoOff || callType === "audio" ? (
-                    /* Audio-Only / Video-Off Stage */
-                    <div className="flex flex-col items-center justify-center gap-4 text-center select-none">
-                      <div className="relative flex items-center justify-center w-36 h-36">
-                        {/* Speaking Wave Glow */}
+                {/* ─── MULTI-PARTICIPANT / SFU CANVAS ─── */}
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden p-2 sm:p-4">
+                  {/* Case 1: Remote Screen Share Active */}
+                  {remoteParticipants.some((p) => p.screenTrack) ? (
+                    <div className="relative w-full h-full flex flex-col items-center justify-center">
+                      {(() => {
+                        const screenSharer = remoteParticipants.find((p) => p.screenTrack)!;
+                        return (
+                          <div className="relative w-full h-full flex items-center justify-center bg-black rounded-2xl overflow-hidden border border-white/[0.1]">
+                            <LiveKitVideoTrackView
+                              track={screenSharer.screenTrack}
+                              className="w-full h-full object-contain"
+                            />
+                            <div className="absolute top-3 left-3 z-20 flex items-center gap-2 px-3 py-1 rounded-xl bg-black/70 backdrop-blur-md border border-white/[0.1] text-xs text-white">
+                              <ScreenShare className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
+                              <span>{screenSharer.name} is sharing screen</span>
+                            </div>
+                            <LiveKitAudioTrackView track={screenSharer.audioTrack} />
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : remoteParticipants.length === 0 ? (
+                    /* Case 2: Waiting for other participants */
+                    <div className="flex flex-col items-center justify-center gap-4 text-center select-none max-w-sm">
+                      <div className="relative flex items-center justify-center w-32 h-32">
                         <motion.div
-                          animate={{
-                            scale: [1, 1.15, 1.25],
-                            opacity: [0.5, 0.2, 0],
-                          }}
-                          transition={{
-                            duration: 2.2,
-                            repeat: Infinity,
-                            ease: "easeOut",
-                          }}
+                          animate={{ scale: [1, 1.2, 1.35], opacity: [0.5, 0.2, 0] }}
+                          transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
                           className="absolute inset-0 rounded-full bg-violet-500/20 border border-violet-500/30"
                         />
                         <UserAvatar
-                          src={remoteUser?.avatar}
-                          name={remoteUser?.name || "Participant"}
+                          src={user?.avatar}
+                          name={user?.name || "You"}
                           size="2xl"
-                          className="w-24 h-24 text-2xl shadow-2xl ring-4 ring-violet-500/30"
+                          className="w-20 h-20 text-xl shadow-2xl ring-4 ring-violet-500/30"
                         />
                       </div>
-
-                      <div className="space-y-1">
-                        <h3 className="text-xl font-bold text-white tracking-tight">
-                          {remoteUser?.name || "Team Member"}
+                      <div className="space-y-1.5">
+                        <h3 className="text-lg font-bold text-white tracking-tight">
+                          Connected to Call Room
                         </h3>
-                        <p className="text-xs text-slate-400 flex items-center justify-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>End-to-End Encrypted Peer Connection</span>
+                        <p className="text-xs text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+                          <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                          <span>Waiting for team members to join...</span>
                         </p>
                       </div>
                     </div>
+                  ) : remoteParticipants.length === 1 ? (
+                    /* Case 3: Exactly 1 Remote Participant (1-on-1 Call) */
+                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                      {remoteParticipants[0].videoTrack && !remoteParticipants[0].isVideoOff ? (
+                        <LiveKitVideoTrackView
+                          track={remoteParticipants[0].videoTrack}
+                          className="w-full h-full object-contain bg-black rounded-2xl"
+                        />
+                      ) : (
+                        /* Audio-Only / Video-Off Stage */
+                        <div className="flex flex-col items-center justify-center gap-4 text-center select-none">
+                          <div className="relative flex items-center justify-center w-36 h-36">
+                            <motion.div
+                              animate={{
+                                scale: remoteParticipants[0].isSpeaking ? [1, 1.2, 1.35] : [1, 1.05, 1],
+                                opacity: remoteParticipants[0].isSpeaking ? [0.6, 0.25, 0] : [0.3, 0.1, 0],
+                              }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                              className="absolute inset-0 rounded-full bg-violet-500/20 border border-violet-500/30"
+                            />
+                            <UserAvatar
+                              src={remoteParticipants[0].avatar}
+                              name={remoteParticipants[0].name}
+                              size="2xl"
+                              className="w-24 h-24 text-2xl shadow-2xl ring-4 ring-violet-500/30"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-xl font-bold text-white tracking-tight">
+                              {remoteParticipants[0].name}
+                            </h3>
+                            <p className="text-xs text-slate-400 flex items-center justify-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>LiveKit SFU Realtime Media</span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Participant audio sink */}
+                      <LiveKitAudioTrackView track={remoteParticipants[0].audioTrack} />
+
+                      {/* Name Tag */}
+                      <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-md border border-white/[0.1] text-xs text-white">
+                        <span className="font-semibold">{remoteParticipants[0].name}</span>
+                        {remoteParticipants[0].isMuted && (
+                          <span className="p-0.5 rounded bg-rose-500/20 text-rose-400" title="Microphone muted">
+                            <MicOff className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   ) : (
-                    /* Remote Video Stream View */
-                    <video
-                      ref={remoteVideoRef}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-contain bg-black rounded-xl"
-                    />
+                    /* Case 4: Multi-Participant Grid (2+ Remote Participants) */
+                    <div
+                      className={cn(
+                        "w-full h-full grid gap-3 overflow-y-auto p-1",
+                        remoteParticipants.length === 2
+                          ? "grid-cols-1 md:grid-cols-2"
+                          : remoteParticipants.length <= 4
+                          ? "grid-cols-2"
+                          : "grid-cols-2 md:grid-cols-3"
+                      )}
+                    >
+                      {remoteParticipants.map((p) => (
+                        <div
+                          key={p.identity}
+                          className={cn(
+                            "relative w-full h-full min-h-[160px] rounded-2xl overflow-hidden bg-[#030611] border border-white/[0.08] flex items-center justify-center transition-all",
+                            p.isSpeaking && "ring-2 ring-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.35)]"
+                          )}
+                        >
+                          {p.videoTrack && !p.isVideoOff ? (
+                            <LiveKitVideoTrackView track={p.videoTrack} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <UserAvatar src={p.avatar} name={p.name} size="lg" className="w-14 h-14 text-base ring-2 ring-violet-500/30" />
+                              <span className="text-xs font-bold text-white max-w-[120px] truncate">{p.name}</span>
+                            </div>
+                          )}
+
+                          <LiveKitAudioTrackView track={p.audioTrack} />
+
+                          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/70 backdrop-blur-md text-[11px] text-white">
+                            <span className="font-semibold truncate max-w-[90px]">{p.name}</span>
+                            {p.isMuted && <MicOff className="w-2.5 h-2.5 text-rose-400" />}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
 
-                  {/* Remote Participant Name Tag */}
-                  <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/65 backdrop-blur-md border border-white/[0.1] text-xs text-white">
-                    <span className="font-semibold">{remoteUser?.name || "Team Member"}</span>
-                    {remoteIsMuted && (
-                      <span className="p-0.5 rounded bg-rose-500/20 text-rose-400" title="Microphone muted">
-                        <MicOff className="w-3 h-3" />
-                      </span>
-                    )}
-                  </div>
+                  {/* Floating Self Video (Picture-in-Picture) */}
+                  {!isPipMinimized && (
+                    <motion.div
+                      drag
+                      dragConstraints={{ left: 0, right: 150, top: 0, bottom: 150 }}
+                      className="absolute bottom-4 right-4 z-30 w-36 sm:w-44 h-24 sm:h-28 rounded-2xl overflow-hidden bg-[#090d20] border border-white/[0.15] shadow-2xl group cursor-move"
+                    >
+                      {isVideoOff ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#070b1a] text-slate-400 text-xs">
+                          <UserAvatar
+                            src={user?.avatar}
+                            name={user?.name || "You"}
+                            size="sm"
+                            className="mb-1"
+                          />
+                          <span className="text-[10px] font-mono text-slate-500">Camera Off</span>
+                        </div>
+                      ) : (
+                        <video
+                          ref={localVideoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-full object-cover mirror"
+                        />
+                      )}
+
+                      {/* Self Mic Activity Gauge */}
+                      <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
+                        <div className="w-10 h-1 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/20">
+                          <div
+                            className="h-full bg-emerald-400 rounded-full transition-all duration-75"
+                            style={{ width: `${isMuted ? 0 : localMicLevel}%` }}
+                          />
+                        </div>
+                        {isMuted && <MicOff className="w-2.5 h-2.5 text-rose-400" />}
+                      </div>
+
+                      {/* Minimize PIP */}
+                      <button
+                        type="button"
+                        onClick={() => setIsPipMinimized(true)}
+                        className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        title="Minimize Preview"
+                      >
+                        <Minimize className="w-2.5 h-2.5" />
+                      </button>
+                    </motion.div>
+                  )}
                 </div>
 
-                {/* Floating Self Video (Picture-in-Picture) */}
-                {!isPipMinimized && (
-                  <motion.div
-                    drag
-                    dragConstraints={{ left: 0, right: 150, top: 0, bottom: 150 }}
-                    className="absolute bottom-4 right-4 z-30 w-36 sm:w-44 h-24 sm:h-28 rounded-2xl overflow-hidden bg-[#090d20] border border-white/[0.15] shadow-2xl group"
-                  >
-                    {isVideoOff ? (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#070b1a] text-slate-400 text-xs">
-                        <UserAvatar
-                          src={user?.avatar}
-                          name={user?.name || "You"}
-                          size="sm"
-                          className="mb-1"
-                        />
-                        <span className="text-[10px] font-mono text-slate-500">Camera Off</span>
-                      </div>
-                    ) : (
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover mirror"
-                      />
-                    )}
-
-                    {/* Self Mic Activity Gauge */}
-                    <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
-                      <div className="w-10 h-1 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/20">
-                        <div
-                          className="h-full bg-emerald-400 rounded-full transition-all duration-75"
-                          style={{ width: `${isMuted ? 0 : localMicLevel}%` }}
-                        />
-                      </div>
-                      {isMuted && <MicOff className="w-2.5 h-2.5 text-rose-400" />}
-                    </div>
-
-                    {/* Minimize PIP */}
-                    <button
-                      type="button"
-                      onClick={() => setIsPipMinimized(true)}
-                      className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                      title="Minimize Preview"
-                    >
-                      <Minimize className="w-2.5 h-2.5" />
-                    </button>
-                  </motion.div>
-                )}
 
                 {/* Docked Control Bar */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-3 px-4 py-2 rounded-2xl bg-[#090d20]/90 backdrop-blur-xl border border-white/[0.12] shadow-2xl">
@@ -903,6 +1032,51 @@ export function CallWorkspace({ projectId }: CallWorkspaceProps) {
                   <span>Cancel Call</span>
                 </button>
               </div>
+            ) : callStatus === "failed" ? (
+              /* ── STAGE STATE: Call Failed / Disconnected ── */
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative flex flex-col items-center justify-center p-8 rounded-3xl bg-[#080c1d] border border-rose-500/30 shadow-2xl max-w-md w-full text-center space-y-4"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center shadow-lg">
+                  <AlertCircle className="w-7 h-7" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-xl font-bold text-white">Call Failed</h3>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-xs">
+                    {errorMessage || statusText || "Unable to establish call connection."}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (preCallTargetMember?._id) {
+                        initiateCall(preCallTargetMember._id, projectId, preCallType);
+                      } else if (remoteUser?._id) {
+                        initiateCall(remoteUser._id, projectId, callType);
+                      } else {
+                        useCallStore.setState({ callStatus: "idle", errorMessage: null });
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Try Again</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => useCallStore.setState({ callStatus: "idle", errorMessage: null })}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </motion.div>
             ) : endSummary ? (
               /* ── STAGE STATE C: Call Ended Summary ── */
               <motion.div

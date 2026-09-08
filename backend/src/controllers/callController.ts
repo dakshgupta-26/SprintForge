@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { AuthRequest } from '../middleware/auth';
 import Call from '../models/Call';
 import Project from '../models/Project';
+import { generateCallToken, isLiveKitConfigured, getLiveKitUrl } from '../services/livekitService';
 
 /**
  * Get call history for a specific project
@@ -183,3 +184,96 @@ export const endCallFallback = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * Obtain an authorized LiveKit participant token for an active call room.
+ */
+export const getCallToken = async (req: AuthRequest, res: Response) => {
+  try {
+    const { callId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(callId)) {
+      return res.status(400).json({ success: false, code: 'INVALID_CALL_ID', message: 'Invalid call ID' });
+    }
+
+    if (!isLiveKitConfigured()) {
+      return res.status(503).json({
+        success: false,
+        code: 'LIVEKIT_NOT_CONFIGURED',
+        message:
+          'LiveKit media server credentials are not configured on the backend. Please add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+      });
+    }
+
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({ success: false, code: 'CALL_NOT_FOUND', message: 'Call not found' });
+    }
+
+    // Verify user belongs to the project associated with the call
+    const project = await Project.findById(call.project).select('owner members');
+    if (!project) {
+      return res.status(404).json({ success: false, code: 'PROJECT_NOT_FOUND', message: 'Project not found' });
+    }
+
+    const isOwner = String(project.owner) === String(userId);
+    const isMember = (project.members || []).some(
+      (m: any) => String(m.user?._id || m.user || m) === String(userId)
+    );
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({
+        success: false,
+        code: 'NOT_AUTHORIZED',
+        message: 'You are not authorized to join calls in this project',
+      });
+    }
+
+    const roomName = call.roomName || `sprintforge-call-${callId}`;
+    if (!call.roomName) {
+      call.roomName = roomName;
+      await call.save();
+    }
+
+    // Add user to call participants if not already added
+    if (call.participants && !call.participants.some((p) => String(p.user) === String(userId))) {
+      call.participants.push({
+        user: userId,
+        joinedAt: new Date(),
+        role: String(call.caller) === String(userId) ? 'caller' : 'participant',
+      });
+      await call.save();
+    }
+
+    const token = await generateCallToken({
+      roomName,
+      identity: String(userId),
+      name: req.user.name || 'SprintForge User',
+      metadata: {
+        userId: String(userId),
+        name: req.user.name,
+        avatar: req.user.avatar,
+        callId,
+        projectId: String(call.project),
+      },
+    });
+
+    return res.json({
+      success: true,
+      token,
+      url: getLiveKitUrl(),
+      roomName,
+      callId,
+      type: call.type,
+    });
+  } catch (error: any) {
+    console.error('[CALL] Error generating LiveKit call token:', error);
+    return res.status(500).json({
+      success: false,
+      code: 'TOKEN_GENERATION_FAILED',
+      message: error.message || 'Failed to generate call token',
+    });
+  }
+};
+

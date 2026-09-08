@@ -6,6 +6,7 @@ import {
   markCallAsRead,
   markAllProjectCallsAsRead,
   endCallFallback,
+  getCallToken,
 } from '../controllers/callController';
 import { protect } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
@@ -22,6 +23,8 @@ router.get('/project/:projectId/recent', requirePermission('view'), getRecentCal
 router.post('/project/:projectId/read-all', markAllProjectCallsAsRead);
 
 // Call-specific actions
+router.get('/:callId/token', getCallToken);
+router.post('/:callId/token', getCallToken);
 router.patch('/:callId/read', markCallAsRead);
 router.post('/:callId/end', endCallFallback);
 

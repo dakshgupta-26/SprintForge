@@ -12,10 +12,19 @@ export type CallStatus =
   | 'failed'
   | 'completed';
 
+export interface ICallParticipant {
+  user: mongoose.Types.ObjectId;
+  joinedAt?: Date;
+  leftAt?: Date;
+  role?: string;
+}
+
 export interface ICall extends Document {
   caller: mongoose.Types.ObjectId;
   receiver: mongoose.Types.ObjectId;
   project: mongoose.Types.ObjectId;
+  roomName?: string;
+  participants?: ICallParticipant[];
   type: CallType;
   status: CallStatus;
   startedAt: Date;
@@ -33,6 +42,15 @@ const callSchema = new Schema<ICall>(
     caller: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     receiver: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     project: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
+    roomName: { type: String, trim: true },
+    participants: [
+      {
+        user: { type: Schema.Types.ObjectId, ref: 'User' },
+        joinedAt: { type: Date, default: Date.now },
+        leftAt: { type: Date },
+        role: { type: String, default: 'participant' },
+      },
+    ],
     type: { type: String, enum: ['audio', 'video'], default: 'video', required: true },
     status: {
       type: String,
@@ -64,5 +82,6 @@ callSchema.index({ project: 1, createdAt: -1 });
 callSchema.index({ receiver: 1, isRead: 1 });
 callSchema.index({ caller: 1, createdAt: -1 });
 callSchema.index({ status: 1 });
+callSchema.index({ roomName: 1 });
 
 export default mongoose.model<ICall>('Call', callSchema);

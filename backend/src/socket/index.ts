@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import cookie from 'cookie';
+import mongoose from 'mongoose';
 import Message from '../models/Message';
 import Project from '../models/Project';
 import User from '../models/User';
@@ -46,6 +47,7 @@ const activeCallRooms = new Map<
     callerId: string;
     receiverId: string;
     projectId: string;
+    roomName?: string;
     type: 'audio' | 'video';
     status: string;
     startedAt: Date;
@@ -663,23 +665,31 @@ export const initSocket = (io: Server) => {
           await endCallSession(existing.callId, cleanCallerId, 'completed');
         }
 
-        // Create Call record in DB
+        // Create Call record in DB with unique LiveKit room name
+        const callObjectId = new mongoose.Types.ObjectId();
+        const callId = callObjectId.toString();
+        const roomName = `sprintforge-call-${callId}`;
+
         const newCall = await Call.create({
+          _id: callObjectId,
           caller: cleanCallerId,
           receiver: cleanTargetId,
           project: projectId,
+          roomName,
           type,
           status: 'initiated',
           startedAt: new Date(),
+          participants: [
+            { user: cleanCallerId, joinedAt: new Date(), role: 'caller' },
+          ],
         });
-
-        const callId = String(newCall._id);
 
         // Track in active memory
         activeCallRooms.set(callId, {
           callerId: cleanCallerId,
           receiverId: cleanTargetId,
           projectId,
+          roomName,
           type,
           status: 'initiated',
           startedAt: new Date(),
@@ -773,6 +783,7 @@ export const initSocket = (io: Server) => {
 
         const incomingPayload = {
           callId,
+          roomName,
           projectId,
           projectName: project.name,
           projectKey: project.key,
@@ -792,7 +803,7 @@ export const initSocket = (io: Server) => {
         const socketCount = targetSockets ? targetSockets.size : 0;
         console.log(
           `[CALL] 📞 Emitting call:incoming to target user ${cleanTargetId} (active sockets: ${socketCount}):`,
-          { callId, caller: cleanCallerId, type, projectId }
+          { callId, roomName, caller: cleanCallerId, type, projectId }
         );
 
         io.to(cleanTargetId).emit('call:incoming', incomingPayload);
@@ -800,6 +811,7 @@ export const initSocket = (io: Server) => {
         const successPayload = {
           success: true,
           callId,
+          roomName,
           targetUserId: cleanTargetId,
           type,
           createdAt: newCall.createdAt,
@@ -883,8 +895,15 @@ export const initSocket = (io: Server) => {
           callMeta.status = 'accepted';
         }
 
+        const roomName = callDoc.roomName || `sprintforge-call-${callId}`;
+        if (!callDoc.roomName) {
+          callDoc.roomName = roomName;
+          await callDoc.save();
+        }
+
         const acceptedPayload = {
           callId,
+          roomName,
           projectId,
           callerId,
           receiverId: String(receiverId),
@@ -1075,18 +1094,31 @@ export const initSocket = (io: Server) => {
 
       console.log(`[CALL/SOCKET] Socket disconnected: socketId=${socket.id}, userId=${userId}`);
 
-      // If user was in an active call, terminate call gracefully
-      if (userId && userActiveCall.has(userId)) {
-        const activeCall = userActiveCall.get(userId)!;
-        await endCallSession(activeCall.callId, userId, 'completed');
-      }
-
       if (meta?.projectId) {
         handleLeaveProject(meta.projectId, socket.id);
       }
 
       unregisterUserSocket(socket.id);
       delete socketMeta[socket.id];
+
+      // If user was in an active call, do NOT instantly terminate if other sockets exist
+      // or during page navigation; apply a 15-second grace period
+      if (userId && userActiveCall.has(userId)) {
+        const remainingSockets = globalUserSockets.get(userId);
+        if (!remainingSockets || remainingSockets.size === 0) {
+          const activeCall = userActiveCall.get(userId)!;
+          setTimeout(async () => {
+            const freshSockets = globalUserSockets.get(userId);
+            if ((!freshSockets || freshSockets.size === 0) && userActiveCall.has(userId)) {
+              const currentCall = userActiveCall.get(userId);
+              if (currentCall?.callId === activeCall.callId) {
+                console.log(`[CALL/SOCKET] Grace period expired for user ${userId}. Ending call session.`);
+                await endCallSession(activeCall.callId, userId, 'completed');
+              }
+            }
+          }, 15000);
+        }
+      }
     });
   });
 };

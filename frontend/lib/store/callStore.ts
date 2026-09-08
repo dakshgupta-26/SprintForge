@@ -1,13 +1,28 @@
 import { create } from 'zustand';
+import {
+  Room,
+  RoomEvent,
+  Track,
+  Participant,
+  LocalParticipant,
+  RemoteParticipant as LKRemoteParticipant,
+  RemoteTrackPublication,
+  RemoteTrack,
+  ConnectionState,
+  ConnectionQuality,
+} from 'livekit-client';
 import { getSocket, ensureSocketConnected } from '@/lib/socket';
 import { callAPI } from '@/lib/api';
 import {
-  getWebRTCConfig,
-  getPeerConnectionQuality,
-  QualityMetrics,
-  ConnectionQualityStatus,
+  createLiveKitRoom,
+  logCallEvent,
+  mapConnectionQuality,
+} from '@/lib/livekit';
+import {
   SoundEffects,
   isWebRTCSupported,
+  QualityMetrics,
+  ConnectionQualityStatus,
 } from '@/lib/webrtc';
 import toast from 'react-hot-toast';
 
@@ -17,13 +32,14 @@ export type CallStatus =
   | 'initiating'
   | 'calling'
   | 'ringing'
+  | 'connecting'
   | 'connected'
   | 'reconnecting'
   | 'ended'
   | 'failed'
   | 'busy';
 
-export interface RemoteParticipant {
+export interface RemoteParticipantProfile {
   _id: string;
   name: string;
   avatar?: string;
@@ -31,41 +47,60 @@ export interface RemoteParticipant {
   role?: string;
 }
 
+export type RemoteParticipant = RemoteParticipantProfile;
+
+export interface LiveKitParticipantState {
+  identity: string;
+  name: string;
+  avatar?: string;
+  role?: string;
+  audioTrack?: RemoteTrack | null;
+  videoTrack?: RemoteTrack | null;
+  screenTrack?: RemoteTrack | null;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  isSpeaking: boolean;
+  connectionQuality: ConnectionQualityStatus;
+}
+
 export interface IncomingCallData {
   callId: string;
+  roomName?: string;
   projectId: string;
   projectName: string;
   projectKey?: string;
-  caller: RemoteParticipant;
+  caller: RemoteParticipantProfile;
   type: CallType;
   createdAt: string | Date;
 }
 
 export interface CallEndSummary {
   callId: string;
-  remoteUser: RemoteParticipant;
+  remoteUser: RemoteParticipantProfile;
   duration: number; // in seconds
   type: CallType;
   endedAt: Date;
 }
 
 interface CallState {
-  // Active call state
+  // Active call identifiers
   callId: string | null;
+  roomName: string | null;
   projectId: string | null;
   projectName: string | null;
   callType: CallType;
   callStatus: CallStatus;
   statusText: string;
   isCaller: boolean;
-  remoteUser: RemoteParticipant | null;
+  remoteUser: RemoteParticipantProfile | null;
+  remoteParticipants: LiveKitParticipantState[];
   startedAt: Date | null;
   connectedAt: Date | null;
   endedAt: Date | null;
   durationSeconds: number;
   endSummary: CallEndSummary | null;
 
-  // Media streams & tracks
+  // Local Media & Tracks
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   screenStream: MediaStream | null;
@@ -88,7 +123,7 @@ interface CallState {
 
   // Pre-call Device Check Modal
   preCallModalOpen: boolean;
-  preCallTargetMember: RemoteParticipant | null;
+  preCallTargetMember: RemoteParticipantProfile | null;
   preCallType: CallType;
   preCallProjectId: string | null;
   preCallProjectName: string | null;
@@ -116,7 +151,7 @@ interface CallState {
   markProjectCallsAsRead: (projectId: string) => Promise<void>;
   enumerateDevices: () => Promise<void>;
   openPreCallCheck: (
-    targetMember: RemoteParticipant,
+    targetMember: RemoteParticipantProfile,
     type: CallType,
     projectId: string,
     projectName: string
@@ -135,10 +170,11 @@ interface CallState {
   rejectIncomingCall: (callId: string, reason?: string) => Promise<void>;
   cancelCall: () => Promise<void>;
   endActiveCall: () => Promise<void>;
-  toggleMute: () => void;
+  joinLiveKitRoom: (callId: string) => Promise<void>;
+  toggleMute: () => Promise<void>;
   toggleVideo: () => Promise<void>;
   startScreenShare: () => Promise<void>;
-  stopScreenShare: () => void;
+  stopScreenShare: () => Promise<void>;
   switchAudioInput: (deviceId: string) => Promise<void>;
   switchVideoInput: (deviceId: string) => Promise<void>;
   switchAudioOutput: (deviceId: string) => Promise<void>;
@@ -146,14 +182,13 @@ interface CallState {
   dismissIncomingCallModal: () => void;
 }
 
-// ─── WebRTC Module References ──────────────────────────────────────────────
-let peerConnection: RTCPeerConnection | null = null;
+// ─── Module Singleton References ───────────────────────────────────────────
+let activeLiveKitRoom: Room | null = null;
 let durationInterval: NodeJS.Timeout | null = null;
-let statsInterval: NodeJS.Timeout | null = null;
-let queuedIceCandidates: RTCIceCandidateInit[] = [];
 
 export const useCallStore = create<CallState>((set, get) => ({
   callId: null,
+  roomName: null,
   projectId: null,
   projectName: null,
   callType: 'video',
@@ -161,6 +196,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   statusText: '',
   isCaller: false,
   remoteUser: null,
+  remoteParticipants: [],
   startedAt: null,
   connectedAt: null,
   endedAt: null,
@@ -220,7 +256,9 @@ export const useCallStore = create<CallState>((set, get) => ({
         availableVideoInputs: videoInputs,
         availableAudioOutputs: audioOutputs,
       });
-    } catch { }
+    } catch (err) {
+      console.warn('[CALL/DEVICES] Error enumerating devices:', err);
+    }
   },
 
   // ─── Missed Calls Unread Counter API ─────────────────────────────────────
@@ -233,7 +271,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           missedCallsByProject: data.projects || {},
         });
       }
-    } catch { }
+    } catch {}
   },
 
   markProjectCallsAsRead: async (projectId: string) => {
@@ -254,7 +292,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     }
   },
 
-  // ─── Global Socket.IO Call Listeners ─────────────────────────────────────
+  // ─── Global Socket.IO Signaling Listeners ────────────────────────────────
   initSocketListeners: (userId: string) => {
     if (get().isSocketInitialized) return;
     const socket = getSocket();
@@ -264,7 +302,15 @@ export const useCallStore = create<CallState>((set, get) => ({
     get().fetchUnreadMissedCalls();
     get().enumerateDevices();
 
-    // 1. Incoming Call Event (receives when another user calls)
+    // Listen for hardware device connections/disconnections
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      navigator.mediaDevices.ondevicechange = () => {
+        logCallEvent('DEVICE_CHANGED', { source: 'ondevicechange' });
+        get().enumerateDevices();
+      };
+    }
+
+    // 1. Incoming Call Event (received when another user calls)
     socket.on('call:incoming', (incomingData: IncomingCallData) => {
       console.log('[CALL] Received call:incoming event:', incomingData);
       // If user is caller, ignore
@@ -272,7 +318,7 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       const currentStatus = get().callStatus;
       if (currentStatus !== 'idle' && currentStatus !== 'ended') {
-        // User is currently in another call -> show conflict modal or notify busy
+        // User is currently in another call -> show conflict modal
         set({
           incomingCall: incomingData,
           showConflictWarning: true,
@@ -288,9 +334,8 @@ export const useCallStore = create<CallState>((set, get) => ({
       socket.emit('call:ringing', { callId: incomingData.callId });
     });
 
-    // 1b. Dismiss Incoming Call Event (e.g. call accepted/declined on another tab or cancelled)
+    // 1b. Dismiss Incoming Call Event
     socket.on('call:dismiss_incoming', ({ callId }: { callId: string }) => {
-      console.log('[CALL] Received call:dismiss_incoming event for callId:', callId);
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
         set({ incomingCall: null, showConflictWarning: false });
@@ -299,7 +344,6 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // 2. Caller receives "ringing" confirmation
     socket.on('call:ringing', ({ callId }) => {
-      console.log('[CALL] Received call:ringing event for callId:', callId);
       if (get().callId === callId && (get().callStatus === 'initiating' || get().callStatus === 'calling')) {
         set({
           callStatus: 'ringing',
@@ -309,103 +353,31 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
 
     // 3. Call Accepted by Receiver
-    socket.on('call:accepted', async (data: { callId: string; callerId: string; receiverId: string; type: CallType }) => {
-      console.log('[CALL] Received call:accepted event:', data);
-      SoundEffects.stopIncomingRingtone();
-
-      set({
-        callStatus: 'initiating',
-        statusText: 'Connecting media...',
-        incomingCall: null,
-        showConflictWarning: false,
-      });
-
-      // If this user is the caller, initiate WebRTC Offer
-      if (get().isCaller) {
-        await createAndSendWebRTCOffer(data.callId);
-      }
-    });
-
-    // 4. Remote WebRTC SDP Offer Received (Receiver side)
-    socket.on('call:offer', async (data: { callId: string; sdp: RTCSessionDescriptionInit; senderId?: string }) => {
-      console.log('[CALL/WEBRTC] Received call:offer for callId:', data.callId);
-      if (!peerConnection) return;
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-        // Flush any queued ICE candidates that arrived before remoteDescription
-        console.log(`[CALL/WEBRTC] Flushing ${queuedIceCandidates.length} queued ICE candidates`);
-        while (queuedIceCandidates.length > 0) {
-          const candidate = queuedIceCandidates.shift();
-          if (candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch((e) => {
-              console.warn('[CALL/WEBRTC] Error adding queued ICE candidate:', e);
-            });
-          }
-        }
-
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-
-        socket.emit('call:answer', {
-          callId: data.callId,
-          sdp: peerConnection.localDescription,
-        });
-      } catch (err) {
-        console.error('[CALL/WEBRTC] Error handling WebRTC offer:', err);
-      }
-    });
-
-    // 5. Remote WebRTC SDP Answer Received (Caller side)
-    socket.on('call:answer', async (data: { callId: string; sdp: RTCSessionDescriptionInit }) => {
-      console.log('[CALL/WEBRTC] Received call:answer for callId:', data.callId);
-      if (!peerConnection) return;
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-        // Flush queued ICE candidates that arrived before remoteDescription
-        console.log(`[CALL/WEBRTC] Flushing ${queuedIceCandidates.length} queued ICE candidates`);
-        while (queuedIceCandidates.length > 0) {
-          const candidate = queuedIceCandidates.shift();
-          if (candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch((e) => {
-              console.warn('[CALL/WEBRTC] Error adding queued ICE candidate:', e);
-            });
-          }
-        }
-      } catch (err) {
-        console.error('[CALL/WEBRTC] Error handling WebRTC answer:', err);
-      }
-    });
-
-    // 6. Remote ICE Candidate Received
-    socket.on('call:ice-candidate', async (data: { callId: string; candidate: RTCIceCandidateInit }) => {
-      if (!peerConnection || !peerConnection.remoteDescription) {
-        queuedIceCandidates.push(data.candidate);
-        return;
-      }
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } catch (err) {
-        console.error('[CALL/WEBRTC] Error adding ICE candidate:', err);
-      }
-    });
-
-    // 7. Track State Sync (Mute / Cam / Screen / Speaking)
     socket.on(
-      'call:track-state',
-      (data: { isMuted?: boolean; isVideoOff?: boolean; isScreenSharing?: boolean; isSpeaking?: boolean }) => {
-        set((state) => ({
-          remoteIsMuted: data.isMuted !== undefined ? data.isMuted : state.remoteIsMuted,
-          remoteIsVideoOff: data.isVideoOff !== undefined ? data.isVideoOff : state.remoteIsVideoOff,
-          remoteIsScreenSharing:
-            data.isScreenSharing !== undefined ? data.isScreenSharing : state.remoteIsScreenSharing,
-          remoteIsSpeaking: data.isSpeaking !== undefined ? data.isSpeaking : state.remoteIsSpeaking,
-        }));
+      'call:accepted',
+      async (data: {
+        callId: string;
+        roomName?: string;
+        callerId: string;
+        receiverId: string;
+        type: CallType;
+      }) => {
+        logCallEvent('CALL_ACCEPTED', { callId: data.callId, roomName: data.roomName });
+        SoundEffects.stopIncomingRingtone();
+
+        set({
+          callStatus: 'connecting',
+          statusText: 'Connecting to room...',
+          incomingCall: null,
+          showConflictWarning: false,
+        });
+
+        // Connect to LiveKit Room
+        await get().joinLiveKitRoom(data.callId);
       }
     );
 
-    // 8. Call Rejected / Declined
+    // 4. Call Rejected / Declined
     const handleCallDeclined = ({ callId, reason }: { callId: string; reason?: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().callId === callId || get().incomingCall?.callId === callId) {
@@ -423,7 +395,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     socket.on('call:rejected', handleCallDeclined);
     socket.on('call:declined', handleCallDeclined);
 
-    // 8b. Call Answered Elsewhere (multi-tab receiver)
+    // 5. Call Answered Elsewhere (multi-tab receiver)
     socket.on('call:answered-elsewhere', ({ callId }: { callId: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
@@ -431,7 +403,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     });
 
-    // 9. Call Cancelled by Caller
+    // 6. Call Cancelled by Caller
     socket.on('call:cancelled', ({ callId, message }: { callId: string; message?: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
@@ -450,7 +422,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     });
 
-    // 10. Call Missed Notification
+    // 7. Call Missed Notification
     socket.on('call:missed', ({ callId }: { callId: string }) => {
       SoundEffects.stopIncomingRingtone();
       if (get().incomingCall?.callId === callId) {
@@ -465,53 +437,68 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     });
 
-    // 11. Real-time Missed Call Unread Badge Update
-    socket.on('call:unread_update', ({ projectId, increment = 1 }: { projectId: string; increment?: number }) => {
-      const counts = { ...get().missedCallsByProject };
-      counts[projectId] = (counts[projectId] || 0) + increment;
-      set({
-        missedCallsByProject: counts,
-        totalMissedCalls: get().totalMissedCalls + increment,
-      });
-    });
-
-    // 12. Call Ended
-    socket.on('call:ended', ({ callId, duration, endedBy }: { callId: string; duration?: number; endedBy?: string }) => {
-      SoundEffects.stopIncomingRingtone();
-      SoundEffects.playCallEndedSound();
-
-      const currentRemote = get().remoteUser;
-      const currentType = get().callType;
-
-      if (get().callId === callId || get().incomingCall?.callId === callId) {
-        cleanUpCallResources();
-
-        if (currentRemote) {
-          set({
-            endSummary: {
-              callId,
-              remoteUser: currentRemote,
-              duration: duration || get().durationSeconds || 0,
-              type: currentType,
-              endedAt: new Date(),
-            },
-          });
-        }
-
+    // 8. Real-time Missed Call Unread Badge Update
+    socket.on(
+      'call:unread_update',
+      ({ projectId, increment = 1 }: { projectId: string; increment?: number }) => {
+        const counts = { ...get().missedCallsByProject };
+        counts[projectId] = (counts[projectId] || 0) + increment;
         set({
-          callStatus: 'ended',
-          statusText: 'Call ended',
-          incomingCall: null,
-          showConflictWarning: false,
+          missedCallsByProject: counts,
+          totalMissedCalls: get().totalMissedCalls + increment,
         });
       }
-    });
+    );
+
+    // 9. Call Ended
+    socket.on(
+      'call:ended',
+      ({
+        callId,
+        duration,
+      }: {
+        callId: string;
+        duration?: number;
+        endedBy?: string;
+      }) => {
+        SoundEffects.stopIncomingRingtone();
+        SoundEffects.playCallEndedSound();
+
+        const currentRemote = get().remoteUser;
+        const currentType = get().callType;
+
+        if (get().callId === callId || get().incomingCall?.callId === callId) {
+          cleanUpCallResources();
+
+          if (currentRemote) {
+            set({
+              endSummary: {
+                callId,
+                remoteUser: currentRemote,
+                duration: duration || get().durationSeconds || 0,
+                type: currentType,
+                endedAt: new Date(),
+              },
+            });
+          }
+
+          set({
+            callStatus: 'ended',
+            statusText: 'Call ended',
+            incomingCall: null,
+            showConflictWarning: false,
+          });
+        }
+      }
+    );
   },
 
   // ─── Pre-Call Device Check Setup ─────────────────────────────────────────
   openPreCallCheck: async (targetMember, type, projectId, projectName) => {
     if (!isWebRTCSupported()) {
-      toast.error("Your browser doesn't support WebRTC calling. Please use Chrome, Edge, Safari, or Firefox.");
+      toast.error(
+        "Your browser doesn't support realtime audio/video. Please use Chrome, Edge, Safari, or Firefox."
+      );
       return;
     }
 
@@ -537,10 +524,10 @@ export const useCallStore = create<CallState>((set, get) => ({
         video:
           type === 'video'
             ? {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: 'user',
-            }
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user',
+              }
             : false,
       };
 
@@ -556,7 +543,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           set({ preCallStream: audioOnlyStream, preCallCamOpen: false });
           toast('Camera access unavailable. Continuing with audio only.', { icon: '🎤' });
         } catch {
-          toast.error('Microphone and camera permissions are blocked. Please check your browser settings.');
+          toast.error('Microphone access is required for calls. Please check browser permissions.');
         }
       }
     }
@@ -608,7 +595,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   // ─── Initiate Outgoing Call ──────────────────────────────────────────────
   initiateCall: async (targetUserId, projectId, type = 'video', existingStream = null) => {
     if (!isWebRTCSupported()) {
-      toast.error('WebRTC calling is not supported in this browser.');
+      toast.error('Realtime calling is not supported in this browser.');
       return;
     }
 
@@ -622,12 +609,11 @@ export const useCallStore = create<CallState>((set, get) => ({
       return;
     }
 
-    // Clean up any stale calls
     cleanUpCallResources();
 
     set({
       callStatus: 'initiating',
-      statusText: 'Connecting signaling...',
+      statusText: 'Connecting to calling service...',
       isCaller: true,
       callType: type,
       projectId,
@@ -636,6 +622,8 @@ export const useCallStore = create<CallState>((set, get) => ({
       endSummary: null,
       errorMessage: null,
     });
+
+    logCallEvent('CALL_STARTED', { targetUserId: cleanTargetId, projectId, type });
 
     let socket: any = null;
     try {
@@ -646,51 +634,19 @@ export const useCallStore = create<CallState>((set, get) => ({
       set({
         callStatus: 'failed',
         statusText: 'Signaling connection failed',
-        errorMessage: 'Unable to connect to the real-time calling server. Please check your internet connection.',
+        errorMessage:
+          'Unable to connect to the realtime calling server. Please check your internet connection.',
       });
       toast.error('Could not reach calling server. Please try again.');
       return;
     }
 
     try {
-      set({ statusText: 'Accessing media devices...' });
-
-      let localMediaStream = existingStream;
-      if (!localMediaStream) {
-        localMediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video:
-            type === 'video'
-              ? {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: 'user',
-              }
-              : false,
-        });
-      }
-
-      set({
-        localStream: localMediaStream,
-        isMuted: !localMediaStream.getAudioTracks()[0]?.enabled,
-        isVideoOff: type === 'video' ? !localMediaStream.getVideoTracks()[0]?.enabled : true,
-        statusText: 'Calling team member...',
-      });
-
-      // Prepare WebRTC Peer Connection
-      setupPeerConnection(localMediaStream);
-
-      // Emit initiate to Socket server
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[CALL] 📤 Emitting call:initiate to target ${cleanTargetId} in project ${projectId} (type: ${type})`);
-      }
-
-      // Clear any previous once listeners to avoid stale triggers
+      // Clear any previous once listeners
       socket.off('call:initiated');
       socket.off('call:failed');
       socket.off('call:busy');
 
-      // 15-second client-side initiation timeout guard
       let initiationTimer: NodeJS.Timeout | null = setTimeout(() => {
         if (get().callStatus === 'initiating') {
           console.warn('[CALL] Call initiation timed out without response from server.');
@@ -701,28 +657,30 @@ export const useCallStore = create<CallState>((set, get) => ({
           set({
             callStatus: 'failed',
             statusText: 'Connection timed out',
-            errorMessage: 'Call request timed out. Please verify that the receiver is online and try again.',
+            errorMessage: 'Call request timed out. Please verify receiver is online and try again.',
           });
           toast.error('Call request timed out. No response from recipient.');
         }
       }, 15000);
 
       // Listen for initiate confirmation from server
-      socket.once('call:initiated', ({ callId }: { callId: string }) => {
-        if (initiationTimer) {
-          clearTimeout(initiationTimer);
-          initiationTimer = null;
+      socket.once(
+        'call:initiated',
+        ({ callId, roomName }: { callId: string; roomName?: string }) => {
+          if (initiationTimer) {
+            clearTimeout(initiationTimer);
+            initiationTimer = null;
+          }
+          logCallEvent('CALL_INVITE_SENT', { callId, roomName });
+          set({
+            callId,
+            roomName: roomName || `sprintforge-call-${callId}`,
+            callStatus: 'calling',
+            statusText: 'Calling...',
+          });
+          SoundEffects.playCallingChime();
         }
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(`[CALL] 📥 Received call:initiated confirmation for callId: ${callId}`);
-        }
-        set({
-          callId,
-          callStatus: 'calling',
-          statusText: 'Calling...',
-        });
-        SoundEffects.playCallingChime();
-      });
+      );
 
       // Listen for server failure responses
       socket.once('call:failed', ({ code, message }: { code?: string; message?: string }) => {
@@ -738,7 +696,8 @@ export const useCallStore = create<CallState>((set, get) => ({
           set({
             callStatus: 'failed',
             statusText: 'User is offline',
-            errorMessage: 'Team member is currently offline. A missed call notification has been sent.',
+            errorMessage:
+              'Team member is currently offline. A missed call notification has been sent.',
           });
         } else if (code === 'NOT_AUTHORIZED') {
           toast.error('Calling is restricted to workspace members.');
@@ -778,14 +737,14 @@ export const useCallStore = create<CallState>((set, get) => ({
         type,
       });
     } catch (err: any) {
-      console.error('[CALL] Error initiating media stream or call:', err);
+      console.error('[CALL] Error initiating call:', err);
       cleanUpCallResources();
       set({
         callStatus: 'failed',
-        statusText: 'Permission denied or media error',
-        errorMessage: 'Microphone/camera access was denied or device is unavailable.',
+        statusText: 'Failed to initiate call',
+        errorMessage: err.message || 'Call initiation failed.',
       });
-      toast.error('Unable to access microphone or camera.');
+      toast.error('Unable to place call.');
     }
   },
 
@@ -795,7 +754,6 @@ export const useCallStore = create<CallState>((set, get) => ({
     const incoming = get().incomingCall;
     if (!incoming || incoming.callId !== callId) return;
 
-    // If currently on a call, end it cleanly first
     if (get().callStatus === 'connected' || get().callStatus === 'calling') {
       await get().endActiveCall();
     }
@@ -804,10 +762,11 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     set({
       callId,
+      roomName: incoming.roomName || `sprintforge-call-${callId}`,
       projectId: incoming.projectId,
       projectName: incoming.projectName,
       callType: incoming.type,
-      callStatus: 'initiating',
+      callStatus: 'connecting',
       statusText: 'Connecting...',
       isCaller: false,
       remoteUser: incoming.caller,
@@ -820,38 +779,20 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
 
     try {
-      const localMediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video:
-          incoming.type === 'video'
-            ? {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: 'user',
-            }
-            : false,
-      });
-
-      set({
-        localStream: localMediaStream,
-        isMuted: false,
-        isVideoOff: incoming.type === 'audio',
-      });
-
-      // Prepare WebRTC Peer Connection
-      setupPeerConnection(localMediaStream);
-
       const socket = getSocket();
       socket.emit('call:accept', { callId });
+
+      // Join LiveKit SFU Room
+      await get().joinLiveKitRoom(callId);
     } catch (err: any) {
-      console.error('Error accepting call media stream:', err);
+      console.error('Error accepting call:', err);
       cleanUpCallResources();
       set({
         callStatus: 'failed',
-        statusText: 'Camera/Mic error',
-        errorMessage: 'Permission denied for microphone/camera.',
+        statusText: 'Connection error',
+        errorMessage: 'Failed to connect to call room.',
       });
-      toast.error('Could not access microphone or camera to answer call.');
+      toast.error('Could not connect to call.');
     }
   },
 
@@ -889,6 +830,8 @@ export const useCallStore = create<CallState>((set, get) => ({
     const currentDuration = get().durationSeconds;
     const currentType = get().callType;
 
+    logCallEvent('CALL_ENDED', { callId, duration: currentDuration });
+
     if (callId) {
       const socket = getSocket();
       socket.emit('call:end', { callId });
@@ -915,253 +858,360 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
   },
 
-  // ─── In-Call Controls ────────────────────────────────────────────────────
-  toggleMute: () => {
-    const localStream = get().localStream;
-    if (!localStream) return;
+  // ─── Join LiveKit SFU Room ───────────────────────────────────────────────
+  joinLiveKitRoom: async (callId: string) => {
+    try {
+      set({ statusText: 'Authorizing media session...' });
+      logCallEvent('ROOM_CONNECTING', { callId });
 
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (audioTrack) {
-      const newEnabledState = !audioTrack.enabled;
-      audioTrack.enabled = newEnabledState;
-      const isMuted = !newEnabledState;
+      // Request authorized JWT token from backend
+      const { data } = await callAPI.getCallToken(callId);
 
-      set({ isMuted });
-
-      // Sync state to peer
-      const socket = getSocket();
-      if (get().callId) {
-        socket.emit('call:track-state', {
-          callId: get().callId,
-          isMuted,
-        });
+      if (!data || !data.token) {
+        throw new Error('Failed to obtain participant access token');
       }
+
+      const { token, url: serverLiveKitUrl, roomName } = data;
+      const liveKitUrl =
+        serverLiveKitUrl ||
+        process.env.NEXT_PUBLIC_LIVEKIT_URL ||
+        '';
+
+      if (!liveKitUrl) {
+        console.warn(
+          '[CALL/LIVEKIT] No LIVEKIT_URL configured on backend or frontend.'
+        );
+      }
+
+      // Initialize LiveKit Room instance
+      const room = createLiveKitRoom();
+      activeLiveKitRoom = room;
+
+      // ── Room Events Setup ──
+
+      // 1. Connection State Changes
+      room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+        console.log('[CALL/LIVEKIT] Connection state changed:', state);
+        if (state === ConnectionState.Connected) {
+          logCallEvent('ROOM_CONNECTED', { callId, roomName });
+          SoundEffects.playCallConnectedSound();
+
+          set({
+            callStatus: 'connected',
+            statusText: 'Connected',
+            connectedAt: new Date(),
+          });
+
+          // Start duration timer
+          if (!durationInterval) {
+            durationInterval = setInterval(() => {
+              set((s) => ({ durationSeconds: s.durationSeconds + 1 }));
+            }, 1000);
+          }
+        } else if (state === ConnectionState.Reconnecting) {
+          logCallEvent('ROOM_RECONNECTING', { callId });
+          set({
+            callStatus: 'reconnecting',
+            statusText: 'Reconnecting...',
+          });
+        } else if (state === ConnectionState.Disconnected) {
+          logCallEvent('ROOM_DISCONNECTED', { callId });
+        }
+      });
+
+      // 2. Track Subscriptions (Remote Media Arrived)
+      room.on(
+        RoomEvent.TrackSubscribed,
+        (
+          track: RemoteTrack,
+          publication: RemoteTrackPublication,
+          participant: LKRemoteParticipant
+        ) => {
+          logCallEvent('REMOTE_TRACK_RECEIVED', {
+            kind: track.kind,
+            source: track.source,
+            participant: participant.identity,
+          });
+
+          // Update remote participants state
+          updateParticipantFromLiveKit(participant);
+
+          // Maintain remoteStream for audio sink & legacy bindings
+          const currentRemoteStream = get().remoteStream || new MediaStream();
+          currentRemoteStream.addTrack(track.mediaStreamTrack);
+          set({ remoteStream: currentRemoteStream });
+
+          if (track.kind === Track.Kind.Audio) {
+            set({ remoteIsMuted: false });
+          } else if (track.kind === Track.Kind.Video) {
+            if (track.source === Track.Source.ScreenShare) {
+              set({ remoteIsScreenSharing: true });
+            } else {
+              set({ remoteIsVideoOff: false });
+            }
+          }
+        }
+      );
+
+      // 3. Track Unsubscribed
+      room.on(
+        RoomEvent.TrackUnsubscribed,
+        (
+          track: RemoteTrack,
+          publication: RemoteTrackPublication,
+          participant: LKRemoteParticipant
+        ) => {
+          updateParticipantFromLiveKit(participant);
+
+          if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare) {
+            set({ remoteIsScreenSharing: false });
+          }
+        }
+      );
+
+      // 4. Track Muted / Unmuted
+      room.on(
+        RoomEvent.TrackMuted,
+        (publication, participant) => {
+          updateParticipantFromLiveKit(participant as LKRemoteParticipant);
+          if (publication.kind === Track.Kind.Audio) {
+            set({ remoteIsMuted: true });
+          } else if (publication.kind === Track.Kind.Video) {
+            set({ remoteIsVideoOff: true });
+          }
+        }
+      );
+
+      room.on(
+        RoomEvent.TrackUnmuted,
+        (publication, participant) => {
+          updateParticipantFromLiveKit(participant as LKRemoteParticipant);
+          if (publication.kind === Track.Kind.Audio) {
+            set({ remoteIsMuted: false });
+          } else if (publication.kind === Track.Kind.Video) {
+            set({ remoteIsVideoOff: false });
+          }
+        }
+      );
+
+      // 5. Active Speakers Changed
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
+        const localId = room.localParticipant.identity;
+        const isLocalSpeaking = speakers.some((s) => s.identity === localId);
+        const isRemoteSpeaking = speakers.some((s) => s.identity !== localId);
+
+        set({
+          isSpeaking: isLocalSpeaking,
+          remoteIsSpeaking: isRemoteSpeaking,
+        });
+
+        // Update speaker flag for each participant in list
+        const speakerIds = new Set(speakers.map((s) => s.identity));
+        set((state) => ({
+          remoteParticipants: state.remoteParticipants.map((p) => ({
+            ...p,
+            isSpeaking: speakerIds.has(p.identity),
+          })),
+        }));
+      });
+
+      // 6. Network Quality Changed
+      room.on(
+        RoomEvent.ConnectionQualityChanged,
+        (quality: ConnectionQuality, participant: Participant) => {
+          if (participant === room.localParticipant) {
+            const mappedQuality = mapConnectionQuality(quality);
+            set({
+              qualityMetrics: {
+                quality: mappedQuality,
+                rttMs: quality === ConnectionQuality.Excellent ? 35 : quality === ConnectionQuality.Good ? 85 : 240,
+                packetsLost: 0,
+                packetsTotal: 100,
+                packetLossPercent: quality === ConnectionQuality.Poor ? 6 : 0,
+                bitrateKbps: quality === ConnectionQuality.Poor ? 250 : 1200,
+              },
+            });
+          }
+        }
+      );
+
+      // 7. Participant Connected & Disconnected
+      room.on(RoomEvent.ParticipantConnected, (p: LKRemoteParticipant) => {
+        updateParticipantFromLiveKit(p);
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, (p: LKRemoteParticipant) => {
+        set((state) => ({
+          remoteParticipants: state.remoteParticipants.filter((part) => part.identity !== p.identity),
+        }));
+      });
+
+      // Connect room to LiveKit server
+      set({ statusText: 'Connecting to media server...' });
+      await room.connect(liveKitUrl, token);
+
+      // Publish local audio (Microphone)
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true);
+        logCallEvent('LOCAL_AUDIO_PUBLISHED');
+        set({ isMuted: false });
+      } catch (micErr) {
+        console.warn('[CALL/LIVEKIT] Microphone permission denied or unavailable:', micErr);
+        toast.error('Microphone access is required for calls.');
+      }
+
+      // If video call, publish local camera
+      if (get().callType === 'video') {
+        try {
+          await room.localParticipant.setCameraEnabled(true);
+          logCallEvent('LOCAL_VIDEO_PUBLISHED');
+          set({ isVideoOff: false });
+        } catch (camErr) {
+          console.warn('[CALL/LIVEKIT] Camera permission denied or unavailable:', camErr);
+          toast('Camera unavailable. Call continuing with audio only.', { icon: '🎤' });
+          set({ isVideoOff: true });
+        }
+      } else {
+        set({ isVideoOff: true });
+      }
+
+      // Capture local MediaStream reference for local preview
+      const localTracks = room.localParticipant.videoTrackPublications;
+      const firstVidPub = Array.from(localTracks.values())[0];
+      if (firstVidPub?.track) {
+        const stream = new MediaStream([firstVidPub.track.mediaStreamTrack]);
+        set({ localStream: stream });
+      }
+    } catch (err: any) {
+      console.error('[CALL/LIVEKIT] Room join error:', err);
+      cleanUpCallResources();
+
+      if (err?.response?.data?.code === 'LIVEKIT_NOT_CONFIGURED') {
+        set({
+          callStatus: 'failed',
+          statusText: 'Media server not configured',
+          errorMessage:
+            'LiveKit credentials are not configured on the backend. Please add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+        });
+        toast.error(
+          'LiveKit media server credentials missing on backend. Please configure environment variables.'
+        );
+      } else {
+        set({
+          callStatus: 'failed',
+          statusText: 'Connection failed',
+          errorMessage: err.message || 'Failed to establish media connection.',
+        });
+        toast.error('Could not connect to call room.');
+      }
+    }
+  },
+
+  // ─── In-Call Controls ────────────────────────────────────────────────────
+  toggleMute: async () => {
+    const room = activeLiveKitRoom;
+    if (!room) return;
+
+    const currentMuted = get().isMuted;
+    try {
+      await room.localParticipant.setMicrophoneEnabled(currentMuted);
+      set({ isMuted: !currentMuted });
+    } catch (err) {
+      console.error('[CALL/LIVEKIT] Error toggling microphone:', err);
+      toast.error('Unable to toggle microphone');
     }
   },
 
   toggleVideo: async () => {
-    const localStream = get().localStream;
+    const room = activeLiveKitRoom;
+    if (!room) return;
+
     const currentVideoOff = get().isVideoOff;
+    try {
+      await room.localParticipant.setCameraEnabled(currentVideoOff);
+      set({ isVideoOff: !currentVideoOff });
 
-    if (!localStream) return;
-
-    let videoTrack = localStream.getVideoTracks()[0];
-
-    if (videoTrack) {
-      const nextState = !videoTrack.enabled;
-      videoTrack.enabled = nextState;
-      set({ isVideoOff: !nextState });
-
-      // Sync state to peer
-      const socket = getSocket();
-      if (get().callId) {
-        socket.emit('call:track-state', {
-          callId: get().callId,
-          isVideoOff: !nextState,
-        });
+      // Update local preview stream
+      const localTracks = room.localParticipant.videoTrackPublications;
+      const firstVidPub = Array.from(localTracks.values())[0];
+      if (firstVidPub?.track && currentVideoOff) {
+        const stream = new MediaStream([firstVidPub.track.mediaStreamTrack]);
+        set({ localStream: stream });
       }
-    } else if (currentVideoOff) {
-      // If no video track exists initially (started as audio call), add video track dynamically
-      try {
-        const videoStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-        });
-        const newVideoTrack = videoStream.getVideoTracks()[0];
-        localStream.addTrack(newVideoTrack);
-
-        if (peerConnection) {
-          peerConnection.addTrack(newVideoTrack, localStream);
-          // Re-negotiate SDP if needed
-          if (get().isCaller && get().callId) {
-            await createAndSendWebRTCOffer(get().callId!);
-          }
-        }
-
-        set({ isVideoOff: false, callType: 'video' });
-
-        const socket = getSocket();
-        if (get().callId) {
-          socket.emit('call:track-state', {
-            callId: get().callId,
-            isVideoOff: false,
-          });
-        }
-      } catch {
-        toast.error('Unable to activate camera');
-      }
+    } catch (err) {
+      console.error('[CALL/LIVEKIT] Error toggling camera:', err);
+      toast.error('Unable to toggle camera');
     }
   },
 
   startScreenShare: async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      toast.error('Screen sharing is not supported in this browser.');
-      return;
-    }
+    const room = activeLiveKitRoom;
+    if (!room) return;
 
     try {
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      });
-
-      const screenVideoTrack = displayStream.getVideoTracks()[0];
-
-      // Handle user stopping screen share from browser banner
-      screenVideoTrack.onended = () => {
-        get().stopScreenShare();
-      };
-
-      // Replace current video track in RTCPeerConnection sender
-      if (peerConnection) {
-        const senders = peerConnection.getSenders();
-        const videoSender = senders.find((s) => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(screenVideoTrack);
-        } else {
-          peerConnection.addTrack(screenVideoTrack, displayStream);
-        }
-      }
-
-      set({
-        screenStream: displayStream,
-        isScreenSharing: true,
-      });
-
-      const socket = getSocket();
-      if (get().callId) {
-        socket.emit('call:track-state', {
-          callId: get().callId,
-          isScreenSharing: true,
-        });
-      }
-
-      toast.success('You are now sharing your screen');
+      await room.localParticipant.setScreenShareEnabled(true);
+      set({ isScreenSharing: true });
+      toast.success('Sharing your screen');
     } catch (err) {
-      console.warn('Screen share canceled or denied:', err);
+      console.warn('[CALL/LIVEKIT] Screen share canceled or denied:', err);
     }
   },
 
-  stopScreenShare: () => {
-    const screenStream = get().screenStream;
-    if (screenStream) {
-      screenStream.getTracks().forEach((t) => t.stop());
-    }
+  stopScreenShare: async () => {
+    const room = activeLiveKitRoom;
+    if (!room) return;
 
-    // Restore camera video track in RTCPeerConnection sender
-    const localStream = get().localStream;
-    const cameraTrack = localStream?.getVideoTracks()[0] || null;
-
-    if (peerConnection) {
-      const senders = peerConnection.getSenders();
-      const videoSender = senders.find((s) => s.track?.kind === 'video' || s.track === null);
-      if (videoSender && cameraTrack) {
-        videoSender.replaceTrack(cameraTrack);
-      }
-    }
-
-    set({
-      screenStream: null,
-      isScreenSharing: false,
-    });
-
-    const socket = getSocket();
-    if (get().callId) {
-      socket.emit('call:track-state', {
-        callId: get().callId,
-        isScreenSharing: false,
-      });
+    try {
+      await room.localParticipant.setScreenShareEnabled(false);
+      set({ isScreenSharing: false, screenStream: null });
+    } catch (err) {
+      console.error('[CALL/LIVEKIT] Error stopping screen share:', err);
     }
   },
 
   // ─── Hardware Device Switchers ───────────────────────────────────────────
   switchAudioInput: async (deviceId: string) => {
     set({ selectedAudioInputId: deviceId });
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } },
-      });
-      const newAudioTrack = newStream.getAudioTracks()[0];
-
-      const localStream = get().localStream;
-      if (localStream) {
-        const oldAudioTrack = localStream.getAudioTracks()[0];
-        if (oldAudioTrack) {
-          localStream.removeTrack(oldAudioTrack);
-          oldAudioTrack.stop();
-        }
-        localStream.addTrack(newAudioTrack);
+    const room = activeLiveKitRoom;
+    if (room) {
+      try {
+        await room.switchActiveDevice('audioinput', deviceId);
+        toast.success('Microphone changed');
+      } catch {
+        toast.error('Failed to switch microphone');
       }
-
-      if (peerConnection) {
-        const senders = peerConnection.getSenders();
-        const audioSender = senders.find((s) => s.track?.kind === 'audio');
-        if (audioSender) {
-          audioSender.replaceTrack(newAudioTrack);
-        }
-      }
-      toast.success('Microphone changed');
-    } catch {
-      toast.error('Failed to switch microphone');
     }
   },
 
   switchVideoInput: async (deviceId: string) => {
     set({ selectedVideoInputId: deviceId });
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      const newVideoTrack = newStream.getVideoTracks()[0];
-
-      const localStream = get().localStream;
-      if (localStream) {
-        const oldVideoTrack = localStream.getVideoTracks()[0];
-        if (oldVideoTrack) {
-          localStream.removeTrack(oldVideoTrack);
-          oldVideoTrack.stop();
-        }
-        localStream.addTrack(newVideoTrack);
+    const room = activeLiveKitRoom;
+    if (room) {
+      try {
+        await room.switchActiveDevice('videoinput', deviceId);
+        toast.success('Camera changed');
+      } catch {
+        toast.error('Failed to switch camera');
       }
-
-      if (peerConnection && !get().isScreenSharing) {
-        const senders = peerConnection.getSenders();
-        const videoSender = senders.find((s) => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(newVideoTrack);
-        }
-      }
-      toast.success('Camera changed');
-    } catch {
-      toast.error('Failed to switch camera');
     }
   },
 
   switchAudioOutput: async (deviceId: string) => {
     set({ selectedAudioOutputId: deviceId });
-    // In browsers that support HTMLMediaElement.setSinkId
-    const globalAudioEl = document.getElementById('sprintforge-global-remote-audio') as any;
-    const remoteAudioEl = document.getElementById('sprintforge-remote-audio') as any;
+    const room = activeLiveKitRoom;
+    if (room && typeof (room as any).switchActiveDevice === 'function') {
+      try {
+        await (room as any).switchActiveDevice('audiooutput', deviceId);
+      } catch {}
+    }
 
-    let routed = false;
+    // Set sinkId on global audio sink element
+    const globalAudioEl = document.getElementById('sprintforge-global-remote-audio') as any;
     if (globalAudioEl && typeof globalAudioEl.setSinkId === 'function') {
       try {
         await globalAudioEl.setSinkId(deviceId);
-        routed = true;
-      } catch (err) {
-        console.warn('[CALL/AUDIO] Error setting sink on global audio element:', err);
-      }
-    }
-    if (remoteAudioEl && typeof remoteAudioEl.setSinkId === 'function') {
-      try {
-        await remoteAudioEl.setSinkId(deviceId);
-        routed = true;
-      } catch (err) {
-        console.warn('[CALL/AUDIO] Error setting sink on workspace audio element:', err);
-      }
-    }
-
-    if (routed) {
-      toast.success('Speaker output changed');
+        toast.success('Speaker output changed');
+      } catch {}
     }
   },
 
@@ -1175,163 +1225,86 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 }));
 
-// ─── WebRTC PeerConnection Setup Helper ────────────────────────────────────
-function setupPeerConnection(localStream: MediaStream) {
-  const config = getWebRTCConfig();
-  console.log('[CALL/WEBRTC] Initializing RTCPeerConnection with config:', config);
-  peerConnection = new RTCPeerConnection(config);
-  queuedIceCandidates = [];
-
-  // Add local stream tracks to RTCPeerConnection
-  localStream.getTracks().forEach((track) => {
-    if (peerConnection) {
-      console.log('[CALL/WEBRTC] Adding local track to RTCPeerConnection:', track.kind, track.label);
-      peerConnection.addTrack(track, localStream);
-    }
-  });
-
-  // Handle incoming remote media tracks
-  peerConnection.ontrack = (event) => {
-    console.log('[CALL/WEBRTC] Remote track received:', event.track.kind, event.streams);
-    const [remoteStream] = event.streams;
-    if (remoteStream) {
-      useCallStore.setState({ remoteStream });
-    } else {
-      // Fallback if streams array is empty
-      const current = useCallStore.getState().remoteStream || new MediaStream();
-      current.addTrack(event.track);
-      useCallStore.setState({ remoteStream: current });
-    }
-  };
-
-  // Relay local ICE Candidates through Socket.IO
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      const callId = useCallStore.getState().callId;
-      if (callId) {
-        console.log('[CALL/WEBRTC] Emitting local ICE candidate');
-        const socket = getSocket();
-        socket.emit('call:ice-candidate', {
-          callId,
-          candidate: event.candidate.toJSON(),
-        });
-      }
-    }
-  };
-
-  const handleConnectionSuccess = () => {
-    if (useCallStore.getState().callStatus !== 'connected') {
-      console.log('[CALL/WEBRTC] PeerConnection successfully established & connected!');
-      SoundEffects.playCallConnectedSound();
-      useCallStore.setState({
-        callStatus: 'connected',
-        statusText: 'Connected',
-        connectedAt: new Date(),
-      });
-
-      const callId = useCallStore.getState().callId;
-      if (callId) {
-        getSocket().emit('call:connected', { callId });
-      }
-
-      // Start duration timer
-      if (!durationInterval) {
-        durationInterval = setInterval(() => {
-          useCallStore.setState((s) => ({ durationSeconds: s.durationSeconds + 1 }));
-        }, 1000);
-      }
-
-      // Start WebRTC connection quality analyzer (polls every 3 seconds)
-      if (!statsInterval) {
-        statsInterval = setInterval(async () => {
-          if (peerConnection) {
-            const metrics = await getPeerConnectionQuality(peerConnection);
-            useCallStore.setState({ qualityMetrics: metrics });
-          }
-        }, 3000);
-      }
-    }
-  };
-
-  // Monitor connection states & handle reconnects/failures gracefully
-  peerConnection.onconnectionstatechange = () => {
-    if (!peerConnection) return;
-    const state = peerConnection.connectionState;
-    console.log('[CALL/WEBRTC] peerConnection connectionState:', state);
-
-    if (state === 'connected') {
-      handleConnectionSuccess();
-    } else if (state === 'connecting') {
-      useCallStore.setState({
-        statusText: 'Connecting media...',
-      });
-    } else if (state === 'disconnected') {
-      useCallStore.setState({
-        callStatus: 'reconnecting',
-        statusText: 'Reconnecting...',
-      });
-    } else if (state === 'failed') {
-      useCallStore.setState({
-        callStatus: 'failed',
-        statusText: 'Connection lost',
-        errorMessage: 'Network connection between peers failed. Please check your network or firewall.',
-      });
-    } else if (state === 'closed') {
-      // closed
-    }
-  };
-
-  peerConnection.oniceconnectionstatechange = () => {
-    if (!peerConnection) return;
-    const iceState = peerConnection.iceConnectionState;
-    console.log('[CALL/WEBRTC] peerConnection iceConnectionState:', iceState);
-
-    if (iceState === 'connected' || iceState === 'completed') {
-      handleConnectionSuccess();
-    } else if (iceState === 'failed') {
-      console.warn('[CALL/WEBRTC] ICE connection state failed. Attempting ICE restart if caller...');
-      // Attempt ICE restart if caller
-      if (useCallStore.getState().isCaller && useCallStore.getState().callId) {
-        peerConnection.restartIce();
-      }
-    }
-  };
-}
-
-// ─── Create & Send WebRTC SDP Offer (Caller) ──────────────────────────────
-async function createAndSendWebRTCOffer(callId: string) {
-  if (!peerConnection) return;
+// ─── Helper: Update Participant State from LiveKit ─────────────────────────
+function updateParticipantFromLiveKit(participant: LKRemoteParticipant) {
+  let meta: any = {};
   try {
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true,
-    });
-    await peerConnection.setLocalDescription(offer);
+    if (participant.metadata) {
+      meta = JSON.parse(participant.metadata);
+    }
+  } catch {}
 
-    const socket = getSocket();
-    socket.emit('call:offer', {
-      callId,
-      sdp: peerConnection.localDescription,
-    });
-  } catch (err) {
-    console.error('Error creating WebRTC offer:', err);
-  }
+  const audioPub = Array.from(participant.audioTrackPublications.values())[0];
+  const videoPub = Array.from(participant.videoTrackPublications.values()).find(
+    (p) => p.source !== Track.Source.ScreenShare
+  );
+  const screenPub = Array.from(participant.videoTrackPublications.values()).find(
+    (p) => p.source === Track.Source.ScreenShare
+  );
+
+  const participantState: LiveKitParticipantState = {
+    identity: participant.identity,
+    name: participant.name || meta.name || 'Team Member',
+    avatar: meta.avatar,
+    role: meta.role || 'Member',
+    audioTrack: (audioPub?.track as RemoteTrack) || null,
+    videoTrack: (videoPub?.track as RemoteTrack) || null,
+    screenTrack: (screenPub?.track as RemoteTrack) || null,
+    isMuted: audioPub ? audioPub.isMuted : true,
+    isVideoOff: videoPub ? videoPub.isMuted : true,
+    isSpeaking: participant.isSpeaking,
+    connectionQuality: mapConnectionQuality(participant.connectionQuality),
+  };
+
+  useCallStore.setState((state) => {
+    const existingIndex = state.remoteParticipants.findIndex(
+      (p) => p.identity === participant.identity
+    );
+    let updatedList: LiveKitParticipantState[];
+
+    if (existingIndex >= 0) {
+      updatedList = [...state.remoteParticipants];
+      updatedList[existingIndex] = participantState;
+    } else {
+      updatedList = [...state.remoteParticipants, participantState];
+    }
+
+    // Also update remoteUser if matching
+    const currentRemote = state.remoteUser;
+    const isMainRemote = !currentRemote || currentRemote._id === participant.identity;
+
+    return {
+      remoteParticipants: updatedList,
+      remoteUser: isMainRemote
+        ? {
+            _id: participant.identity,
+            name: participant.name || meta.name || 'Team Member',
+            avatar: meta.avatar,
+            role: meta.role,
+          }
+        : currentRemote,
+      remoteIsMuted: participantState.isMuted,
+      remoteIsVideoOff: participantState.isVideoOff,
+      remoteIsScreenSharing: Boolean(participantState.screenTrack),
+    };
+  });
 }
 
-// ─── Full Resource & Stream Cleanup ────────────────────────────────────────
+// ─── Resource & Stream Cleanup ─────────────────────────────────────────────
 function cleanUpCallResources() {
   SoundEffects.stopIncomingRingtone();
 
-  // Stop Duration Interval
   if (durationInterval) {
     clearInterval(durationInterval);
     durationInterval = null;
   }
 
-  // Stop Stats Interval
-  if (statsInterval) {
-    clearInterval(statsInterval);
-    statsInterval = null;
+  // Disconnect LiveKit Room
+  if (activeLiveKitRoom) {
+    try {
+      activeLiveKitRoom.disconnect();
+    } catch {}
+    activeLiveKitRoom = null;
   }
 
   // Stop local media tracks
@@ -1340,38 +1313,24 @@ function cleanUpCallResources() {
     localStream.getTracks().forEach((track) => {
       try {
         track.stop();
-      } catch { }
+      } catch {}
     });
   }
 
-  // Stop screen share tracks
   const screenStream = useCallStore.getState().screenStream;
   if (screenStream) {
     screenStream.getTracks().forEach((track) => {
       try {
         track.stop();
-      } catch { }
+      } catch {}
     });
   }
-
-  // Close WebRTC RTCPeerConnection
-  if (peerConnection) {
-    try {
-      peerConnection.ontrack = null;
-      peerConnection.onicecandidate = null;
-      peerConnection.onconnectionstatechange = null;
-      peerConnection.oniceconnectionstatechange = null;
-      peerConnection.close();
-    } catch { }
-    peerConnection = null;
-  }
-
-  queuedIceCandidates = [];
 
   useCallStore.setState({
     localStream: null,
     remoteStream: null,
     screenStream: null,
+    remoteParticipants: [],
     isMuted: false,
     isVideoOff: false,
     isScreenSharing: false,

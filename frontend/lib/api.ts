@@ -289,6 +289,7 @@ export const callAPI = {
   markAllProjectCallsAsRead: (projectId: string) =>
     api.post(`/calls/project/${projectId}/read-all`),
   endCall: (callId: string) => api.post(`/calls/${callId}/end`),
+  getCallToken: (callId: string) => api.post(`/calls/${callId}/token`),
 };
 
 // ─── Impact Engine ───
