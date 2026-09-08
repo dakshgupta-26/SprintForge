@@ -37,10 +37,12 @@ export function GitHubConnectModal() {
   const [cloning, setCloning] = useState(false);
   const [cloneStage, setCloneStage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [grantAccessUrl, setGrantAccessUrl] = useState<string | null>(null);
 
   const loadStatusAndRepos = async () => {
     setLoading(true);
     setErrorMessage(null);
+    setGrantAccessUrl(null);
     try {
       const { data: statusData } = await codeAPI.getGitHubStatus();
       setGhStatus(statusData);
@@ -79,6 +81,7 @@ export function GitHubConnectModal() {
     if (!patToken.trim()) return;
     setLoading(true);
     setErrorMessage(null);
+    setGrantAccessUrl(null);
     try {
       await codeAPI.connectGitHubToken(patToken.trim());
       setPatToken("");
@@ -104,6 +107,7 @@ export function GitHubConnectModal() {
     if (!projectId) return;
     setCloning(true);
     setErrorMessage(null);
+    setGrantAccessUrl(null);
     setCloneStage("Authenticating repository access...");
 
     try {
@@ -126,17 +130,26 @@ export function GitHubConnectModal() {
       }, 500);
     } catch (err: any) {
       setCloning(false);
-      setErrorMessage(err.response?.data?.message || "Failed to clone repository.");
+      const msg = err.response?.data?.message || "Failed to clone repository.";
+      setErrorMessage(msg);
+      if (err.response?.data?.installationUrl) {
+        setGrantAccessUrl(err.response.data.installationUrl);
+      }
     }
   };
 
   const handleCloneCustomUrl = async () => {
     if (!cloneUrlInput.trim() || !projectId) return;
-    const name = cloneUrlInput.split("/").pop()?.replace(".git", "") || "repo";
+    const match = cloneUrlInput
+      .trim()
+      .match(/(?:https?:\/\/github\.com\/|git@github\.com:)?([^/]+)\/([^/]+?)(?:\.git|\/)?$/);
+    const owner = match ? match[1] : "custom";
+    const name = match ? match[2] : cloneUrlInput.split("/").pop()?.replace(".git", "") || "repo";
+
     await handleCloneRepo({
       cloneUrl: cloneUrlInput.trim(),
       name,
-      owner: "custom",
+      owner,
       isPrivate: false,
       defaultBranch: "main",
     });
@@ -215,9 +228,21 @@ export function GitHubConnectModal() {
 
         {/* ── Error Banner ── */}
         {errorMessage && (
-          <div className="mx-5 mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-            <span>{errorMessage}</span>
+          <div className="mx-5 mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+              <span className="truncate">{errorMessage}</span>
+            </div>
+            {grantAccessUrl && (
+              <a
+                href={grantAccessUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-white font-semibold text-[11px] flex-shrink-0 transition-colors"
+              >
+                Grant Repository Access
+              </a>
+            )}
           </div>
         )}
 

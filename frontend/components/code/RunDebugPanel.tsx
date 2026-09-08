@@ -19,6 +19,7 @@ import { getSocket } from "@/lib/socket";
 export function RunDebugPanel() {
   const {
     projectId,
+    activeTabId,
     toggleTerminal,
     activeTerminalId,
     addOutputLog,
@@ -26,6 +27,30 @@ export function RunDebugPanel() {
   } = useCodeStore();
 
   const [customCommand, setCustomCommand] = useState("");
+
+  const getSmartRunner = (cmd: string): string => {
+    const trimmed = cmd.trim();
+    // Prevent permission denied on ./script.js or script.js
+    const jsMatch = trimmed.match(/^\.?\/?([^\s]+\.(js|mjs|cjs))$/i);
+    if (jsMatch) return `node ${jsMatch[1]}`;
+
+    const tsMatch = trimmed.match(/^\.?\/?([^\s]+\.(ts|mts|cts|tsx))$/i);
+    if (tsMatch) return `npx tsx ${tsMatch[1]}`;
+
+    const pyMatch = trimmed.match(/^\.?\/?([^\s]+\.py)$/i);
+    if (pyMatch) return `python ${pyMatch[1]}`;
+
+    const javaMatch = trimmed.match(/^\.?\/?([^\s]+)\.java$/i);
+    if (javaMatch) return `javac ${trimmed} && java ${javaMatch[1]}`;
+
+    const cMatch = trimmed.match(/^\.?\/?([^\s]+\.c)$/i);
+    if (cMatch) return `gcc ${cMatch[1]} -o a.out && ./a.out`;
+
+    const cppMatch = trimmed.match(/^\.?\/?([^\s]+\.(cpp|cc))$/i);
+    if (cppMatch) return `g++ ${cppMatch[1]} -o a.out && ./a.out`;
+
+    return trimmed;
+  };
 
   const standardScripts = [
     {
@@ -66,9 +91,10 @@ export function RunDebugPanel() {
     },
   ];
 
-  const handleRunCommand = (cmd: string) => {
+  const handleRunCommand = (rawCmd: string) => {
     if (!projectId) return;
 
+    const cmd = getSmartRunner(rawCmd);
     toggleTerminal(true);
     addOutputLog(`[Process] Executing: ${cmd}`);
 
@@ -81,6 +107,8 @@ export function RunDebugPanel() {
       });
     }
   };
+
+  const activeFileRunner = activeTabId ? getSmartRunner(activeTabId) : null;
 
   return (
     <div className="h-full flex flex-col bg-[#070a18] select-none text-slate-300 text-xs">
@@ -96,6 +124,34 @@ export function RunDebugPanel() {
 
       {/* ── Scripts List ── */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+        {/* Active File Runner Card */}
+        {activeTabId && activeFileRunner && activeFileRunner !== activeTabId && (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase font-bold text-emerald-400">
+                Active Source File
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 truncate max-w-[120px]">
+                {activeTabId}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <code className="text-xs font-mono text-white font-semibold truncate flex-1">
+                {activeFileRunner}
+              </code>
+              <button
+                type="button"
+                onClick={() => handleRunCommand(activeFileRunner)}
+                disabled={permission === "VIEW"}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 flex-shrink-0 shadow-sm"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>Run File</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div>
           <h4 className="text-[10px] font-mono uppercase font-bold text-slate-500 mb-2">
             Project Scripts

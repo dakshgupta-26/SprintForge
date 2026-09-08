@@ -465,9 +465,54 @@ export const getGitHubAuthUrl = async (req: AuthRequest, res: Response) => {
     const state = `sf_${req.user._id}_${Date.now()}`;
     const redirectUri = req.query.redirectUri as string | undefined;
     const url = GitHubService.getOAuthUrl(state, redirectUri);
-    res.json({ url, state });
+    res.json({ url, state, isConfigured: GitHubService.isConfigured() });
   } catch (err: any) {
     res.status(500).json({ message: err.message || 'Failed to generate auth URL' });
+  }
+};
+
+export const handleGitHubCallbackGet = async (req: any, res: Response) => {
+  try {
+    const code = req.query.code as string;
+    const state = req.query.state as string;
+    const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim();
+
+    if (!code || !state) {
+      return res.redirect(
+        `${clientUrl}/dashboard/settings?tab=apps&github_error=${encodeURIComponent(
+          'Missing authorization code or state parameter from GitHub'
+        )}`
+      );
+    }
+
+    let userId = '';
+    if (state.startsWith('sf_')) {
+      const parts = state.split('_');
+      userId = parts[1];
+    } else {
+      try {
+        const parsed = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
+        userId = parsed.u;
+      } catch {}
+    }
+
+    if (!userId) {
+      return res.redirect(
+        `${clientUrl}/dashboard/settings?tab=apps&github_error=${encodeURIComponent(
+          'Invalid or expired OAuth state parameter'
+        )}`
+      );
+    }
+
+    await GitHubService.handleOAuthCallback(code, userId);
+    return res.redirect(`${clientUrl}/dashboard/settings?tab=apps&github=connected`);
+  } catch (err: any) {
+    const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim();
+    return res.redirect(
+      `${clientUrl}/dashboard/settings?tab=apps&github_error=${encodeURIComponent(
+        err.message || 'GitHub authentication failed'
+      )}`
+    );
   }
 };
 
@@ -484,9 +529,50 @@ export const handleGitHubCallback = async (req: AuthRequest, res: Response) => {
       username: connection.username,
       displayName: connection.displayName,
       avatarUrl: connection.avatarUrl,
+      repositoryCount: connection.repositoryCount || 0,
+      installationUrl: GitHubService.getInstallationUrl(),
     });
   } catch (err: any) {
     res.status(500).json({ message: err.message || 'GitHub authentication failed' });
+  }
+};
+
+export const handleGitHubWebhook = async (req: any, res: Response) => {
+  try {
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    const rawPayload = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+    const isValid = GitHubService.validateWebhookSignature(rawPayload, signature);
+    if (!isValid) {
+      return res.status(401).json({ message: 'Invalid webhook signature' });
+    }
+
+    const event = req.headers['x-github-event'];
+    const repoFullName = req.body?.repository?.full_name;
+
+    if (event === 'push' && repoFullName) {
+      const io = req.app.get('io');
+      const workspaces = await CodeWorkspace.find({
+        'repository.url': { $regex: repoFullName, $options: 'i' },
+      });
+
+      for (const ws of workspaces) {
+        if (io) {
+          io.to(`code:workspace:${ws.project}`).emit('code:git:remote_push', {
+            projectId: ws.project,
+            repository: repoFullName,
+            branch: req.body.ref?.replace('refs/heads/', '') || 'main',
+            sender: req.body.sender?.login || 'GitHub',
+            commits: req.body.commits?.length || 0,
+            headCommit: req.body.head_commit?.message || '',
+          });
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message || 'Webhook processing failed' });
   }
 };
 
@@ -497,12 +583,14 @@ export const connectGitHubToken = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'GitHub personal access token is required' });
     }
 
-    const connection = await GitHubService.saveUserToken(String(req.user._id), token);
+    const connection = await GitHubService.saveUserToken(String(req.user._id), token.trim());
     res.json({
       success: true,
       username: connection.username,
       displayName: connection.displayName,
       avatarUrl: connection.avatarUrl,
+      repositoryCount: connection.repositoryCount || 0,
+      installationUrl: GitHubService.getInstallationUrl(),
     });
   } catch (err: any) {
     res.status(500).json({ message: err.message || 'Failed to connect GitHub token. Ensure token is valid.' });
@@ -538,6 +626,19 @@ export const cloneGitHubRepo = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Repository clone URL is required' });
     }
 
+    // Verify access if owner and repoName provided
+    if (owner && repoName) {
+      const access = await GitHubService.verifyRepoAccess(String(req.user._id), owner, repoName);
+      if (!access.hasAccess) {
+        return res.status(403).json({
+          message:
+            access.error ||
+            'Repository access is required. SprintForge cannot access this repository with current permissions.',
+          installationUrl: GitHubService.getInstallationUrl(),
+        });
+      }
+    }
+
     const token = await GitHubService.getDecryptedToken(String(req.user._id));
     const cloneResult = await GitService.cloneRepository(projectId, repoUrl, token || undefined);
 
@@ -560,6 +661,11 @@ export const cloneGitHubRepo = async (req: AuthRequest, res: Response) => {
       },
       { upsert: true }
     );
+
+    // Also link project model to GitHub repo (Section 9: Project <-> GitHub Repository Link)
+    await Project.findByIdAndUpdate(projectId, {
+      githubRepo: repoUrl,
+    });
 
     await CodeAuditService.logActivity({
       projectId,

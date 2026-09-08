@@ -217,8 +217,18 @@ export class MonacoYjsCollaboration {
     if (!this.model || this.model.isDisposed()) return;
 
     // A. Yjs Text changes -> Apply granular delta edits to Monaco Model buffer
-    const handleYTextChange = (event: Y.YTextEvent) => {
+    const handleYTextChange = (event: Y.YTextEvent, transaction: Y.Transaction) => {
+      // If transaction is from initial server-sync, handleSyncStep2 manages full alignment
+      if (transaction?.origin === "server-sync") {
+        return;
+      }
+
       if (this.isApplyingRemoteUpdate && this.model && !this.model.isDisposed()) {
+        const authoritativeText = this.yText.toString();
+        if (this.model.getValue() === authoritativeText) {
+          return;
+        }
+
         const edits: any[] = [];
         let index = 0;
 
@@ -260,10 +270,10 @@ export class MonacoYjsCollaboration {
 
         if (edits.length > 0) {
           this.model.applyEdits(edits);
-        } else if (this.model.getValue() !== this.yText.toString()) {
+        } else if (this.model.getValue() !== authoritativeText) {
           const fullRange = this.model.getFullModelRange();
           this.model.applyEdits([
-            { range: fullRange, text: this.yText.toString() },
+            { range: fullRange, text: authoritativeText },
           ]);
         }
       }

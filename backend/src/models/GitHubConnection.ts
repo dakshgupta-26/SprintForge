@@ -10,6 +10,11 @@ export interface IGitHubConnection extends Document {
   encryptedAccessToken: string; // AES-256-CBC encrypted token
   iv: string; // Initialization vector
   scopes: string[];
+  installationId?: string;
+  accountType?: 'User' | 'Organization';
+  repositorySelection?: 'all' | 'selected';
+  repositoryCount?: number;
+  lastSyncedAt?: Date;
   connectedAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +30,11 @@ const gitHubConnectionSchema = new Schema<IGitHubConnection>(
     encryptedAccessToken: { type: String, required: true },
     iv: { type: String, required: true },
     scopes: [{ type: String }],
+    installationId: { type: String },
+    accountType: { type: String, enum: ['User', 'Organization'], default: 'User' },
+    repositorySelection: { type: String, enum: ['all', 'selected'], default: 'all' },
+    repositoryCount: { type: Number, default: 0 },
+    lastSyncedAt: { type: Date },
     connectedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

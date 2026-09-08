@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import GitHubConnection, { IGitHubConnection } from '../models/GitHubConnection';
 import { encryptMessage, decryptMessage } from '../utils/crypto';
 
@@ -19,18 +20,53 @@ export interface GitHubRepoItem {
 }
 
 export class GitHubService {
-  private static clientId = process.env.GITHUB_CLIENT_ID || '';
-  private static clientSecret = process.env.GITHUB_CLIENT_SECRET || '';
+  public static get clientId(): string {
+    return process.env.GITHUB_CLIENT_ID || '';
+  }
+
+  public static get clientSecret(): string {
+    return process.env.GITHUB_CLIENT_SECRET || '';
+  }
+
+  public static get appSlug(): string {
+    return process.env.GITHUB_APP_SLUG || '';
+  }
+
+  public static get callbackUrl(): string {
+    return process.env.GITHUB_CALLBACK_URL || '';
+  }
+
+  public static get webhookSecret(): string {
+    return process.env.GITHUB_WEBHOOK_SECRET || '';
+  }
 
   /**
-   * Generates GitHub OAuth authorization URL.
+   * Checks if GitHub OAuth or GitHub App credentials are configured on the server.
+   */
+  public static isConfigured(): boolean {
+    return Boolean(this.clientId && this.clientSecret);
+  }
+
+  /**
+   * Returns GitHub App Installation URL where users can grant access to repositories.
+   */
+  public static getInstallationUrl(): string {
+    if (this.appSlug) {
+      return `https://github.com/apps/${this.appSlug}/installations/new`;
+    }
+    return 'https://github.com/settings/installations';
+  }
+
+  /**
+   * Generates GitHub OAuth authorization URL with state CSRF protection.
    */
   public static getOAuthUrl(state: string, redirectUri?: string): string {
+    const effectiveRedirect = redirectUri || this.callbackUrl || undefined;
     const params = new URLSearchParams({
       client_id: this.clientId,
       scope: 'repo read:user user:email',
       state,
-      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+      ...(effectiveRedirect ? { redirect_uri: effectiveRedirect } : {}),
     });
     return `https://github.com/login/oauth/authorize?${params.toString()}`;
   }
@@ -43,13 +79,14 @@ export class GitHubService {
     userId: string,
     redirectUri?: string
   ): Promise<IGitHubConnection> {
+    const effectiveRedirect = redirectUri || this.callbackUrl || undefined;
     const tokenRes = await axios.post(
       'https://github.com/login/oauth/access_token',
       {
         client_id: this.clientId,
         client_secret: this.clientSecret,
         code,
-        ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+        ...(effectiveRedirect ? { redirect_uri: effectiveRedirect } : {}),
       },
       {
         headers: { Accept: 'application/json' },
@@ -61,7 +98,11 @@ export class GitHubService {
       throw new Error(tokenRes.data.error_description || 'Failed to obtain access token from GitHub');
     }
 
-    return await this.saveUserToken(userId, access_token, scope ? scope.split(',') : ['repo']);
+    return await this.saveUserToken(
+      userId,
+      access_token,
+      scope ? scope.split(',') : ['repo', 'read:user']
+    );
   }
 
   /**
@@ -70,7 +111,8 @@ export class GitHubService {
   public static async saveUserToken(
     userId: string,
     accessToken: string,
-    scopes: string[] = ['repo']
+    scopes: string[] = ['repo'],
+    installationId?: string
   ): Promise<IGitHubConnection> {
     // Verify token and fetch user profile from GitHub API
     const userRes = await axios.get('https://api.github.com/user', {
@@ -83,6 +125,11 @@ export class GitHubService {
     const ghUser = userRes.data;
     const { encryptedData, iv } = encryptMessage(accessToken);
 
+    const repositoryCount =
+      (ghUser.public_repos || 0) +
+      (ghUser.total_private_repos || 0) +
+      (ghUser.owned_private_repos || 0);
+
     const connection = await GitHubConnection.findOneAndUpdate(
       { user: userId },
       {
@@ -94,6 +141,10 @@ export class GitHubService {
         encryptedAccessToken: encryptedData,
         iv,
         scopes,
+        installationId: installationId || undefined,
+        accountType: ghUser.type === 'Organization' ? 'Organization' : 'User',
+        repositoryCount,
+        lastSyncedAt: new Date(),
         updatedAt: new Date(),
       },
       { upsert: true, new: true }
@@ -116,7 +167,12 @@ export class GitHubService {
       avatarUrl: conn.avatarUrl,
       profileUrl: conn.profileUrl,
       scopes: conn.scopes,
+      installationId: conn.installationId,
+      accountType: conn.accountType || 'User',
+      repositoryCount: conn.repositoryCount || 0,
+      installationUrl: this.getInstallationUrl(),
       connectedAt: conn.connectedAt,
+      lastSyncedAt: conn.lastSyncedAt,
     };
   }
 
@@ -135,12 +191,50 @@ export class GitHubService {
   }
 
   /**
+   * Verifies access to a specific repository (public or private).
+   */
+  public static async verifyRepoAccess(
+    userId: string,
+    owner: string,
+    repo: string
+  ): Promise<{ hasAccess: boolean; isPrivate?: boolean; defaultBranch?: string; error?: string }> {
+    const token = await this.getDecryptedToken(userId);
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    try {
+      const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+      return {
+        hasAccess: true,
+        isPrivate: res.data.private,
+        defaultBranch: res.data.default_branch || 'main',
+      };
+    } catch (err: any) {
+      if (err.response?.status === 404 || err.response?.status === 403) {
+        return {
+          hasAccess: false,
+          error:
+            'Repository access is required. SprintForge cannot access this repository with the current GitHub permissions.',
+        };
+      }
+      return {
+        hasAccess: false,
+        error: err.response?.data?.message || err.message || 'Failed to verify repository access',
+      };
+    }
+  }
+
+  /**
    * Fetches public and private repositories accessible by the user.
    */
   public static async getUserRepositories(
     userId: string,
     page: number = 1,
-    perPage: number = 30,
+    perPage: number = 50,
     search?: string
   ): Promise<{ repositories: GitHubRepoItem[]; totalCount?: number }> {
     const token = await this.getDecryptedToken(userId);
@@ -148,49 +242,83 @@ export class GitHubService {
       throw new Error('GitHub account not connected. Please connect your GitHub account.');
     }
 
-    const reposRes = await axios.get('https://api.github.com/user/repos', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-      },
-      params: {
-        sort: 'updated',
-        direction: 'desc',
-        per_page: perPage,
-        page,
-        affiliation: 'owner,collaborator,organization_member',
-      },
-    });
+    try {
+      const reposRes = await axios.get('https://api.github.com/user/repos', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+        params: {
+          sort: 'updated',
+          direction: 'desc',
+          per_page: perPage,
+          page,
+          affiliation: 'owner,collaborator,organization_member',
+        },
+      });
 
-    let repos: any[] = reposRes.data;
+      let repos: any[] = reposRes.data;
 
-    if (search && search.trim()) {
-      const q = search.toLowerCase().trim();
-      repos = repos.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          (r.description && r.description.toLowerCase().includes(q)) ||
-          r.full_name.toLowerCase().includes(q)
-      );
+      if (search && search.trim()) {
+        const q = search.toLowerCase().trim();
+        repos = repos.filter(
+          (r) =>
+            r.name?.toLowerCase().includes(q) ||
+            (r.description && r.description.toLowerCase().includes(q)) ||
+            r.full_name?.toLowerCase().includes(q)
+        );
+      }
+
+      const formatted: GitHubRepoItem[] = repos.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        fullName: r.full_name,
+        owner: r.owner?.login || '',
+        avatarUrl: r.owner?.avatar_url || '',
+        isPrivate: Boolean(r.private),
+        htmlUrl: r.html_url,
+        cloneUrl: r.clone_url,
+        defaultBranch: r.default_branch || 'main',
+        description: r.description || '',
+        updatedAt: r.updated_at,
+        stargazersCount: r.stargazers_count || 0,
+        language: r.language || 'Unknown',
+      }));
+
+      // Update cached count in DB
+      if (formatted.length > 0) {
+        GitHubConnection.updateOne(
+          { user: userId },
+          { repositoryCount: formatted.length, lastSyncedAt: new Date() }
+        ).catch(() => {});
+      }
+
+      return { repositories: formatted, totalCount: formatted.length };
+    } catch (err: any) {
+      if (err.response?.status === 403 && err.response?.headers?.['x-ratelimit-remaining'] === '0') {
+        throw new Error('GitHub API rate limit reached. Please try again in a few minutes.');
+      }
+      throw new Error(err.response?.data?.message || err.message || 'Failed to fetch repositories from GitHub');
     }
+  }
 
-    const formatted: GitHubRepoItem[] = repos.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      fullName: r.full_name,
-      owner: r.owner?.login || '',
-      avatarUrl: r.owner?.avatar_url || '',
-      isPrivate: r.private,
-      htmlUrl: r.html_url,
-      cloneUrl: r.clone_url,
-      defaultBranch: r.default_branch || 'main',
-      description: r.description || '',
-      updatedAt: r.updated_at,
-      stargazersCount: r.stargazers_count || 0,
-      language: r.language || 'Unknown',
-    }));
+  /**
+   * Validates GitHub Webhook HMAC-SHA256 signature.
+   */
+  public static validateWebhookSignature(
+    rawBody: string | Buffer,
+    signatureHeader?: string
+  ): boolean {
+    if (!this.webhookSecret || !signatureHeader) return true;
 
-    return { repositories: formatted };
+    try {
+      const hmac = crypto.createHmac('sha256', this.webhookSecret);
+      hmac.update(rawBody);
+      const expected = `sha256=${hmac.digest('hex')}`;
+      return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
+    } catch {
+      return false;
+    }
   }
 
   /**

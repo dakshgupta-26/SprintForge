@@ -23,6 +23,8 @@ import {
   getGitHubStatus,
   getGitHubAuthUrl,
   handleGitHubCallback,
+  handleGitHubCallbackGet,
+  handleGitHubWebhook,
   connectGitHubToken,
   disconnectGitHub,
   listGitHubRepos,
@@ -39,7 +41,9 @@ const router = Router();
 // ─── Global GitHub OAuth & Connections (User level) ───────────────────────────
 router.get('/github/status', protect, getGitHubStatus);
 router.get('/github/auth-url', protect, getGitHubAuthUrl);
+router.get('/github/callback', handleGitHubCallbackGet);
 router.post('/github/callback', protect, handleGitHubCallback);
+router.post('/github/webhook', handleGitHubWebhook);
 router.post('/github/connect-token', protect, connectGitHubToken);
 router.post('/github/disconnect', protect, disconnectGitHub);
 router.get('/github/repos', protect, listGitHubRepos);
