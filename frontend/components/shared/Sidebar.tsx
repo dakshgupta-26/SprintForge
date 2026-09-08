@@ -28,6 +28,7 @@ import {
   Sparkles,
   Command,
   PhoneCall,
+  Code2,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useProjectStore, Project } from "@/lib/store/projectStore";
@@ -99,6 +100,7 @@ const projectNav = (
     icon: PhoneCall,
     badge: callUnread,
   },
+  { label: "Code", href: `/dashboard/projects/${id}/code`, icon: Code2 },
   { label: "Analytics", href: `/dashboard/projects/${id}/analytics`, icon: BarChart3 },
   { label: "Team", href: `/dashboard/projects/${id}/team`, icon: Users },
   { label: "Wiki", href: `/dashboard/projects/${id}/wiki`, icon: BookOpen },

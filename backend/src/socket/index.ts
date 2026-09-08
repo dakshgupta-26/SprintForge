@@ -8,6 +8,7 @@ import Call from '../models/Call';
 import Notification from '../models/Notification';
 import ChatReadCursor from '../models/ChatReadCursor';
 import { encryptMessage } from '../utils/crypto';
+import { registerCodeSocketHandlers } from './codeSocket';
 
 // ─── Global State & Registries ─────────────────────────────────────────────
 
@@ -176,6 +177,9 @@ export const initSocket = (io: Server) => {
   });
 
   io.on('connection', (socket: Socket) => {
+    // Register SprintForge Collaborative Code Workspace Socket Handlers
+    registerCodeSocketHandlers(io, socket);
+
     const authUser = (socket as any).user;
     if (authUser?._id) {
       registerUserSocket(String(authUser._id), socket, {

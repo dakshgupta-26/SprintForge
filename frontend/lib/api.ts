@@ -300,4 +300,65 @@ export const impactAPI = {
     api.get(`/projects/${projectId}/impact/tasks/${taskId}`),
 };
 
+// ─── Collaborative Code Workspace ───
+export const codeAPI = {
+  getWorkspace: (projectId: string) => api.get(`/code/${projectId}/workspace`),
+  getFileTree: (projectId: string) => api.get(`/code/${projectId}/files`),
+  readFile: (projectId: string, path: string) =>
+    api.get(`/code/${projectId}/files/read`, { params: { path } }),
+  writeFile: (projectId: string, path: string, content: string) =>
+    api.post(`/code/${projectId}/files/write`, { path, content }),
+  createFile: (projectId: string, path: string) =>
+    api.post(`/code/${projectId}/files/create`, { path }),
+  createFolder: (projectId: string, path: string) =>
+    api.post(`/code/${projectId}/folders/create`, { path }),
+  renamePath: (projectId: string, oldPath: string, newPath: string) =>
+    api.post(`/code/${projectId}/files/rename`, { oldPath, newPath }),
+  deletePath: (projectId: string, path: string) =>
+    api.delete(`/code/${projectId}/files/delete`, { data: { path } }),
+  duplicatePath: (projectId: string, path: string) =>
+    api.post(`/code/${projectId}/files/duplicate`, { path }),
+  searchFiles: (projectId: string, q: string, caseSensitive = false, isRegex = false) =>
+    api.get(`/code/${projectId}/search`, { params: { q, caseSensitive, isRegex } }),
+
+  // Git
+  getGitStatus: (projectId: string) => api.get(`/code/${projectId}/git/status`),
+  getGitDiff: (projectId: string, file?: string) =>
+    api.get(`/code/${projectId}/git/diff`, { params: { file } }),
+  commit: (projectId: string, message: string, files?: string[]) =>
+    api.post(`/code/${projectId}/git/commit`, { message, files }),
+  getBranches: (projectId: string) => api.get(`/code/${projectId}/git/branches`),
+  switchOrCreateBranch: (projectId: string, branch: string, create = false) =>
+    api.post(`/code/${projectId}/git/branches`, { branch, create }),
+  gitPull: (projectId: string) => api.post(`/code/${projectId}/git/pull`),
+  gitPush: (projectId: string, branch?: string) =>
+    api.post(`/code/${projectId}/git/push`, { branch }),
+  getGitHistory: (projectId: string, limit = 30) =>
+    api.get(`/code/${projectId}/git/history`, { params: { limit } }),
+
+  // GitHub
+  getGitHubStatus: () => api.get('/code/github/status'),
+  getGitHubAuthUrl: (redirectUri?: string) =>
+    api.get('/code/github/auth-url', { params: { redirectUri } }),
+  handleGitHubCallback: (code: string, redirectUri?: string) =>
+    api.post('/code/github/callback', { code, redirectUri }),
+  connectGitHubToken: (token: string) =>
+    api.post('/code/github/connect-token', { token }),
+  disconnectGitHub: () => api.post('/code/github/disconnect'),
+  listGitHubRepos: (page = 1, search?: string) =>
+    api.get('/code/github/repos', { params: { page, search } }),
+  cloneGitHubRepo: (projectId: string, data: any) =>
+    api.post(`/code/${projectId}/github/clone`, data),
+
+  // Permissions & History
+  getCodePermissions: (projectId: string) => api.get(`/code/${projectId}/permissions`),
+  updateCodePermission: (projectId: string, userId: string, permission: string) =>
+    api.put(`/code/${projectId}/permissions/${userId}`, { permission }),
+  getCodeActivity: (projectId: string, params?: any) =>
+    api.get(`/code/${projectId}/activity`, { params }),
+  getFileVersions: (projectId: string, file: string) =>
+    api.get(`/code/${projectId}/versions`, { params: { file } }),
+  getVersionById: (versionId: string) => api.get(`/code/versions/${versionId}`),
+};
+
 export default api;

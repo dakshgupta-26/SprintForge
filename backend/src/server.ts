@@ -31,6 +31,7 @@ import analyticsRoutes from './routes/analytics';
 import messageRoutes from './routes/messages';
 import callRoutes from './routes/calls';
 import impactRoutes from './routes/impact';
+import codeRoutes from './routes/code';
 
 // Socket handler
 import { initSocket } from './socket';
@@ -116,6 +117,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/projects', impactRoutes);
+app.use('/api/code', codeRoutes);
 
 // Health checks
 import { verifyEmailTransporter, getEmailHealthStatus } from './services/emailService';

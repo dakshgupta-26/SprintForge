@@ -26,6 +26,7 @@ import {
   Hash,
   X,
   Command,
+  Code2,
 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -192,6 +193,17 @@ export function AppCommandPalette({
           icon: MessageSquare,
           action: () => {
             router.push(`/dashboard/projects/${pid}/chat`);
+            onClose();
+          },
+        },
+        {
+          id: `view-code-${pid}`,
+          title: `${currentProject.name} — Code Workspace`,
+          subtitle: `Collaborative real-time code editor and Git workspace`,
+          category: "Project Views",
+          icon: Code2,
+          action: () => {
+            router.push(`/dashboard/projects/${pid}/code`);
             onClose();
           },
         },
