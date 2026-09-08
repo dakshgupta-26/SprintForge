@@ -58,23 +58,36 @@ export const writeFile = async (req: AuthRequest, res: Response) => {
     const { path: filePath, content } = req.body;
 
     if (!filePath || content === undefined) {
-      return res.status(400).json({ message: 'File path and content are required' });
+      return res.status(400).json({ success: false, message: 'File path and content are required' });
     }
 
-    const result = await WorkspaceService.writeFile(projectId, filePath, content);
+    const normalizedPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const result = await WorkspaceService.writeFile(projectId, normalizedPath, content);
 
     // Audit log
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: filePath,
+      file: normalizedPath,
       action: 'modified',
-      details: `${req.user.name} saved ${filePath}`,
+      details: `${req.user.name} saved ${normalizedPath}`,
     });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:updated', {
+        projectId,
+        path: normalizedPath,
+        size: result.size,
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
 
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to write file' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to write file' });
   }
 };
 
@@ -84,22 +97,35 @@ export const createFile = async (req: AuthRequest, res: Response) => {
     const { path: filePath } = req.body;
 
     if (!filePath) {
-      return res.status(400).json({ message: 'File path is required' });
+      return res.status(400).json({ success: false, message: 'File path is required' });
     }
 
-    await WorkspaceService.createFile(projectId, filePath);
+    const normalizedPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    await WorkspaceService.createFile(projectId, normalizedPath);
 
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: filePath,
+      file: normalizedPath,
       action: 'created',
-      details: `${req.user.name} created file ${filePath}`,
+      details: `${req.user.name} created file ${normalizedPath}`,
     });
 
-    res.json({ success: true, path: filePath });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:created', {
+        projectId,
+        path: normalizedPath,
+        type: 'file',
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, path: normalizedPath });
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to create file' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to create file' });
   }
 };
 
@@ -109,22 +135,35 @@ export const createFolder = async (req: AuthRequest, res: Response) => {
     const { path: folderPath } = req.body;
 
     if (!folderPath) {
-      return res.status(400).json({ message: 'Folder path is required' });
+      return res.status(400).json({ success: false, message: 'Folder path is required' });
     }
 
-    await WorkspaceService.createFolder(projectId, folderPath);
+    const normalizedPath = folderPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    await WorkspaceService.createFolder(projectId, normalizedPath);
 
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: folderPath,
+      file: normalizedPath,
       action: 'created',
-      details: `${req.user.name} created folder ${folderPath}`,
+      details: `${req.user.name} created folder ${normalizedPath}`,
     });
 
-    res.json({ success: true, path: folderPath });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:created', {
+        projectId,
+        path: normalizedPath,
+        type: 'folder',
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, path: normalizedPath });
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to create folder' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to create folder' });
   }
 };
 
@@ -134,23 +173,38 @@ export const renamePath = async (req: AuthRequest, res: Response) => {
     const { oldPath, newPath } = req.body;
 
     if (!oldPath || !newPath) {
-      return res.status(400).json({ message: 'oldPath and newPath are required' });
+      return res.status(400).json({ success: false, message: 'oldPath and newPath are required' });
     }
 
-    await WorkspaceService.renamePath(projectId, oldPath, newPath);
+    const normOld = oldPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const normNew = newPath.replace(/\\/g, '/').replace(/^\/+/, '');
+
+    await WorkspaceService.renamePath(projectId, normOld, normNew);
 
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: newPath,
+      file: normNew,
       action: 'renamed',
-      details: `${req.user.name} renamed ${oldPath} to ${newPath}`,
-      metadata: { oldPath, newPath },
+      details: `${req.user.name} renamed ${normOld} to ${normNew}`,
+      metadata: { oldPath: normOld, newPath: normNew },
     });
 
-    res.json({ success: true, oldPath, newPath });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:renamed', {
+        projectId,
+        oldPath: normOld,
+        newPath: normNew,
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, oldPath: normOld, newPath: normNew });
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to rename path' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to rename path' });
   }
 };
 
@@ -160,22 +214,34 @@ export const deletePath = async (req: AuthRequest, res: Response) => {
     const { path: targetPath } = req.body;
 
     if (!targetPath) {
-      return res.status(400).json({ message: 'Target path is required' });
+      return res.status(400).json({ success: false, message: 'Target path is required' });
     }
 
-    await WorkspaceService.deletePath(projectId, targetPath);
+    const normTarget = targetPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    await WorkspaceService.deletePath(projectId, normTarget);
 
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: targetPath,
+      file: normTarget,
       action: 'deleted',
-      details: `${req.user.name} deleted ${targetPath}`,
+      details: `${req.user.name} deleted ${normTarget}`,
     });
 
-    res.json({ success: true, path: targetPath });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:deleted', {
+        projectId,
+        path: normTarget,
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, path: normTarget });
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to delete path' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete path' });
   }
 };
 
@@ -185,22 +251,36 @@ export const duplicatePath = async (req: AuthRequest, res: Response) => {
     const { path: sourcePath } = req.body;
 
     if (!sourcePath) {
-      return res.status(400).json({ message: 'Source path is required' });
+      return res.status(400).json({ success: false, message: 'Source path is required' });
     }
 
-    const newPath = await WorkspaceService.duplicateFile(projectId, sourcePath);
+    const normSource = sourcePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const newPath = await WorkspaceService.duplicateFile(projectId, normSource);
+    const normNew = newPath.replace(/\\/g, '/').replace(/^\/+/, '');
 
     await CodeAuditService.logActivity({
       projectId,
       userId: String(req.user._id),
-      file: newPath,
+      file: normNew,
       action: 'created',
-      details: `${req.user.name} duplicated ${sourcePath} as ${newPath}`,
+      details: `${req.user.name} duplicated ${normSource} as ${normNew}`,
     });
 
-    res.json({ success: true, path: newPath });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`code:workspace:${projectId}`).emit('code:file:created', {
+        projectId,
+        path: normNew,
+        type: 'file',
+        userId: String(req.user._id),
+        userName: req.user.name,
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, path: normNew });
   } catch (err: any) {
-    res.status(500).json({ message: err.message || 'Failed to duplicate file' });
+    res.status(500).json({ success: false, message: err.message || 'Failed to duplicate file' });
   }
 };
 

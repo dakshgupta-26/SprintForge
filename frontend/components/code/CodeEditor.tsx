@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useRef, useEffect, useMemo } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useCodeStore } from "@/lib/store/codeStore";
 import { monacoModelManager } from "@/lib/monacoModelManager";
 import { getSocket } from "@/lib/socket";
-import { Users, Lock, Loader2, Sparkles } from "lucide-react";
+import { getFileIcon } from "./FileTreeItem";
+import { Users, Lock, Loader2, Sparkles, Copy, Check, ChevronRight } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 export function CodeEditor() {
   const {
@@ -25,6 +27,7 @@ export function CodeEditor() {
 
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const [copied, setCopied] = React.useState(false);
 
   // Active tab metadata
   const activeTab = useMemo(
@@ -37,6 +40,12 @@ export function CodeEditor() {
     if (!activeTabId) return [];
     return collaborators.filter((c) => c.activeFile === activeTabId);
   }, [collaborators, activeTabId]);
+
+  // Breadcrumb path segments
+  const breadcrumbSegments = useMemo(() => {
+    if (!activeTabId) return [];
+    return activeTabId.split("/");
+  }, [activeTabId]);
 
   // Broadcast current active file presence
   useEffect(() => {
@@ -53,6 +62,7 @@ export function CodeEditor() {
   const handleEditorDidMount = (editor: any, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    monacoModelManager.setMonaco(monaco);
 
     // Define SprintForge Dark Monaco Theme
     monaco.editor.defineTheme("sprintforge-dark", {
@@ -131,7 +141,7 @@ export function CodeEditor() {
     });
   };
 
-  // Switch Monaco canonical model cleanly when active tab changes
+  // Switch Monaco canonical model cleanly when active tab changes (only on activeTabId/projectId change)
   useEffect(() => {
     if (editorRef.current && monacoRef.current && projectId && activeTabId) {
       const model = monacoModelManager.getOrCreateModel(
@@ -153,7 +163,15 @@ export function CodeEditor() {
         activeTab?.content
       );
     }
-  }, [activeTabId, projectId, activeTab?.content]);
+  }, [activeTabId, projectId]);
+
+  const handleCopyPath = () => {
+    if (!activeTabId) return;
+    navigator.clipboard.writeText(activeTabId);
+    setCopied(true);
+    toast.success(`Copied path: ${activeTabId}`);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   if (isLoadingFile) {
     return (
@@ -208,11 +226,48 @@ export function CodeEditor() {
   }
 
   const isReadOnly = permission === "VIEW";
+  const ext = activeTabId.split(".").pop();
+  const fileName = breadcrumbSegments[breadcrumbSegments.length - 1];
 
   return (
-    <div className="relative flex-1 h-full w-full overflow-hidden bg-[#080c1e]">
-      {/* ── Top Editor Banner / Presence Badge ── */}
-      <div className="absolute top-2 right-4 z-10 flex items-center gap-2 pointer-events-none">
+    <div className="relative flex-1 h-full w-full flex flex-col overflow-hidden bg-[#080c1e]">
+      {/* ── Top Breadcrumbs Strip ── */}
+      <div className="h-7 px-3 bg-[#070b1c] border-b border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-slate-400 flex-shrink-0 z-10 select-none">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {getFileIcon(ext, fileName)}
+          <div className="flex items-center gap-1 overflow-hidden truncate">
+            {breadcrumbSegments.map((segment, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />}
+                <span
+                  className={
+                    idx === breadcrumbSegments.length - 1
+                      ? "text-slate-200 font-semibold"
+                      : "text-slate-500 hover:text-slate-300 transition-colors"
+                  }
+                >
+                  {segment}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* Action button: Copy Path */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopyPath}
+            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-colors cursor-pointer"
+            title="Copy Relative Path"
+          >
+            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Top Right Editor Banner / Presence Badges ── */}
+      <div className="absolute top-9 right-4 z-20 flex items-center gap-2 pointer-events-none">
         {/* Read Only Badge */}
         {isReadOnly && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium shadow-lg backdrop-blur-md">
@@ -243,35 +298,37 @@ export function CodeEditor() {
       </div>
 
       {/* ── Monaco Editor Instance ── */}
-      <Editor
-        height="100%"
-        width="100%"
-        theme="sprintforge-dark"
-        options={{
-          readOnly: isReadOnly,
-          fontSize: 13,
-          fontFamily:
-            "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
-          fontLigatures: true,
-          tabSize: 2,
-          minimap: { enabled: true, side: "right", scale: 1 },
-          scrollBeyondLastLine: false,
-          smoothScrolling: true,
-          cursorBlinking: "smooth",
-          cursorSmoothCaretAnimation: "on",
-          renderWhitespace: "selection",
-          lineNumbers: "on",
-          lineNumbersMinChars: 3,
-          glyphMargin: true,
-          automaticLayout: true,
-          folding: true,
-          bracketPairColorization: { enabled: true },
-          guides: { bracketPairs: true, indentation: true },
-          wordWrap: "on",
-          padding: { top: 12, bottom: 12 },
-        }}
-        onMount={handleEditorDidMount}
-      />
+      <div className="flex-1 w-full h-full min-h-0 overflow-hidden relative">
+        <Editor
+          height="100%"
+          width="100%"
+          theme="sprintforge-dark"
+          options={{
+            readOnly: isReadOnly,
+            fontSize: 13,
+            fontFamily:
+              "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+            fontLigatures: true,
+            tabSize: 2,
+            minimap: { enabled: true, side: "right", scale: 1 },
+            scrollBeyondLastLine: false,
+            smoothScrolling: true,
+            cursorBlinking: "smooth",
+            cursorSmoothCaretAnimation: "on",
+            renderWhitespace: "selection",
+            lineNumbers: "on",
+            lineNumbersMinChars: 3,
+            glyphMargin: true,
+            automaticLayout: true,
+            folding: true,
+            bracketPairColorization: { enabled: true },
+            guides: { bracketPairs: true, indentation: true },
+            wordWrap: "on",
+            padding: { top: 8, bottom: 12 },
+          }}
+          onMount={handleEditorDidMount}
+        />
+      </div>
     </div>
   );
 }

@@ -19,7 +19,8 @@ import { CodeCommandPalette } from "./CodeCommandPalette";
 import { QuickOpenModal } from "./QuickOpenModal";
 import { GitHubConnectModal } from "./GitHubConnectModal";
 import { CodePermissionsModal } from "./CodePermissionsModal";
-import { Loader2, Code2 } from "lucide-react";
+import { CodeErrorBoundary } from "./CodeErrorBoundary";
+import { CodeWorkspaceSkeleton } from "./CodeWorkspaceSkeleton";
 import { cn } from "@/lib/utils";
 
 interface CodeWorkspaceProps {
@@ -30,14 +31,20 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
   const {
     initWorkspace,
     loading,
+    initError,
     activeActivityBarView,
     activeDiff,
     setCollaborators,
+    setSyncStatus,
     saveActiveFile,
     setCommandPaletteOpen,
     setQuickOpenOpen,
     setActiveActivityBarView,
     toggleTerminal,
+    handleRemoteFileCreated,
+    handleRemoteFileDeleted,
+    handleRemoteFileRenamed,
+    handleRemoteFileUpdated,
   } = useCodeStore();
 
   const { user } = useAuthStore();
@@ -51,19 +58,33 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
     }
   }, [projectId, initWorkspace]);
 
-  // Real-time Socket.IO presence connection
+  // Real-time Socket.IO workspace connection and file event synchronization
   useEffect(() => {
     const socket = getSocket();
     if (!socket || !projectId) return;
 
-    const joinData = {
-      projectId,
-      userId: user?._id,
-      name: user?.name,
-      avatar: user?.avatar,
+    const joinWorkspace = () => {
+      const joinData = {
+        projectId,
+        userId: user?._id,
+        name: user?.name,
+        avatar: user?.avatar,
+      };
+      socket.emit("code:join:workspace", joinData);
+      setSyncStatus("synced");
     };
 
-    socket.emit("code:join:workspace", joinData);
+    if (socket.connected) {
+      joinWorkspace();
+    }
+
+    const handleConnect = () => {
+      joinWorkspace();
+    };
+
+    const handleDisconnect = () => {
+      setSyncStatus("reconnecting");
+    };
 
     const handlePresenceSync = (data: { projectId: string; collaborators: any[] }) => {
       if (data.projectId === projectId) {
@@ -71,12 +92,57 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
       }
     };
 
+    const handleFileCreated = (data: { projectId: string; path: string; type?: "file" | "folder" }) => {
+      if (data.projectId === projectId) {
+        handleRemoteFileCreated({ path: data.path, type: data.type });
+      }
+    };
+
+    const handleFileDeleted = (data: { projectId: string; path: string }) => {
+      if (data.projectId === projectId) {
+        handleRemoteFileDeleted({ path: data.path });
+      }
+    };
+
+    const handleFileRenamed = (data: { projectId: string; oldPath: string; newPath: string }) => {
+      if (data.projectId === projectId) {
+        handleRemoteFileRenamed({ oldPath: data.oldPath, newPath: data.newPath });
+      }
+    };
+
+    const handleFileUpdated = (data: { projectId: string; path: string }) => {
+      if (data.projectId === projectId) {
+        handleRemoteFileUpdated({ path: data.path });
+      }
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
     socket.on("code:presence:sync", handlePresenceSync);
+    socket.on("code:file:created", handleFileCreated);
+    socket.on("code:file:deleted", handleFileDeleted);
+    socket.on("code:file:renamed", handleFileRenamed);
+    socket.on("code:file:updated", handleFileUpdated);
 
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
       socket.off("code:presence:sync", handlePresenceSync);
+      socket.off("code:file:created", handleFileCreated);
+      socket.off("code:file:deleted", handleFileDeleted);
+      socket.off("code:file:renamed", handleFileRenamed);
+      socket.off("code:file:updated", handleFileUpdated);
     };
-  }, [projectId, user, setCollaborators]);
+  }, [
+    projectId,
+    user,
+    setCollaborators,
+    setSyncStatus,
+    handleRemoteFileCreated,
+    handleRemoteFileDeleted,
+    handleRemoteFileRenamed,
+    handleRemoteFileUpdated,
+  ]);
 
   // Global window keyboard shortcuts listener
   useEffect(() => {
@@ -138,70 +204,80 @@ export function CodeWorkspace({ projectId }: CodeWorkspaceProps) {
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  if (loading) {
+  if (loading || initError) {
     return (
-      <div className="w-full h-[calc(100vh-80px)] flex flex-col items-center justify-center bg-[#070b1a] text-slate-400 gap-3 select-none">
-        <div className="w-12 h-12 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-xl">
-          <Code2 className="w-6 h-6 animate-pulse" />
-        </div>
-        <p className="text-xs font-mono font-medium text-slate-300">
-          Loading SprintForge Code Workspace...
-        </p>
-      </div>
+      <CodeWorkspaceSkeleton
+        error={initError}
+        onRetry={() => initWorkspace(projectId)}
+      />
     );
   }
 
   return (
-    <div className="w-full h-[calc(100vh-80px)] flex flex-col bg-[#070a18] overflow-hidden select-none">
-      {/* ── Main Workspace Body (ActivityBar + Sidebar + Editor + Terminal) ── */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* 1. Activity Bar */}
-        <ActivityBar />
+    <CodeErrorBoundary
+      componentName="SprintForge Code Workspace"
+      fallbackTitle="Code Workspace encountered an error"
+      onReset={() => initWorkspace(projectId)}
+    >
+      <div className="w-full h-[calc(100vh-80px)] flex flex-col bg-[#070a18] overflow-hidden select-none">
+        {/* ── Main Workspace Body (ActivityBar + Sidebar + Editor + Terminal) ── */}
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* 1. Activity Bar */}
+          <ActivityBar />
 
-        {/* 2. Resizable Sidebar Panel */}
-        <div
-          style={{ width: `${sidebarWidth}px` }}
-          className="h-full flex-shrink-0 flex flex-col border-r border-white/[0.08] bg-[#070a18] overflow-hidden"
-        >
-          {activeActivityBarView === "explorer" && <FileExplorer />}
-          {activeActivityBarView === "git" && <SourceControlPanel />}
-          {activeActivityBarView === "search" && <SearchPanel />}
-          {activeActivityBarView === "collab" && <CollaborationPanel />}
-          {activeActivityBarView === "activity" && <CodeActivityPanel />}
-        </div>
-
-        {/* Resizer Handle */}
-        <div
-          onMouseDown={handleMouseDown}
-          className={cn(
-            "w-1 h-full cursor-col-resize hover:bg-violet-500/60 transition-colors z-10",
-            isResizing && "bg-violet-500"
-          )}
-        />
-
-        {/* 3. Main Center Area (Tabs + Editor / Diff + Terminal) */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#080c1e]">
-          {/* Tabs Bar */}
-          <EditorTabs />
-
-          {/* Active Editor or Diff Viewer */}
-          <div className="flex-1 flex overflow-hidden min-h-0 relative">
-            {activeDiff ? <DiffEditor /> : <CodeEditor />}
+          {/* 2. Resizable Sidebar Panel */}
+          <div
+            style={{ width: `${sidebarWidth}px` }}
+            className="h-full flex-shrink-0 flex flex-col border-r border-white/[0.08] bg-[#070a18] overflow-hidden"
+          >
+            <CodeErrorBoundary componentName="Sidebar Activity Panel">
+              {activeActivityBarView === "explorer" && <FileExplorer />}
+              {activeActivityBarView === "git" && <SourceControlPanel />}
+              {activeActivityBarView === "search" && <SearchPanel />}
+              {activeActivityBarView === "collab" && <CollaborationPanel />}
+              {activeActivityBarView === "activity" && <CodeActivityPanel />}
+            </CodeErrorBoundary>
           </div>
 
-          {/* Bottom Terminal Panel */}
-          <TerminalPanel />
+          {/* Resizer Handle */}
+          <div
+            onMouseDown={handleMouseDown}
+            className={cn(
+              "w-1 h-full cursor-col-resize hover:bg-violet-500/60 transition-colors z-10",
+              isResizing && "bg-violet-500"
+            )}
+          />
+
+          {/* 3. Main Center Area (Tabs + Editor / Diff + Terminal) */}
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#080c1e]">
+            {/* Tabs Bar */}
+            <CodeErrorBoundary componentName="Editor Tabs Strip">
+              <EditorTabs />
+            </CodeErrorBoundary>
+
+            {/* Active Editor or Diff Viewer */}
+            <div className="flex-1 flex overflow-hidden min-h-0 relative">
+              <CodeErrorBoundary componentName="Monaco Code Editor">
+                {activeDiff ? <DiffEditor /> : <CodeEditor />}
+              </CodeErrorBoundary>
+            </div>
+
+            {/* Bottom Terminal Panel */}
+            <CodeErrorBoundary componentName="Integrated Terminal">
+              <TerminalPanel />
+            </CodeErrorBoundary>
+          </div>
         </div>
+
+        {/* ── Bottom Status Bar ── */}
+        <StatusBar />
+
+        {/* ── Modals ── */}
+        <CodeCommandPalette />
+        <QuickOpenModal />
+        <GitHubConnectModal />
+        <CodePermissionsModal />
       </div>
-
-      {/* ── Bottom Status Bar ── */}
-      <StatusBar />
-
-      {/* ── Modals ── */}
-      <CodeCommandPalette />
-      <QuickOpenModal />
-      <GitHubConnectModal />
-      <CodePermissionsModal />
-    </div>
+    </CodeErrorBoundary>
   );
 }

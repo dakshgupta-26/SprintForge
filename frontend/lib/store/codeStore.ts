@@ -1,6 +1,23 @@
 import { create } from 'zustand';
+import { toast } from 'react-hot-toast';
 import { codeAPI } from '../api';
 import { monacoModelManager } from '../monacoModelManager';
+
+export const normalizePath = (filePath: string): string => {
+  return filePath.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+};
+
+export const getAncestorFolders = (filePath: string): string[] => {
+  const norm = normalizePath(filePath);
+  const segments = norm.split('/');
+  const ancestors: string[] = [];
+  let current = '';
+  for (let i = 0; i < segments.length - 1; i++) {
+    current = current ? `${current}/${segments[i]}` : segments[i];
+    ancestors.push(current);
+  }
+  return ancestors;
+};
 
 export interface FileTreeItem {
   id: string;
@@ -90,6 +107,7 @@ interface CodeState {
 
   // Collaboration & Presence
   collaborators: CodeCollaborator[];
+  syncStatus: 'synced' | 'syncing' | 'error' | 'reconnecting';
 
   // Terminal
   terminalOpen: boolean;
@@ -104,11 +122,13 @@ interface CodeState {
   permissionsModalOpen: boolean;
   isSaving: boolean;
   loading: boolean;
+  initError: string | null;
 
   // Actions
   initWorkspace: (projectId: string) => Promise<void>;
   loadFileTree: () => Promise<void>;
   toggleFolder: (folderPath: string) => void;
+  expandFolder: (folderPath: string) => void;
   openFile: (filePath: string) => Promise<void>;
   closeTab: (tabId: string) => void;
   closeOtherTabs: (tabId: string) => void;
@@ -126,6 +146,12 @@ interface CodeState {
   deletePath: (targetPath: string) => Promise<boolean>;
   duplicateFile: (sourcePath: string) => Promise<boolean>;
 
+  // Real-time remote file sync
+  handleRemoteFileCreated: (data: { path: string; type?: 'file' | 'folder' }) => void;
+  handleRemoteFileDeleted: (data: { path: string }) => void;
+  handleRemoteFileRenamed: (data: { oldPath: string; newPath: string }) => void;
+  handleRemoteFileUpdated: (data: { path: string }) => void;
+
   // Search
   performSearch: (query: string, caseSensitive?: boolean, isRegex?: boolean) => Promise<void>;
 
@@ -141,6 +167,7 @@ interface CodeState {
 
   // Presence & Collab
   setCollaborators: (collaborators: CodeCollaborator[]) => void;
+  setSyncStatus: (status: 'synced' | 'syncing' | 'error' | 'reconnecting') => void;
 
   // Terminal actions
   toggleTerminal: (open?: boolean) => void;
@@ -245,6 +272,7 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   isGitLoading: false,
 
   collaborators: [],
+  syncStatus: 'synced',
 
   terminalOpen: false,
   terminalTabs: [{ id: 'term-1', title: 'Terminal 1', isActive: true }],
@@ -257,15 +285,17 @@ export const useCodeStore = create<CodeState>((set, get) => ({
   permissionsModalOpen: false,
   isSaving: false,
   loading: true,
+  initError: null,
 
   initWorkspace: async (projectId: string) => {
-    set({ projectId, loading: true });
+    set({ projectId, loading: true, initError: null });
     try {
       const { data } = await codeAPI.getWorkspace(projectId);
       set({
         workspace: data.workspace,
         permission: data.permission || 'VIEW',
         loading: false,
+        initError: null,
       });
 
       // Load file tree and git status in parallel
@@ -275,10 +305,14 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       const tree = get().fileTree;
       const initialFile = tree.find((t) => t.path === 'README.md') || tree.find((t) => t.type === 'file');
       if (initialFile && get().openTabs.length === 0) {
-        get().openFile(initialFile.path);
+        await get().openFile(initialFile.path);
       }
-    } catch {
-      set({ loading: false });
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Init error:', err);
+      set({
+        loading: false,
+        initError: err?.response?.data?.message || err?.message || 'Failed to initialize workspace',
+      });
     }
   },
 
@@ -288,26 +322,48 @@ export const useCodeStore = create<CodeState>((set, get) => ({
     try {
       const { data } = await codeAPI.getFileTree(projectId);
       set({ fileTree: data.tree || [] });
-    } catch {}
+    } catch (err) {
+      console.error('[CODE_WORKSPACE] Error loading file tree:', err);
+    }
   },
 
   toggleFolder: (folderPath: string) => {
+    const norm = normalizePath(folderPath);
     set((state) => {
       const next = new Set(state.expandedFolders);
-      if (next.has(folderPath)) {
-        next.delete(folderPath);
+      if (next.has(norm)) {
+        next.delete(norm);
       } else {
-        next.add(folderPath);
+        next.add(norm);
       }
+      return { expandedFolders: next };
+    });
+  },
+
+  expandFolder: (folderPath: string) => {
+    const norm = normalizePath(folderPath);
+    set((state) => {
+      const next = new Set(state.expandedFolders);
+      next.add(norm);
       return { expandedFolders: next };
     });
   },
 
   openFile: async (filePath: string) => {
     const { projectId, openTabs } = get();
-    if (!projectId) return;
+    if (!projectId || !filePath) return;
 
-    const normalized = filePath.replace(/\\/g, '/');
+    const normalized = normalizePath(filePath);
+
+    // Auto-expand parent folders in file tree
+    const ancestors = getAncestorFolders(normalized);
+    if (ancestors.length > 0) {
+      set((state) => {
+        const next = new Set(state.expandedFolders);
+        ancestors.forEach((a) => next.add(a));
+        return { expandedFolders: next };
+      });
+    }
 
     // Check if tab already open
     const existing = openTabs.find((t) => t.id === normalized);
@@ -324,41 +380,48 @@ export const useCodeStore = create<CodeState>((set, get) => ({
       const { data } = await codeAPI.readFile(projectId, normalized);
       const language = getLanguageFromPath(normalized);
       const title = normalized.split('/').pop() || normalized;
+      const fileContent = typeof data.content === 'string' ? data.content : '';
 
       const newTab: CodeTab = {
         id: normalized,
         title,
         path: normalized,
         language,
-        content: data.content,
-        originalContent: data.content,
+        content: fileContent,
+        originalContent: fileContent,
         isDirty: false,
       };
 
-      set((state) => ({
-        openTabs: [...state.openTabs, newTab],
-        activeTabId: normalized,
-        activeFileContent: data.content,
-        isLoadingFile: false,
-      }));
-    } catch {
+      set((state) => {
+        const tabExists = state.openTabs.some((t) => t.id === normalized);
+        return {
+          openTabs: tabExists ? state.openTabs : [...state.openTabs, newTab],
+          activeTabId: normalized,
+          activeFileContent: fileContent,
+          isLoadingFile: false,
+        };
+      });
+    } catch (err: any) {
+      console.error(`[CODE_WORKSPACE] Error reading file ${normalized}:`, err);
+      toast.error(err?.response?.data?.message || `Unable to open ${normalized}`);
       set({ isLoadingFile: false });
     }
   },
 
   closeTab: (tabId: string) => {
     const { projectId } = get();
+    const normalized = normalizePath(tabId);
     if (projectId) {
-      monacoModelManager.disposeFile(null, projectId, tabId);
+      monacoModelManager.disposeFile(null, projectId, normalized);
     }
 
     set((state) => {
-      const newTabs = state.openTabs.filter((t) => t.id !== tabId);
+      const newTabs = state.openTabs.filter((t) => t.id !== normalized);
       let nextActiveId = state.activeTabId;
 
-      if (state.activeTabId === tabId) {
+      if (state.activeTabId === normalized) {
         if (newTabs.length > 0) {
-          const closedIdx = state.openTabs.findIndex((t) => t.id === tabId);
+          const closedIdx = state.openTabs.findIndex((t) => t.id === normalized);
           const nextIdx = Math.min(closedIdx, newTabs.length - 1);
           nextActiveId = newTabs[nextIdx].id;
         } else {
@@ -378,16 +441,17 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
   closeOtherTabs: (tabId: string) => {
     const { projectId, openTabs } = get();
+    const normalized = normalizePath(tabId);
     if (projectId) {
       openTabs.forEach((t) => {
-        if (t.id !== tabId) {
+        if (t.id !== normalized) {
           monacoModelManager.disposeFile(null, projectId, t.id);
         }
       });
     }
 
     set((state) => {
-      const target = state.openTabs.find((t) => t.id === tabId);
+      const target = state.openTabs.find((t) => t.id === normalized);
       if (!target) return state;
       return {
         openTabs: [target],
@@ -498,84 +562,201 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
   createFile: async (filePath: string) => {
     const { projectId } = get();
-    if (!projectId) return false;
+    if (!projectId || !filePath.trim()) return false;
+
+    const normalized = normalizePath(filePath);
+
     try {
-      await codeAPI.createFile(projectId, filePath);
+      await codeAPI.createFile(projectId, normalized);
+
+      // Auto-expand all parent folders
+      const ancestors = getAncestorFolders(normalized);
+      if (ancestors.length > 0) {
+        set((state) => {
+          const next = new Set(state.expandedFolders);
+          ancestors.forEach((a) => next.add(a));
+          return { expandedFolders: next };
+        });
+      }
+
       await get().loadFileTree();
-      await get().openFile(filePath);
+      await get().openFile(normalized);
       return true;
-    } catch {
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Create file error:', err);
+      const msg = err?.response?.data?.message || `Unable to create ${normalized}`;
+      toast.error(msg);
       return false;
     }
   },
 
   createFolder: async (folderPath: string) => {
     const { projectId } = get();
-    if (!projectId) return false;
+    if (!projectId || !folderPath.trim()) return false;
+
+    const normalized = normalizePath(folderPath);
+
     try {
-      await codeAPI.createFolder(projectId, folderPath);
+      await codeAPI.createFolder(projectId, normalized);
+
+      // Auto-expand parent folders and the newly created folder
+      const ancestors = getAncestorFolders(normalized);
+      set((state) => {
+        const next = new Set(state.expandedFolders);
+        ancestors.forEach((a) => next.add(a));
+        next.add(normalized);
+        return { expandedFolders: next };
+      });
+
       await get().loadFileTree();
       return true;
-    } catch {
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Create folder error:', err);
+      const msg = err?.response?.data?.message || `Unable to create folder ${normalized}`;
+      toast.error(msg);
       return false;
     }
   },
 
   renamePath: async (oldPath: string, newPath: string) => {
     const { projectId } = get();
-    if (!projectId) return false;
+    if (!projectId || !oldPath || !newPath) return false;
+
+    const normOld = normalizePath(oldPath);
+    const normNew = normalizePath(newPath);
+
     try {
-      await codeAPI.renamePath(projectId, oldPath, newPath);
+      await codeAPI.renamePath(projectId, normOld, normNew);
+      monacoModelManager.renameModel(projectId, normOld, normNew);
+
+      // Auto-expand ancestors of new path
+      const ancestors = getAncestorFolders(normNew);
+      if (ancestors.length > 0) {
+        set((state) => {
+          const next = new Set(state.expandedFolders);
+          ancestors.forEach((a) => next.add(a));
+          return { expandedFolders: next };
+        });
+      }
+
       await get().loadFileTree();
 
       // Update open tabs
       set((state) => ({
         openTabs: state.openTabs.map((t) =>
-          t.id === oldPath
+          t.id === normOld
             ? {
                 ...t,
-                id: newPath,
-                path: newPath,
-                title: newPath.split('/').pop() || newPath,
-                language: getLanguageFromPath(newPath),
+                id: normNew,
+                path: normNew,
+                title: normNew.split('/').pop() || normNew,
+                language: getLanguageFromPath(normNew),
               }
             : t
         ),
-        activeTabId: state.activeTabId === oldPath ? newPath : state.activeTabId,
+        activeTabId: state.activeTabId === normOld ? normNew : state.activeTabId,
       }));
       return true;
-    } catch {
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Rename error:', err);
+      const msg = err?.response?.data?.message || `Unable to rename path`;
+      toast.error(msg);
       return false;
     }
   },
 
   deletePath: async (targetPath: string) => {
     const { projectId } = get();
-    if (!projectId) return false;
+    if (!projectId || !targetPath) return false;
+
+    const normTarget = normalizePath(targetPath);
+
     try {
-      await codeAPI.deletePath(projectId, targetPath);
-      monacoModelManager.disposeFile(null, projectId, targetPath);
+      await codeAPI.deletePath(projectId, normTarget);
+      monacoModelManager.disposeFile(null, projectId, normTarget);
       await get().loadFileTree();
-      get().closeTab(targetPath);
+      get().closeTab(normTarget);
       return true;
-    } catch {
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Delete error:', err);
+      const msg = err?.response?.data?.message || `Unable to delete ${normTarget}`;
+      toast.error(msg);
       return false;
     }
   },
 
   duplicateFile: async (sourcePath: string) => {
     const { projectId } = get();
-    if (!projectId) return false;
+    if (!projectId || !sourcePath) return false;
+
+    const normSource = normalizePath(sourcePath);
+
     try {
-      const { data } = await codeAPI.duplicatePath(projectId, sourcePath);
+      const { data } = await codeAPI.duplicatePath(projectId, normSource);
       await get().loadFileTree();
       if (data.path) {
         await get().openFile(data.path);
       }
       return true;
-    } catch {
+    } catch (err: any) {
+      console.error('[CODE_WORKSPACE] Duplicate error:', err);
+      const msg = err?.response?.data?.message || `Unable to duplicate file`;
+      toast.error(msg);
       return false;
     }
+  },
+
+  handleRemoteFileCreated: (data: { path: string; type?: 'file' | 'folder' }) => {
+    const ancestors = getAncestorFolders(data.path);
+    if (ancestors.length > 0) {
+      set((state) => {
+        const next = new Set(state.expandedFolders);
+        ancestors.forEach((a) => next.add(a));
+        return { expandedFolders: next };
+      });
+    }
+    get().loadFileTree();
+  },
+
+  handleRemoteFileDeleted: (data: { path: string }) => {
+    const { projectId } = get();
+    const norm = normalizePath(data.path);
+    if (projectId) {
+      monacoModelManager.disposeFile(null, projectId, norm);
+    }
+    get().closeTab(norm);
+    get().loadFileTree();
+  },
+
+  handleRemoteFileRenamed: (data: { oldPath: string; newPath: string }) => {
+    const { projectId } = get();
+    const normOld = normalizePath(data.oldPath);
+    const normNew = normalizePath(data.newPath);
+
+    if (projectId) {
+      monacoModelManager.renameModel(projectId, normOld, normNew);
+    }
+
+    set((state) => ({
+      openTabs: state.openTabs.map((t) =>
+        t.id === normOld
+          ? {
+              ...t,
+              id: normNew,
+              path: normNew,
+              title: normNew.split('/').pop() || normNew,
+              language: getLanguageFromPath(normNew),
+            }
+          : t
+      ),
+      activeTabId: state.activeTabId === normOld ? normNew : state.activeTabId,
+    }));
+
+    get().loadFileTree();
+  },
+
+  handleRemoteFileUpdated: () => {
+    get().loadGitStatus();
   },
 
   performSearch: async (query: string, caseSensitive = false, isRegex = false) => {
@@ -700,6 +881,10 @@ export const useCodeStore = create<CodeState>((set, get) => ({
 
   setCollaborators: (collaborators: CodeCollaborator[]) => {
     set({ collaborators });
+  },
+
+  setSyncStatus: (status: 'synced' | 'syncing' | 'error' | 'reconnecting') => {
+    set({ syncStatus: status });
   },
 
   toggleTerminal: (open?: boolean) => {

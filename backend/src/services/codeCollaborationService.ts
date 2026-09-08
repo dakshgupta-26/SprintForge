@@ -129,6 +129,18 @@ export class CodeCollaborationService {
   }
 
   /**
+   * Encodes document state as a binary update against an optional target client state vector.
+   */
+  public static async encodeStateAsUpdate(
+    projectId: string,
+    filePath: string,
+    targetVector?: Uint8Array
+  ): Promise<Uint8Array> {
+    const session = await this.getOrCreateDoc(projectId, filePath);
+    return Y.encodeStateAsUpdate(session.doc, targetVector);
+  }
+
+  /**
    * Generates the binary state vector of a document for synchronization.
    */
   public static async getStateVector(projectId: string, filePath: string): Promise<Uint8Array> {

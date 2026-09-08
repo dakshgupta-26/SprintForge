@@ -34,6 +34,7 @@ export function FileExplorer() {
   const [creatingType, setCreatingType] = useState<"file" | "folder" | null>(null);
   const [creationPath, setCreationPath] = useState("");
   const [creationInputValue, setCreationInputValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{
@@ -62,7 +63,7 @@ export function FileExplorer() {
   }, []);
 
   const handleStartCreate = (type: "file" | "folder", basePath = "") => {
-    if (permission === "VIEW") return;
+    if (permission === "VIEW" || isSubmitting) return;
     setCreatingType(type);
     setCreationPath(basePath);
     setCreationInputValue("");
@@ -70,37 +71,48 @@ export function FileExplorer() {
   };
 
   const handleConfirmCreate = async () => {
-    if (!creationInputValue.trim()) {
+    const rawVal = creationInputValue.trim();
+    if (!rawVal || isSubmitting) {
       setCreatingType(null);
       return;
     }
 
+    const cleanInput = rawVal.replace(/\\/g, "/").replace(/^\/+/, "");
     const fullPath = creationPath
-      ? `${creationPath}/${creationInputValue.trim()}`
-      : creationInputValue.trim();
+      ? `${creationPath.replace(/\\/g, "/").replace(/^\/+/, "")}/${cleanInput}`
+      : cleanInput;
 
-    if (creatingType === "file") {
-      await createFile(fullPath);
-    } else if (creatingType === "folder") {
-      await createFolder(fullPath);
+    setIsSubmitting(true);
+    try {
+      if (creatingType === "file") {
+        await createFile(fullPath);
+      } else if (creatingType === "folder") {
+        await createFolder(fullPath);
+      }
+    } finally {
+      setIsSubmitting(false);
+      setCreatingType(null);
+      setCreationInputValue("");
     }
-
-    setCreatingType(null);
-    setCreationInputValue("");
   };
 
   const handleConfirmRename = async () => {
-    if (!renamingItem || !renameInputValue.trim()) {
+    if (!renamingItem || !renameInputValue.trim() || isSubmitting) {
       setRenamingItem(null);
       return;
     }
 
     const parts = renamingItem.path.split("/");
-    parts[parts.length - 1] = renameInputValue.trim();
+    parts[parts.length - 1] = renameInputValue.trim().replace(/\\/g, "/");
     const newPath = parts.join("/");
 
     if (newPath !== renamingItem.path) {
-      await renamePath(renamingItem.path, newPath);
+      setIsSubmitting(true);
+      try {
+        await renamePath(renamingItem.path, newPath);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
 
     setRenamingItem(null);
