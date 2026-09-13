@@ -6,11 +6,13 @@ import { getAvatarUrl, getInitials, getAvatarGradient, cn } from "@/lib/utils";
 export interface UserAvatarProps {
   src?: string | null;
   name?: string;
+  user?: { name?: string; avatar?: string; [key: string]: any } | null;
   size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
   className?: string;
   ringClassName?: string;
   shape?: "circle" | "rounded" | "rounded-xl" | "rounded-2xl";
   showOnline?: boolean;
+  showOnlineIndicator?: boolean;
   isOnline?: boolean;
   alt?: string;
 }
@@ -33,24 +35,30 @@ const shapeMap = {
 
 export function UserAvatar({
   src,
-  name = "User",
+  name,
+  user,
   size = "md",
   className,
   ringClassName,
   shape = "circle",
   showOnline = false,
+  showOnlineIndicator = false,
   isOnline = true,
   alt,
 }: UserAvatarProps) {
+  const effectiveSrc = src !== undefined ? src : user?.avatar;
+  const effectiveName = name !== undefined ? name : (user?.name || "User");
+  const effectiveShowOnline = showOnline || showOnlineIndicator;
+
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     setHasError(false);
-  }, [src]);
+  }, [effectiveSrc]);
 
-  const resolvedSrc = getAvatarUrl(src, name);
-  const initials = getInitials(name);
-  const gradient = getAvatarGradient(name);
+  const resolvedSrc = getAvatarUrl(effectiveSrc, effectiveName);
+  const initials = getInitials(effectiveName);
+  const gradient = getAvatarGradient(effectiveName);
   const roundedClass = shapeMap[shape] || "rounded-full";
 
   return (

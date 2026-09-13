@@ -163,7 +163,17 @@ export const projectAPI = {
   getOne: (id: string) => api.get(`/projects/${id}`),
   create: (data: any) => api.post("/projects", data),
   update: (id: string, data: any) => api.put(`/projects/${id}`, data),
-  delete: (id: string) => api.delete(`/projects/${id}`),
+  delete: (id: string, confirmProjectName?: string) =>
+    api.delete(`/projects/${id}`, { data: { confirmProjectName } }),
+  uploadImage: (id: string, formData: FormData) =>
+    api.post(`/projects/${id}/image`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  removeImage: (id: string) => api.delete(`/projects/${id}/image`),
+  transferOwnership: (id: string, data: { newOwnerId: string; confirmProjectName: string }) =>
+    api.post(`/projects/${id}/transfer-ownership`, data),
+  getActivity: (id: string, page = 1, limit = 30) =>
+    api.get(`/projects/${id}/activity`, { params: { page, limit } }),
   invite: (id: string, data: { email: string; role: string }) =>
     api.post(`/projects/${id}/invite`, data),
   removeMember: (projectId: string, userId: string) =>
@@ -180,7 +190,7 @@ export const projectAPI = {
   generateJoinCode: (projectId: string) => api.post(`/projects/${projectId}/generate-code`),
   disableJoinCode: (projectId: string) => api.post(`/projects/${projectId}/disable-code`),
   joinWithCode: (code: string) => api.post(`/projects/join-with-code`, { code }),
-  updateMemberRole: (projectId: string, userId: string, data: any) =>
+  updateMemberRole: (projectId: string, userId: string, data: { role: string; permissions?: string[] }) =>
     api.patch(`/projects/${projectId}/members/${userId}/role`, data),
 };
 

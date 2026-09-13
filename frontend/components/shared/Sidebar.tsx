@@ -44,6 +44,8 @@ import { SidebarUserMenu } from "@/components/sidebar/SidebarUserMenu";
 import { SidebarTooltip } from "@/components/sidebar/SidebarTooltip";
 import { QuickCreatePopover } from "@/components/sidebar/QuickCreatePopover";
 
+import { ProjectAvatar } from "@/components/shared/ProjectAvatar";
+
 interface NavItem {
   label: string;
   href: string;
@@ -104,6 +106,7 @@ const projectNav = (
   { label: "Analytics", href: `/dashboard/projects/${id}/analytics`, icon: BarChart3 },
   { label: "Team", href: `/dashboard/projects/${id}/team`, icon: Users },
   { label: "Wiki", href: `/dashboard/projects/${id}/wiki`, icon: BookOpen },
+  { label: "Settings", href: `/dashboard/projects/${id}/settings`, icon: Settings },
 ];
 
 interface SidebarProps {
@@ -355,14 +358,14 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                         href={`/dashboard/projects/${project._id}/board`}
                         onClick={onClose}
                         className={cn(
-                          "w-9 h-9 rounded-xl flex items-center justify-center text-xs font-mono font-bold transition-all",
+                          "w-9 h-9 rounded-xl flex items-center justify-center transition-all overflow-hidden",
                           isCurrentProject
-                            ? "ring-2 ring-violet-500 shadow-md text-white"
-                            : "opacity-75 hover:opacity-100 hover:scale-105 text-white"
+                            ? "ring-2 ring-violet-500 shadow-md"
+                            : "opacity-80 hover:opacity-100 hover:scale-105"
                         )}
-                        style={{ backgroundColor: project.color || "#6366f1" }}
+                        title={project.name}
                       >
-                        {project.key?.charAt(0) || "P"}
+                        <ProjectAvatar project={project} size="lg" />
                       </Link>
 
                       {/* Collapsed Project Unread Indicator Dot */}
@@ -413,12 +416,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                         }}
                         className="flex items-center gap-2 min-w-0 flex-1"
                       >
-                        <div
-                          className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-mono font-bold text-white flex-shrink-0 shadow-sm"
-                          style={{ backgroundColor: project.color || "#6366f1" }}
-                        >
-                          {project.key?.charAt(0) || "P"}
-                        </div>
+                        <ProjectAvatar project={project} size="xs" />
                         <span className="truncate">{project.name}</span>
                       </Link>
 

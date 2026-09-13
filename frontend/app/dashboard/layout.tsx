@@ -11,7 +11,8 @@ import { GlobalChatToastContainer } from "@/components/chat/GlobalChatToast";
 import { IncomingCallModal } from "@/components/call/IncomingCallModal";
 import { GlobalCallMiniBar } from "@/components/call/GlobalCallMiniBar";
 import { GlobalCallAudio } from "@/components/call/GlobalCallAudio";
-import { connectSocket } from "@/lib/socket";
+import { connectSocket, getSocket } from "@/lib/socket";
+import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 import { useSidebarStore } from "@/lib/store/sidebarStore";
@@ -48,6 +49,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       initializeCallSocket(user._id);
     }
   }, [initialized, isAuthenticated, user?._id, initializeCallSocket]);
+
+  // Real-time access revocation & deletion handler
+  useEffect(() => {
+    if (!user?._id) return;
+    const socket = getSocket();
+
+    const handleAccessRevoked = (data: { projectId: string; projectName?: string; message?: string }) => {
+      fetchProjects();
+      toast.error(data.message || `Access to "${data.projectName || "the project"}" has been revoked.`);
+      if (pathname.includes(`/projects/${data.projectId}`)) {
+        router.push("/dashboard/projects");
+      }
+    };
+
+    const handleProjectDeleted = (data: { projectId: string; projectName?: string }) => {
+      fetchProjects();
+      if (pathname.includes(`/projects/${data.projectId}`)) {
+        toast.error(`Project "${data.projectName || "Project"}" was deleted.`);
+        router.push("/dashboard/projects");
+      }
+    };
+
+    socket.on("project:access_revoked", handleAccessRevoked);
+    socket.on("project:deleted", handleProjectDeleted);
+
+    return () => {
+      socket.off("project:access_revoked", handleAccessRevoked);
+      socket.off("project:deleted", handleProjectDeleted);
+    };
+  }, [user?._id, pathname, router, fetchProjects]);
 
   if (!initialized) {
     return (

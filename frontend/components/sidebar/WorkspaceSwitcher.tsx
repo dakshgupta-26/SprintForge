@@ -17,6 +17,8 @@ import {
 import { useProjectStore, Project } from "@/lib/store/projectStore";
 import { cn } from "@/lib/utils";
 
+import { ProjectAvatar } from "@/components/shared/ProjectAvatar";
+
 interface WorkspaceSwitcherProps {
   isCollapsed: boolean;
   activeProjectId?: string | null;
@@ -82,11 +84,10 @@ export function WorkspaceSwitcher({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="w-10 h-10 mx-auto rounded-xl flex items-center justify-center text-white text-xs font-bold font-mono shadow-sm transition-transform hover:scale-105 cursor-pointer ring-1 ring-white/[0.1] hover:ring-violet-500/50"
-          style={{ backgroundColor: activeProject?.color || "#6366f1" }}
+          className="w-10 h-10 mx-auto rounded-xl flex items-center justify-center transition-transform hover:scale-105 cursor-pointer ring-1 ring-white/[0.1] hover:ring-violet-500/50 overflow-hidden"
           title={activeProject?.name || "Workspace"}
         >
-          {activeProject?.key?.charAt(0) || "P"}
+          <ProjectAvatar project={activeProject} size="lg" />
         </button>
       ) : (
         <button
@@ -100,12 +101,7 @@ export function WorkspaceSwitcher({
           )}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="w-7 h-7 rounded-xl flex items-center justify-center text-white text-xs font-bold font-mono shadow-sm flex-shrink-0"
-              style={{ backgroundColor: activeProject?.color || "#6366f1" }}
-            >
-              {activeProject?.key?.charAt(0) || "P"}
-            </div>
+            <ProjectAvatar project={activeProject} size="md" />
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate group-hover:text-violet-200 transition-colors">
                 {activeProject?.name || "Select Workspace"}
@@ -158,12 +154,7 @@ export function WorkspaceSwitcher({
                     )}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className="w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-mono font-bold text-white flex-shrink-0"
-                        style={{ backgroundColor: project.color || "#6366f1" }}
-                      >
-                        {project.key?.charAt(0) || "P"}
-                      </div>
+                      <ProjectAvatar project={project} size="sm" />
                       <div className="min-w-0">
                         <p className="truncate font-bold text-white">{project.name}</p>
                         <p className="text-[10px] font-mono text-slate-400">
@@ -181,6 +172,19 @@ export function WorkspaceSwitcher({
 
             {/* Actions */}
             <div className="pt-1.5 border-t border-white/[0.06] space-y-0.5">
+              {activeProject && (
+                <Link
+                  href={`/dashboard/projects/${activeProject._id}/settings`}
+                  onClick={() => {
+                    setIsOpen(false);
+                    onCloseMobile?.();
+                  }}
+                  className="flex items-center gap-2 p-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5 text-violet-400" />
+                  <span>Project Settings</span>
+                </Link>
+              )}
               <Link
                 href="/dashboard/projects/new"
                 onClick={() => {

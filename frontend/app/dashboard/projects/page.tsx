@@ -5,17 +5,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useProjectStore } from "@/lib/store/projectStore";
 import { useAuthStore } from "@/lib/store/authStore";
-import { FolderKanban, Plus, Lock, Globe, Users, ArrowRight, Layout, Zap, MoreHorizontal, Trash2, Edit2 } from "lucide-react";
+import { FolderKanban, Plus, Lock, Globe, Users, ArrowRight, Layout, Zap, MoreHorizontal, Trash2, Edit2, Settings } from "lucide-react";
 import { formatDate, PROJECT_COLORS } from "@/lib/utils";
 import toast from "react-hot-toast";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import { EditProjectModal } from "@/components/projects/EditProjectModal";
+import { ProjectDeleteModal } from "@/components/projects/ProjectDeleteModal";
+import { ProjectAvatar } from "@/components/shared/ProjectAvatar";
 
 export default function ProjectsPage() {
-  const { projects, fetchProjects, isLoading, deleteProject, setCurrentProject } = useProjectStore();
+  const { projects, fetchProjects, isLoading, setCurrentProject } = useProjectStore();
   const { user } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
   const [editingProject, setEditingProject] = useState<any>(null);
+  const [deletingProject, setDeletingProject] = useState<any>(null);
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const router = useRouter();
 
@@ -25,15 +28,6 @@ export default function ProjectsPage() {
     window.addEventListener("click", handleClick);
     return () => window.removeEventListener("click", handleClick);
   }, []);
-
-  const handleDelete = async (e: React.MouseEvent, projectId: string) => {
-    e.preventDefault();
-    if (!confirm("Delete this project? All tasks and sprints will be lost.")) return;
-    try {
-      await deleteProject(projectId);
-      toast.success("Project deleted");
-    } catch { toast.error("Failed to delete project"); }
-  };
 
   const goToProject = (project: any) => {
     setCurrentProject(project);
@@ -80,10 +74,7 @@ export default function ProjectsPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4 pt-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold"
-                      style={{ backgroundColor: project.color }}>
-                      {project.key.charAt(0)}
-                    </div>
+                    <ProjectAvatar project={project} size="md" />
                     <div>
                       <h3 className="font-bold text-foreground">{project.name}</h3>
                       <span className="text-xs text-muted-foreground font-mono">{project.key}</span>
@@ -95,12 +86,16 @@ export default function ProjectsPage() {
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
                     {dropdownOpen === project._id && (
-                      <div className="absolute right-0 top-8 w-32 bg-card border border-border rounded-xl shadow-xl z-50 p-1 flex flex-col gap-0.5">
+                      <div className="absolute right-0 top-8 w-36 bg-card border border-border rounded-xl shadow-xl z-50 p-1 flex flex-col gap-0.5">
+                        <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(null); router.push(`/dashboard/projects/${project._id}/settings`); }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
+                          <Settings className="w-3.5 h-3.5" /> Settings
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); setEditingProject(project); setDropdownOpen(null); }}
                           className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-muted text-foreground transition-colors">
                           <Edit2 className="w-3.5 h-3.5" /> Rename
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(null); handleDelete(e, project._id); }}
+                        <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(null); setDeletingProject(project); }}
                           className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-red-500/10 text-red-500 transition-colors">
                           <Trash2 className="w-3.5 h-3.5" /> Delete
                         </button>
@@ -179,6 +174,17 @@ export default function ProjectsPage() {
           onClose={() => setEditingProject(null)}
           onUpdate={(updated) => {
             setEditingProject(null);
+            fetchProjects();
+          }}
+        />
+      )}
+
+      {deletingProject && (
+        <ProjectDeleteModal
+          project={deletingProject}
+          onClose={() => setDeletingProject(null)}
+          onSuccess={() => {
+            setDeletingProject(null);
             fetchProjects();
           }}
         />

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { generateAvatar, cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/UserAvatar";
+import { ProjectAvatar } from "@/components/shared/ProjectAvatar";
 
 interface ProjectsGridCardProps {
   projects: any[];
@@ -72,12 +73,7 @@ export function ProjectsGridCard({ projects = [], onOpenCreateProject }: Project
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-mono font-bold text-white shadow-sm"
-                        style={{ backgroundColor: project.color || "#6366f1" }}
-                      >
-                        {project.key?.charAt(0) || "P"}
-                      </div>
+                      <ProjectAvatar project={project} size="xs" />
                       <span className="text-[10px] font-mono font-bold uppercase text-slate-400">
                         {project.type || "SCRUM"}
                       </span>

@@ -1,20 +1,35 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface IProjectImage {
+  fileId: mongoose.Types.ObjectId;
+  filename: string;
+  contentType: string;
+  uploadedAt: Date;
+}
+
+export interface IProjectSettings {
+  allowAdminMemberManagement: boolean;
+  allowAdminProjectEdit: boolean;
+}
+
 export interface IProject extends Document {
   name: string;
   key: string;
   description?: string;
   icon?: string;
+  imageUrl?: string;
+  projectImage?: IProjectImage;
   color: string;
   owner: mongoose.Types.ObjectId;
   joinCode?: string;
   joinCodeEnabled: boolean;
   members: Array<{
     user: mongoose.Types.ObjectId;
-    role: string;
+    role: 'owner' | 'admin' | 'member' | 'viewer' | string;
     permissions: Array<'view' | 'create' | 'edit' | 'delete' | 'manage'>;
     joinedAt: Date;
   }>;
+  settings?: IProjectSettings;
   isPrivate: boolean;
   type: 'scrum' | 'kanban';
   status: 'active' | 'archived' | 'completed';
@@ -33,8 +48,15 @@ const projectSchema = new Schema<IProject>(
   {
     name: { type: String, required: true, trim: true },
     key: { type: String, required: true, uppercase: true, trim: true, maxlength: 6 },
-    description: { type: String },
+    description: { type: String, default: '' },
     icon: { type: String },
+    imageUrl: { type: String },
+    projectImage: {
+      fileId: { type: Schema.Types.ObjectId },
+      filename: { type: String },
+      contentType: { type: String },
+      uploadedAt: { type: Date, default: Date.now },
+    },
     color: { type: String, default: '#6366f1' },
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     joinCode: { type: String, unique: true, sparse: true },
@@ -47,6 +69,10 @@ const projectSchema = new Schema<IProject>(
         joinedAt: { type: Date, default: Date.now },
       },
     ],
+    settings: {
+      allowAdminMemberManagement: { type: Boolean, default: true },
+      allowAdminProjectEdit: { type: Boolean, default: true },
+    },
     isPrivate: { type: Boolean, default: false },
     type: { type: String, enum: ['scrum', 'kanban'], default: 'scrum' },
     status: { type: String, enum: ['active', 'archived', 'completed'], default: 'active' },

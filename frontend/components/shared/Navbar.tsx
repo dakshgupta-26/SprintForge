@@ -41,6 +41,7 @@ import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import { NotificationBell } from "@/components/shared/NotificationBell";
 import { AppCommandPalette } from "@/components/shared/AppCommandPalette";
 import { UserAvatar } from "@/components/shared/UserAvatar";
+import { ProjectAvatar } from "@/components/shared/ProjectAvatar";
 import toast from "react-hot-toast";
 
 interface NavbarProps {
@@ -56,6 +57,7 @@ const PROJECT_VIEWS = [
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Burndown & Velocity Charts" },
   { key: "team", label: "Team", icon: Users, desc: "Project Members & Roles" },
   { key: "wiki", label: "Wiki", icon: BookOpen, desc: "Docs & Specifications" },
+  { key: "settings", label: "Settings", icon: Settings, desc: "General, Members, Roles & Danger Zone" },
 ];
 
 export function Navbar({ onMenuClick }: NavbarProps) {
@@ -227,12 +229,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                   }}
                   className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.16] transition-all cursor-pointer group"
                 >
-                  <div
-                    className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
-                    style={{ backgroundColor: activeProject.color || "#6366f1" }}
-                  >
-                    {activeProject.key?.charAt(0) || "P"}
-                  </div>
+                  <ProjectAvatar project={activeProject} size="xs" />
                   <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-[180px]">
                     {activeProject.name}
                   </span>
@@ -283,12 +280,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                               )}
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
-                                <div
-                                  className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                                  style={{ backgroundColor: proj.color }}
-                                >
-                                  {proj.key.charAt(0)}
-                                </div>
+                                <ProjectAvatar project={proj} size="sm" />
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold truncate text-white">
                                     {proj.name}
@@ -315,14 +307,22 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                           className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-violet-300 hover:bg-violet-500/10 transition-colors"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>New Project</span>
+                          <span>New</span>
                         </button>
+                        <Link
+                          href={`/dashboard/projects/${activeProject._id}/settings`}
+                          onClick={() => setProjectSwitcherOpen(false)}
+                          className="px-2 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                          <span>Settings</span>
+                        </Link>
                         <Link
                           href="/dashboard/projects"
                           onClick={() => setProjectSwitcherOpen(false)}
                           className="px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
                         >
-                          All Projects
+                          All
                         </Link>
                       </div>
                     </motion.div>
@@ -683,12 +683,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                   }}
                   className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-violet-500/10 border border-white/[0.06] hover:border-violet-500/30 transition-all text-left cursor-pointer group"
                 >
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0"
-                    style={{ backgroundColor: p.color }}
-                  >
-                    {p.key.charAt(0)}
-                  </div>
+                  <ProjectAvatar project={p} size="sm" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-white truncate group-hover:text-violet-300">
                       {p.name}

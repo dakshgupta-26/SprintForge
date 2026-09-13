@@ -119,6 +119,9 @@ app.use('/api/calls', callRoutes);
 app.use('/api/projects', impactRoutes);
 app.use('/api/code', codeRoutes);
 
+// Project ownership migration
+import { migrateExistingProjects } from './controllers/projectController';
+
 // Health checks
 import { verifyEmailTransporter, getEmailHealthStatus } from './services/emailService';
 
@@ -151,6 +154,12 @@ mongoose
   .connect(MONGODB_URI)
   .then(async () => {
     console.log('✅ MongoDB connected');
+
+    // Run safe backward compatibility migration for projects
+    migrateExistingProjects().catch((err) => {
+      console.warn('⚠️ Project migration check error:', err?.message || err);
+    });
+
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       console.log(`🚀 SprintForge API running on http://localhost:${PORT}`);

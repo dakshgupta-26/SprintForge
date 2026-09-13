@@ -57,6 +57,4 @@ const codeWorkspaceSchema = new Schema<ICodeWorkspace>(
   { timestamps: true }
 );
 
-codeWorkspaceSchema.index({ project: 1 });
-
 export default mongoose.model<ICodeWorkspace>('CodeWorkspace', codeWorkspaceSchema);
